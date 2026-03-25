@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point } from '@/types/project';
-import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize } from "lucide-react";
 
 interface InteractiveMapProps {
   elements: MapElement[];
@@ -19,6 +19,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -60,16 +61,17 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'green') return { fill: '#d1fae5', stroke: '#10b981', opacity: 1 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1 };
     
-    if (data) {
+    // منطق المنازل: الأخضر هو الافتراضي للمتوفر
+    if (el.type === 'house') {
+      if (!data || data.status === 'available') return { fill: '#10b981', stroke: '#059669', opacity: 1 };
       if (data.status === 'sold') return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1 };
       if (data.status === 'reserved') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1 };
       if (data.status === 'pending') return { fill: '#3b82f6', stroke: '#2563eb', opacity: 1 };
-      return { fill: '#10b981', stroke: '#059669', opacity: 1 };
     }
+    
     return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
   };
 
-  // ترتيب العناصر: مناطق التسمية أولاً (في الأسفل)
   const sortedElements = [...elements].sort((a, b) => {
     if (a.type === 'label_area' && b.type !== 'label_area') return -1;
     if (a.type !== 'label_area' && b.type === 'label_area') return 1;
@@ -77,7 +79,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   });
 
   return (
-    <div className="relative w-full aspect-[4/3] bg-slate-100 rounded-[2.5rem] border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing">
+    <div className={cn(
+      "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300",
+      isFullScreen ? "fixed inset-0 z-[100] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
+    )}>
       <div className="w-full h-full" onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
         <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
           <defs>
@@ -133,6 +138,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
         <button onClick={() => setScale(s => Math.min(s + 0.2, 5))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50 transition-colors"><ZoomIn size={20} /></button>
         <button onClick={() => setScale(s => Math.max(s - 0.2, 0.5))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50 transition-colors"><ZoomOut size={20} /></button>
         <button onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50 transition-colors"><RotateCcw size={20} /></button>
+        <button onClick={() => setIsFullScreen(!isFullScreen)} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50 transition-colors">
+          {isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}
+        </button>
       </div>
     </div>
   );
