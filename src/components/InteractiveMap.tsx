@@ -37,10 +37,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
-  // وظيفة لضمان وجود نقاط للعنصر (تحويل البيانات القديمة إذا لزم الأمر)
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
-    // إذا كان عنصراً قديماً، ننشئ نقاطه من x, y, width, height
     return [
       { x: el.x, y: el.y },
       { x: el.x + el.width, y: el.y },
@@ -55,18 +53,28 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   };
 
   const getElementStyles = (el: MapElement) => {
+    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.color || '#a855f7', opacity: el.opacity || 0.2 };
+    
     const data = housesData[el.id];
-    if (el.type === 'road') return { fill: 'fill-gray-300', stroke: 'none' };
-    if (el.type === 'green') return { fill: 'fill-emerald-200', stroke: 'stroke-emerald-500' };
-    if (el.type === 'tower') return { fill: 'fill-slate-800', stroke: 'stroke-slate-900' };
+    if (el.type === 'road') return { fill: '#d1d5db', stroke: 'none', opacity: 1 };
+    if (el.type === 'green') return { fill: '#d1fae5', stroke: '#10b981', opacity: 1 };
+    if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1 };
+    
     if (data) {
-      if (data.status === 'sold') return { fill: 'fill-rose-500', stroke: 'stroke-rose-600' };
-      if (data.status === 'reserved') return { fill: 'fill-amber-400', stroke: 'stroke-amber-500' };
-      if (data.status === 'pending') return { fill: 'fill-blue-500', stroke: 'stroke-blue-600' };
-      return { fill: 'fill-emerald-500', stroke: 'stroke-emerald-600' };
+      if (data.status === 'sold') return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1 };
+      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1 };
+      if (data.status === 'pending') return { fill: '#3b82f6', stroke: '#2563eb', opacity: 1 };
+      return { fill: '#10b981', stroke: '#059669', opacity: 1 };
     }
-    return { fill: 'fill-white', stroke: 'stroke-slate-200' };
+    return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
   };
+
+  // ترتيب العناصر: مناطق التسمية أولاً (في الأسفل)
+  const sortedElements = [...elements].sort((a, b) => {
+    if (a.type === 'label_area' && b.type !== 'label_area') return -1;
+    if (a.type !== 'label_area' && b.type === 'label_area') return 1;
+    return 0;
+  });
 
   return (
     <div className="relative w-full aspect-[4/3] bg-slate-100 rounded-[2.5rem] border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing">
@@ -74,38 +82,44 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
         <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
-            <filter id="road-merge-view">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur" />
-              <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="merge" />
-              <feComposite in="SourceGraphic" in2="merge" operator="atop" />
-            </filter>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
-          <g filter="url(#road-merge-view)">
-            {elements.filter(el => el.type === 'road').map(el => {
-              const pts = getElementPoints(el);
-              const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-              const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-              return (
-                <path key={el.id} d={pointsToPath(pts)} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`} className="fill-gray-300" />
-              );
-            })}
-          </g>
-
-          {elements.filter(el => el.type !== 'road').map((el) => {
+          {sortedElements.map((el) => {
             const styles = getElementStyles(el);
             const isSelected = selectedHouseId === el.id;
             const isInteractive = el.type === 'house' || el.type === 'tower';
             const pts = getElementPoints(el);
             const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
             const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+            
+            const minY = Math.min(...pts.map(p => p.y));
+            const minX = Math.min(...pts.map(p => p.x));
+            const maxX = Math.max(...pts.map(p => p.x));
+            const topCenterX = (minX + maxX) / 2;
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                <path d={pointsToPath(pts)} className={cn("transition-all duration-300 stroke-2", styles.fill, styles.stroke, isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                <path 
+                  d={pointsToPath(pts)} 
+                  fill={styles.fill}
+                  stroke={styles.stroke}
+                  fillOpacity={styles.opacity}
+                  strokeWidth={el.type === 'road' ? 0 : 2}
+                  className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
+                />
                 {el.label && (
-                  <text x={centerX} y={centerY} textAnchor="middle" dominantBaseline="middle" className={cn("text-[12px] font-black pointer-events-none select-none", el.type === 'tower' || housesData[el.id] ? "fill-white" : "fill-slate-500")}>
+                  <text 
+                    x={el.type === 'label_area' ? topCenterX : centerX} 
+                    y={el.type === 'label_area' ? minY - 10 : centerY} 
+                    textAnchor="middle" 
+                    dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
+                    className={cn(
+                      "font-black pointer-events-none select-none", 
+                      el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? "fill-white text-[12px]" : 
+                      el.type === 'label_area' ? "fill-slate-800 text-[14px]" : "fill-slate-500 text-[12px]"
+                    )}
+                  >
                     {el.label}
                   </text>
                 )}
