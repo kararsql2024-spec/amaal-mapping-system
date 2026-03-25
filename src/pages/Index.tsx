@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import InteractiveMap from '@/components/InteractiveMap';
-import HouseDetailsModal from '@/components/HouseDetailsModal';
+import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import { showSuccess } from '@/utils/toast';
 import { Map as MapIcon, Settings, ChevronDown } from 'lucide-react';
@@ -26,7 +26,7 @@ interface IndexProps {
 const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projects.length > 0 ? projects[0].id : null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [isHouseModalOpen, setIsHouseModalOpen] = useState(false);
+  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
@@ -36,7 +36,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     setSelectedElementId(id);
     const element = activeProject?.elements.find(el => el.id === id);
     if (element?.type === 'tower') setIsTowerModalOpen(true);
-    else setIsHouseModalOpen(true);
+    else setIsUnitModalOpen(true);
   };
 
   const handleSaveData = (key: string, data: any) => {
@@ -109,11 +109,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         </main>
 
-        <HouseDetailsModal 
-          isOpen={isHouseModalOpen}
-          onClose={() => setIsHouseModalOpen(false)}
+        <UnitDetailsModal 
+          isOpen={isUnitModalOpen}
+          onClose={() => setIsUnitModalOpen(false)}
           onSave={(data) => handleSaveData(selectedElementId!, data)}
-          houseId={selectedElementId}
+          unitId={selectedElementId}
+          unitLabel={selectedElement?.label}
           initialData={selectedElementId ? housesData[selectedElementId] : undefined}
         />
 

@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { MapElement, ElementType } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
-  Trash2, Save, MousePointer2, Home, 
-  Building2, TreeDeciduous, MoveRight, Coffee,
-  Copy, ClipboardPaste
+  Trash2, Save, Home, Building2, TreeDeciduous, 
+  MoveRight, Coffee, Copy, ClipboardPaste, 
+  Grid3X3, ArrowRight, ArrowDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +16,8 @@ interface MapEditorProps {
   mapWidth: number;
   mapHeight: number;
 }
+
+const GRID_SIZE = 20;
 
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
@@ -30,8 +32,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType>('house');
   const [isDragging, setIsDragging] = useState(false);
-  const [clipboard, setClipboard] = useState<MapElement | null>(null);
+  const [gridLock, setGridLock] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
+
+  const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
 
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current || isDragging) return;
@@ -52,8 +56,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
-      x: Math.round(svgP.x - defaults[activeTool].w / 2),
-      y: Math.round(svgP.y - defaults[activeTool].h / 2),
+      x: snap(svgP.x - defaults[activeTool].w / 2),
+      y: snap(svgP.y - defaults[activeTool].h / 2),
       width: defaults[activeTool].w,
       height: defaults[activeTool].h,
       type: activeTool,
@@ -67,18 +71,17 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     setSelectedId(newElement.id);
   };
 
-  const handleCopy = () => {
+  const handleDuplicate = (direction: 'right' | 'down') => {
     const selected = elements.find(el => el.id === selectedId);
-    if (selected) setClipboard(selected);
-  };
+    if (!selected) return;
 
-  const handlePaste = () => {
-    if (!clipboard) return;
     const newElement: MapElement = {
-      ...clipboard,
+      ...selected,
       id: Math.random().toString(36).substr(2, 9),
-      x: clipboard.x + 20,
-      y: clipboard.y + 20,
+      x: direction === 'right' ? selected.x + selected.width : selected.x,
+      y: direction === 'down' ? selected.y + selected.height : selected.y,
+      label: selected.type === 'house' ? `H${elements.filter(el => el.type === 'house').length + 1}` : 
+             selected.type === 'tower' ? `T${elements.filter(el => el.type === 'tower').length + 1}` : selected.label,
     };
     setElements([...elements, newElement]);
     setSelectedId(newElement.id);
@@ -101,8 +104,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       if (el.id === selectedId) {
         return {
           ...el,
-          x: Math.round(svgP.x - el.width / 2),
-          y: Math.round(svgP.y - el.height / 2)
+          x: snap(svgP.x - el.width / 2),
+          y: snap(svgP.y - el.height / 2)
         };
       }
       return el;
@@ -146,11 +149,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             </button>
           ))}
           <div className="w-px h-8 bg-slate-200 mx-2" />
-          <Button variant="outline" size="icon" onClick={handleCopy} disabled={!selectedId} className="rounded-xl">
-            <Copy size={18} />
-          </Button>
-          <Button variant="outline" size="icon" onClick={handlePaste} disabled={!clipboard} className="rounded-xl">
-            <ClipboardPaste size={18} />
+          <Button 
+            variant={gridLock ? "default" : "outline"} 
+            size="icon" 
+            onClick={() => setGridLock(!gridLock)} 
+            className={cn("rounded-xl", gridLock && "bg-indigo-600")}
+          >
+            <Grid3X3 size={18} />
           </Button>
         </div>
         <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
@@ -171,8 +176,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             onMouseLeave={handleMouseUp}
           >
             <defs>
-              <pattern id="grid-editor" width="50" height="50" patternUnits="userSpaceOnUse">
-                <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="1"/>
+              <pattern id="grid-editor" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
+                <path d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill="url(#grid-editor)" />
@@ -228,6 +233,18 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       value={elements.find(el => el.id === selectedId)?.label}
                       onChange={(e) => updateElement(selectedId, { label: e.target.value })}
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-500">تكرار العنصر</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl gap-2">
+                        <ArrowRight size={16} /> يمين
+                      </Button>
+                      <Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl gap-2">
+                        <ArrowDown size={16} /> أسفل
+                      </Button>
+                    </div>
                   </div>
                   
                   {elements.find(el => el.id === selectedId)?.type === 'tower' && (

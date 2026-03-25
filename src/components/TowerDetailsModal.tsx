@@ -7,9 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Building2, LayoutGrid, CheckCircle2, Clock, Ban } from "lucide-react";
+import { Building2, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
+import UnitDetailsModal from './UnitDetailsModal';
 
 interface TowerDetailsModalProps {
   isOpen: boolean;
@@ -21,7 +21,7 @@ interface TowerDetailsModalProps {
 
 const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment }: TowerDetailsModalProps) => {
   const [selectedFloor, setSelectedFloor] = useState(1);
-  const [editingApt, setEditingApt] = useState<string | null>(null);
+  const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
 
   if (!tower) return null;
 
@@ -39,94 +39,88 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     }
   };
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'sold': return 'مباع';
-      case 'pending': return 'حجز أولي';
-      case 'reserved': return 'محجوز';
-      default: return 'متوفر';
-    }
-  };
+  const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor}`;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
-        <div className="flex h-[600px]">
-          {/* Sidebar: Floors */}
-          <div className="w-48 bg-slate-50 border-l border-slate-100 p-6 overflow-y-auto">
-            <h3 className="font-black text-slate-400 text-xs uppercase mb-4 tracking-wider">الطوابق</h3>
-            <div className="space-y-2">
-              {floors.reverse().map((floor) => (
-                <button
-                  key={floor}
-                  onClick={() => setSelectedFloor(floor)}
-                  className={cn(
-                    "w-full p-4 rounded-2xl font-bold transition-all text-right flex items-center justify-between",
-                    selectedFloor === floor 
-                      ? "bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105" 
-                      : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-100"
-                  )}
-                >
-                  <span>الطابق {floor}</span>
-                  {selectedFloor === floor && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Main: Apartments Grid */}
-          <div className="flex-1 p-8 bg-white overflow-y-auto">
-            <DialogHeader className="mb-8">
-              <DialogTitle className="text-3xl font-black flex items-center gap-3">
-                <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center">
-                  <Building2 className="text-white" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-400 font-bold">تفاصيل البرج: {tower.label}</p>
-                  <p>الطابق {selectedFloor}</p>
-                </div>
-              </DialogTitle>
-            </DialogHeader>
-
-            <div className="grid grid-cols-3 gap-4">
-              {apts.map((aptNum) => {
-                const key = getAptKey(selectedFloor, aptNum);
-                const data = housesData[key] || { status: 'available' };
-                
-                return (
-                  <div 
-                    key={key}
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
+          <div className="flex h-[600px]">
+            <div className="w-56 bg-slate-50 border-l border-slate-100 p-6 overflow-y-auto">
+              <h3 className="font-black text-slate-400 text-xs uppercase mb-4 tracking-wider">قائمة الطوابق</h3>
+              <div className="space-y-2">
+                {floors.reverse().map((floor) => (
+                  <button
+                    key={floor}
+                    onClick={() => setSelectedFloor(floor)}
                     className={cn(
-                      "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden",
-                      getStatusColor(data.status)
+                      "w-full p-4 rounded-2xl font-bold transition-all text-right flex items-center justify-between",
+                      selectedFloor === floor 
+                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105" 
+                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-100"
                     )}
-                    onClick={() => {
-                      const nextStatus = data.status === 'available' ? 'pending' : 
-                                       data.status === 'pending' ? 'reserved' :
-                                       data.status === 'reserved' ? 'sold' : 'available';
-                      onSaveApartment(key, { ...data, status: nextStatus });
-                    }}
                   >
-                    <div className="relative z-10">
-                      <p className="text-xs font-bold opacity-80 mb-1">شقة رقم</p>
-                      <p className="text-3xl font-black">{aptNum}</p>
-                      <div className="mt-4 flex items-center gap-2 text-xs font-bold bg-black/10 w-fit px-3 py-1 rounded-full">
-                        {getStatusLabel(data.status)}
-                      </div>
-                    </div>
-                    <LayoutGrid className="absolute -bottom-4 -left-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
-                  </div>
-                );
-              })}
+                    <span className="text-sm">{getFloorLabel(floor)}</span>
+                    {selectedFloor === floor && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </button>
+                ))}
+              </div>
             </div>
-            
-            <div className="mt-12 p-6 bg-slate-50 rounded-[2rem] border border-dashed border-slate-200 text-center">
-              <p className="text-slate-500 font-bold text-sm">انقر على الشقة لتغيير حالتها (متوفر -> حجز -> محجوز -> مباع)</p>
+
+            <div className="flex-1 p-8 bg-white overflow-y-auto">
+              <DialogHeader className="mb-8">
+                <DialogTitle className="text-3xl font-black flex items-center gap-3">
+                  <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center">
+                    <Building2 className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400 font-bold">برج: {tower.label}</p>
+                    <p>{getFloorLabel(selectedFloor)}</p>
+                  </div>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="grid grid-cols-3 gap-4">
+                {apts.map((aptNum) => {
+                  const key = getAptKey(selectedFloor, aptNum);
+                  const data = housesData[key] || { status: 'available' };
+                  
+                  return (
+                    <div 
+                      key={key}
+                      className={cn(
+                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden",
+                        getStatusColor(data.status)
+                      )}
+                      onClick={() => setSelectedAptKey(key)}
+                    >
+                      <div className="relative z-10">
+                        <p className="text-xs font-bold opacity-80 mb-1">شقة رقم</p>
+                        <p className="text-3xl font-black">{aptNum}</p>
+                      </div>
+                      <LayoutGrid className="absolute -bottom-4 -left-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <UnitDetailsModal 
+        isOpen={!!selectedAptKey}
+        onClose={() => setSelectedAptKey(null)}
+        onSave={(data) => {
+          if (selectedAptKey) onSaveApartment(selectedAptKey, data);
+          setSelectedAptKey(null);
+        }}
+        unitId={selectedAptKey}
+        unitLabel={selectedAptKey?.split('_').pop()?.replace('A', '')}
+        initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
+        isApartment
+      />
+    </>
   );
 };
 
