@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point } from '@/types/project';
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
@@ -35,6 +35,18 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
     setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
+  // وظيفة لضمان وجود نقاط للعنصر (تحويل البيانات القديمة إذا لزم الأمر)
+  const getElementPoints = (el: MapElement): Point[] => {
+    if (el.points && el.points.length > 0) return el.points;
+    // إذا كان عنصراً قديماً، ننشئ نقاطه من x, y, width, height
+    return [
+      { x: el.x, y: el.y },
+      { x: el.x + el.width, y: el.y },
+      { x: el.x + el.width, y: el.y + el.height },
+      { x: el.x, y: el.y + el.height },
+    ];
   };
 
   const pointsToPath = (points: Point[]) => {
@@ -72,10 +84,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           
           <g filter="url(#road-merge-view)">
             {elements.filter(el => el.type === 'road').map(el => {
-              const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
-              const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+              const pts = getElementPoints(el);
+              const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+              const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
               return (
-                <path key={el.id} d={pointsToPath(el.points)} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`} className="fill-gray-300" />
+                <path key={el.id} d={pointsToPath(pts)} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`} className="fill-gray-300" />
               );
             })}
           </g>
@@ -84,12 +97,13 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const styles = getElementStyles(el);
             const isSelected = selectedHouseId === el.id;
             const isInteractive = el.type === 'house' || el.type === 'tower';
-            const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
-            const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+            const pts = getElementPoints(el);
+            const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+            const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                <path d={pointsToPath(el.points)} className={cn("transition-all duration-300 stroke-2", styles.fill, styles.stroke, isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                <path d={pointsToPath(pts)} className={cn("transition-all duration-300 stroke-2", styles.fill, styles.stroke, isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
                 {el.label && (
                   <text x={centerX} y={centerY} textAnchor="middle" dominantBaseline="middle" className={cn("text-[12px] font-black pointer-events-none select-none", el.type === 'tower' || housesData[el.id] ? "fill-white" : "fill-slate-500")}>
                     {el.label}

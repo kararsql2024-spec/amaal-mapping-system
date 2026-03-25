@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
@@ -34,13 +34,22 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'rotate' | 'pan', index?: number } | null>(null);
   const [gridLock, setGridLock] = useState(true);
   
-  // Zoom/Pan State
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
   
   const svgRef = useRef<SVGSVGElement>(null);
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
+
+  const getElementPoints = (el: MapElement): Point[] => {
+    if (el.points && el.points.length > 0) return el.points;
+    return [
+      { x: el.x, y: el.y },
+      { x: el.x + el.width, y: el.y },
+      { x: el.x + el.width, y: el.y + el.height },
+      { x: el.x, y: el.y + el.height },
+    ];
+  };
 
   const getMousePos = (e: React.MouseEvent) => {
     if (!svgRef.current) return { x: 0, y: 0 };
@@ -69,7 +78,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
       ],
       rotation: 0,
-      x: pos.x, y: pos.y, width: w, height: h, // legacy
+      x: pos.x, y: pos.y, width: w, height: h,
       floors: activeTool === 'tower' ? 5 : undefined,
       apartmentsPerFloor: activeTool === 'tower' ? 4 : undefined,
     };
@@ -79,40 +88,32 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragMode || !svgRef.current) return;
+    if (!dragMode || !svgRef.current || !selectedId) return;
     const pos = getMousePos(e);
-
-    if (dragMode.type === 'pan') {
-      // Pan logic is handled by the container usually, but here we update viewPos
-      return;
-    }
-
-    if (!selectedId) return;
 
     setElements(prev => prev.map(el => {
       if (el.id !== selectedId) return el;
+      const pts = getElementPoints(el);
 
       if (dragMode.type === 'vertex' && dragMode.index !== undefined) {
-        const newPoints = [...el.points];
+        const newPoints = [...pts];
         newPoints[dragMode.index] = { x: snap(pos.x), y: snap(pos.y) };
         return { ...el, points: newPoints };
       }
 
       if (dragMode.type === 'move') {
-        // Simple move logic: offset all points
-        // For simplicity in this version, we'll just move the whole shape based on center
-        const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
-        const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
         const dx = snap(pos.x) - centerX;
         const dy = snap(pos.y) - centerY;
-        return { ...el, points: el.points.map(p => ({ x: p.x + dx, y: p.y + dy })) };
+        return { ...el, points: pts.map(p => ({ x: p.x + dx, y: p.y + dy })) };
       }
 
       if (dragMode.type === 'rotate') {
-        const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
-        const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
         const angle = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI);
-        return { ...el, rotation: angle + 90 };
+        return { ...el, rotation: angle + 90, points: pts };
       }
 
       return el;
@@ -137,7 +138,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
-      {/* Toolbar */}
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2">
           {TOOLS.map((tool) => (
@@ -164,7 +164,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-hidden">
-        {/* Canvas Area */}
         <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden">
           <svg 
             ref={svgRef} 
@@ -183,14 +182,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             <rect width="100%" height="100%" fill="url(#grid-editor)" />
             
             {elements.map((el) => {
-              const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
-              const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+              const pts = getElementPoints(el);
+              const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+              const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
               const isSelected = selectedId === el.id;
 
               return (
                 <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
                   <path
-                    d={pointsToPath(el.points)}
+                    d={pointsToPath(pts)}
                     className={cn("transition-all stroke-2 cursor-move", getElementColor(el.type), isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
                     onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
                   />
@@ -201,11 +201,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     </text>
                   )}
 
-                  {/* Controls for selected element */}
                   {isSelected && (
                     <>
-                      {/* Vertex Handles */}
-                      {el.points.map((p, i) => (
+                      {pts.map((p, i) => (
                         <circle
                           key={i}
                           cx={p.x}
@@ -215,11 +213,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                           onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }}
                         />
                       ))}
-                      {/* Rotation Handle */}
-                      <line x1={centerX} y1={el.points[0].y} x2={centerX} y2={el.points[0].y - 30} className="stroke-blue-600 stroke-2" />
+                      <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
                       <circle
                         cx={centerX}
-                        cy={el.points[0].y - 30}
+                        cy={pts[0].y - 30}
                         r={8}
                         className="fill-blue-600 cursor-pointer"
                         onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
@@ -232,7 +229,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           </svg>
         </div>
 
-        {/* Properties Panel */}
         <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
           <h3 className="font-black text-xl border-b pb-4 text-slate-800">خصائص العنصر</h3>
           {selectedId ? (
@@ -258,14 +254,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           ) : (
             <div className="text-center py-20 text-slate-400"><p className="font-bold">حدد عنصراً من الخريطة لتعديله</p></div>
           )}
-          
-          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-            <p className="text-xs font-bold text-blue-600 leading-relaxed">
-              • اسحب العنصر لتحريكه.<br/>
-              • اسحب النقاط البيضاء لتغيير شكل العنصر بحرية.<br/>
-              • اسحب الدائرة الزرقاء العلوية للتدوير الحر.
-            </p>
-          </div>
         </div>
       </div>
     </div>
