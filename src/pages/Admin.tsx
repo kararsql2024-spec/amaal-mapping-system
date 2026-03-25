@@ -4,13 +4,17 @@ import React, { useState } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 
-const Admin = () => {
-  const [projects, setProjects] = useState<Project[]>([]);
+interface AdminProps {
+  projects: Project[];
+  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+}
+
+const Admin = ({ projects, setProjects }: AdminProps) => {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -28,6 +32,11 @@ const Admin = () => {
     setNewProjectName('');
     setIsCreating(false);
     showSuccess('تم إنشاء المشروع بنجاح');
+  };
+
+  const handleDeleteProject = (id: string) => {
+    setProjects(projects.filter(p => p.id !== id));
+    showSuccess('تم حذف المشروع');
   };
 
   const handleSaveMap = (elements: MapElement[]) => {
@@ -123,13 +132,23 @@ const Admin = () => {
                         <p className="text-sm text-slate-500">{project.elements.length} وحدة سكنية</p>
                       </div>
                     </div>
-                    <Button 
-                      onClick={() => setEditingProject(project)}
-                      className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"
-                    >
-                      <Settings2 size={16} />
-                      تعديل المخطط
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteProject(project.id)}
+                        className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                      >
+                        <Trash2 size={18} />
+                      </Button>
+                      <Button 
+                        onClick={() => setEditingProject(project)}
+                        className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"
+                      >
+                        <Settings2 size={16} />
+                        تعديل المخطط
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}

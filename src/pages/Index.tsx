@@ -1,18 +1,35 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import InteractiveMap from '@/components/InteractiveMap';
 import HouseDetailsModal from '@/components/HouseDetailsModal';
 import { showSuccess } from '@/utils/toast';
-import { Map as MapIcon, LayoutGrid, List, Settings } from 'lucide-react';
+import { Map as MapIcon, LayoutGrid, List, Settings, ChevronDown } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Project } from '@/types/project';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-const Index = () => {
-  const [selectedHouseId, setSelectedHouseId] = React.useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [housesData, setHousesData] = React.useState<Record<string, any>>({});
+interface IndexProps {
+  projects: Project[];
+  housesData: Record<string, any>;
+  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+}
+
+const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    projects.length > 0 ? projects[0].id : null
+  );
+  const [selectedHouseId, setSelectedHouseId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const activeProject = projects.find(p => p.id === selectedProjectId);
 
   const handleHouseClick = (id: string) => {
     setSelectedHouseId(id);
@@ -25,7 +42,7 @@ const Index = () => {
         ...prev,
         [selectedHouseId]: data
       }));
-      showSuccess(`تم حفظ تفاصيل العقار #${selectedHouseId} بنجاح`);
+      showSuccess(`تم حفظ البيانات بنجاح`);
       setIsModalOpen(false);
     }
   };
@@ -46,16 +63,27 @@ const Index = () => {
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-              <button className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm text-blue-600 font-bold transition-all">
-                <LayoutGrid className="w-4 h-4" />
-                <span>عرض الخريطة</span>
-              </button>
-              <button className="flex items-center gap-2 px-4 py-2 text-slate-500 font-bold hover:bg-white/50 rounded-xl transition-all">
-                <List className="w-4 h-4" />
-                <span>قائمة العقارات</span>
-              </button>
-            </div>
+            {projects.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">
+                    {activeProject?.name || "اختر المشروع"}
+                    <ChevronDown size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="rounded-xl">
+                  {projects.map(p => (
+                    <DropdownMenuItem 
+                      key={p.id} 
+                      onClick={() => setSelectedProjectId(p.id)}
+                      className="text-right font-bold"
+                    >
+                      {p.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Link to="/admin">
               <Button variant="outline" className="rounded-xl gap-2 border-slate-200">
                 <Settings size={18} />
@@ -69,29 +97,44 @@ const Index = () => {
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Map Section */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white p-4 rounded-[2.5rem] shadow-xl border border-slate-100">
-              <InteractiveMap 
-                onHouseClick={handleHouseClick} 
-                selectedHouseId={selectedHouseId}
-                housesData={housesData}
-              />
-            </div>
+            {activeProject ? (
+              <div className="bg-white p-4 rounded-[2.5rem] shadow-xl border border-slate-100">
+                <InteractiveMap 
+                  elements={activeProject.elements}
+                  onHouseClick={handleHouseClick} 
+                  selectedHouseId={selectedHouseId}
+                  housesData={housesData}
+                />
+              </div>
+            ) : (
+              <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center">
+                <MapIcon className="mx-auto mb-4 opacity-10" size={80} />
+                <h2 className="text-xl font-bold text-slate-400">يرجى إنشاء مشروع من لوحة الإدارة أولاً</h2>
+                <Link to="/admin" className="mt-4 inline-block text-blue-600 font-bold hover:underline">
+                  انتقل للوحة الإدارة
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Stats/Sidebar */}
           <div className="space-y-6">
             <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
-              <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات المخطط</h3>
+              <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات {activeProject?.name || "المشروع"}</h3>
               <div className="space-y-4">
-                <StatItem label="إجمالي الوحدات" value="8" color="bg-blue-500" />
+                <StatItem 
+                  label="إجمالي الوحدات" 
+                  value={activeProject?.elements.length.toString() || "0"} 
+                  color="bg-blue-500" 
+                />
                 <StatItem 
                   label="الوحدات المباعة" 
-                  value={Object.values(housesData).filter(h => h.status === 'sold').length.toString()} 
+                  value={activeProject?.elements.filter(el => housesData[el.id]?.status === 'sold').length.toString() || "0"} 
                   color="bg-rose-500" 
                 />
                 <StatItem 
                   label="الوحدات المتاحة" 
-                  value={(8 - Object.values(housesData).filter(h => h.status === 'sold').length).toString()} 
+                  value={activeProject?.elements.filter(el => !housesData[el.id] || housesData[el.id]?.status === 'available').length.toString() || "0"} 
                   color="bg-emerald-500" 
                 />
               </div>
