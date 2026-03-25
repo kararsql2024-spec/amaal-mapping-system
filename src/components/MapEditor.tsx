@@ -1,9 +1,12 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
-import { MapElement } from '@/types/project';
+import React, { useState, useRef, useEffect } from 'react';
+import { MapElement, ElementType } from '@/types/project';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, Save, MousePointer2, Square } from 'lucide-react';
+import { 
+  Trash2, Save, MousePointer2, Home, 
+  Building2, TreeDeciduous, MoveRight, Coffee 
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MapEditorProps {
@@ -11,15 +14,23 @@ interface MapEditorProps {
   onSave: (elements: MapElement[]) => void;
 }
 
+const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
+  { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
+  { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
+  { type: 'road', label: 'طريق', icon: MoveRight, color: 'bg-gray-400' },
+  { type: 'green', label: 'مساحة خضراء', icon: TreeDeciduous, color: 'bg-emerald-500' },
+  { type: 'amenity', label: 'مرفق', icon: Coffee, color: 'bg-amber-500' },
+];
+
 const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTool, setActiveTool] = useState<ElementType>('house');
+  const [isDragging, setIsDragging] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
-    
-    // Only add if clicking the background, not an existing element
+    if (!svgRef.current || isDragging) return;
     if (e.target !== svgRef.current) return;
 
     const pt = svgRef.current.createSVGPoint();
@@ -27,144 +38,214 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
     pt.y = e.clientY;
     const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
 
+    const defaults = {
+      house: { w: 40, h: 40 },
+      tower: { w: 50, h: 70 },
+      road: { w: 100, h: 20 },
+      green: { w: 80, h: 60 },
+      amenity: { w: 40, h: 40 },
+    };
+
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
-      x: Math.round(svgP.x - 25),
-      y: Math.round(svgP.y - 20),
-      width: 50,
-      height: 40,
-      type: 'house',
-      label: (elements.length + 1).toString(),
-      status: 'available'
+      x: Math.round(svgP.x - defaults[activeTool].w / 2),
+      y: Math.round(svgP.y - defaults[activeTool].h / 2),
+      width: defaults[activeTool].w,
+      height: defaults[activeTool].h,
+      type: activeTool,
+      label: activeTool === 'house' ? (elements.filter(el => el.type === 'house').length + 1).toString() : '',
+      status: activeTool === 'road' || activeTool === 'green' ? 'public' : 'available'
     };
 
     setElements([...elements, newElement]);
     setSelectedId(newElement.id);
   };
 
-  const deleteElement = (id: string) => {
-    setElements(elements.filter(el => el.id !== id));
-    setSelectedId(null);
+  const handleMouseDown = (id: string) => {
+    setSelectedId(id);
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !selectedId || !svgRef.current) return;
+
+    const pt = svgRef.current.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
+
+    setElements(prev => prev.map(el => {
+      if (el.id === selectedId) {
+        return {
+          ...el,
+          x: Math.round(svgP.x - el.width / 2),
+          y: Math.round(svgP.y - el.height / 2)
+        };
+      }
+      return el;
+    }));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
   };
 
   const updateElement = (id: string, updates: Partial<MapElement>) => {
     setElements(elements.map(el => el.id === id ? { ...el, ...updates } : el));
   };
 
+  const getElementColor = (type: ElementType) => {
+    switch (type) {
+      case 'house': return 'fill-white stroke-blue-400';
+      case 'tower': return 'fill-slate-200 stroke-slate-600';
+      case 'road': return 'fill-gray-300 stroke-gray-400';
+      case 'green': return 'fill-emerald-100 stroke-emerald-500';
+      case 'amenity': return 'fill-amber-50 stroke-amber-500';
+      default: return 'fill-white stroke-slate-300';
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-4 h-full" dir="rtl">
-      <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold">
-            <MousePointer2 size={16} />
-            <span>انقر على الخريطة لإضافة وحدة</span>
-          </div>
+    <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2">
+          {TOOLS.map((tool) => (
+            <button
+              key={tool.type}
+              onClick={() => setActiveTool(tool.type)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                activeTool === tool.type 
+                  ? `${tool.color} text-white shadow-lg scale-105` 
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              )}
+            >
+              <tool.icon size={18} />
+              <span className="hidden md:inline">{tool.label}</span>
+            </button>
+          ))}
         </div>
-        <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
+        <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
           <Save size={18} />
-          حفظ المخطط
+          حفظ المخطط النهائي
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-[500px]">
-        <div className="lg:col-span-3 relative bg-slate-100 rounded-[2rem] border-4 border-white shadow-inner overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-hidden">
+        {/* Canvas */}
+        <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden">
           <svg
             ref={svgRef}
-            viewBox="0 0 800 600"
+            viewBox="0 0 1000 800"
             className="w-full h-full cursor-crosshair"
             onClick={handleCanvasClick}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
           >
             <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1"/>
+              <pattern id="grid-editor" width="50" height="50" patternUnits="userSpaceOnUse">
+                <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="1"/>
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
+            <rect width="100%" height="100%" fill="url(#grid-editor)" />
             
             {elements.map((el) => (
               <g 
                 key={el.id} 
-                onClick={(e) => {
+                onMouseDown={(e) => {
                   e.stopPropagation();
-                  setSelectedId(el.id);
+                  handleMouseDown(el.id);
                 }}
-                className="cursor-move"
+                className="cursor-move group"
               >
                 <rect
                   x={el.x}
                   y={el.y}
                   width={el.width}
                   height={el.height}
-                  rx="4"
+                  rx={el.type === 'road' ? 0 : 6}
                   className={cn(
-                    "fill-white stroke-2 transition-all",
-                    selectedId === el.id ? "stroke-blue-500 fill-blue-50" : "stroke-slate-300"
+                    "transition-all stroke-2",
+                    getElementColor(el.type),
+                    selectedId === el.id && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg"
                   )}
                 />
-                <text
-                  x={el.x + el.width / 2}
-                  y={el.y + el.height / 2}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  className="text-[10px] font-bold fill-slate-600 pointer-events-none"
-                >
-                  {el.label}
-                </text>
+                {el.label && (
+                  <text
+                    x={el.x + el.width / 2}
+                    y={el.y + el.height / 2}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    className="text-[12px] font-black fill-slate-700 pointer-events-none select-none"
+                  >
+                    {el.label}
+                  </text>
+                )}
               </g>
             ))}
           </svg>
         </div>
 
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm space-y-6">
-          <h3 className="font-bold text-lg border-b pb-4">خصائص العنصر</h3>
+        {/* Properties Sidebar */}
+        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
+          <h3 className="font-black text-xl border-b pb-4 text-slate-800">خصائص العنصر</h3>
           {selectedId ? (
-            <div className="space-y-4">
+            <div className="space-y-5">
               {elements.find(el => el.id === selectedId) && (
                 <>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">رقم/اسم الوحدة</label>
+                    <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
                     <input 
                       type="text"
-                      className="w-full p-2 rounded-lg border border-slate-200"
+                      className="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
                       value={elements.find(el => el.id === selectedId)?.label}
                       onChange={(e) => updateElement(selectedId, { label: e.target.value })}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">العرض</label>
+                      <label className="text-sm font-bold text-slate-500">العرض</label>
                       <input 
                         type="number"
-                        className="w-full p-2 rounded-lg border border-slate-200"
+                        className="w-full p-3 rounded-xl border border-slate-200"
                         value={elements.find(el => el.id === selectedId)?.width}
-                        onChange={(e) => updateElement(selectedId, { width: parseInt(e.target.value) })}
+                        onChange={(e) => updateElement(selectedId, { width: parseInt(e.target.value) || 0 })}
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">الطول</label>
+                      <label className="text-sm font-bold text-slate-500">الطول</label>
                       <input 
                         type="number"
-                        className="w-full p-2 rounded-lg border border-slate-200"
+                        className="w-full p-3 rounded-xl border border-slate-200"
                         value={elements.find(el => el.id === selectedId)?.height}
-                        onChange={(e) => updateElement(selectedId, { height: parseInt(e.target.value) })}
+                        onChange={(e) => updateElement(selectedId, { height: parseInt(e.target.value) || 0 })}
                       />
                     </div>
                   </div>
-                  <Button 
-                    variant="destructive" 
-                    className="w-full gap-2"
-                    onClick={() => deleteElement(selectedId)}
-                  >
-                    <Trash2 size={16} />
-                    حذف العنصر
-                  </Button>
+                  <div className="pt-4">
+                    <Button 
+                      variant="destructive" 
+                      className="w-full gap-2 rounded-xl h-12 font-bold"
+                      onClick={() => {
+                        setElements(elements.filter(el => el.id !== selectedId));
+                        setSelectedId(null);
+                      }}
+                    >
+                      <Trash2 size={18} />
+                      حذف العنصر
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
           ) : (
-            <div className="text-center py-12 text-slate-400">
-              <Square className="mx-auto mb-2 opacity-20" size={48} />
-              <p>حدد عنصراً لتعديله</p>
+            <div className="text-center py-20 text-slate-400">
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MousePointer2 size={32} className="opacity-20" />
+              </div>
+              <p className="font-bold">حدد عنصراً من الخريطة لتعديله</p>
             </div>
           )}
         </div>

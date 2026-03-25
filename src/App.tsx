@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
@@ -12,8 +12,25 @@ import { Project } from "./types/project";
 const queryClient = new QueryClient();
 
 const App = () => {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [housesData, setHousesData] = useState<Record<string, any>>({});
+  // Load initial state from localStorage
+  const [projects, setProjects] = useState<Project[]>(() => {
+    const saved = localStorage.getItem('real-estate-projects');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [housesData, setHousesData] = useState<Record<string, any>>(() => {
+    const saved = localStorage.getItem('real-estate-houses');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  // Save to localStorage whenever state changes
+  useEffect(() => {
+    localStorage.setItem('real-estate-projects', JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem('real-estate-houses', JSON.stringify(housesData));
+  }, [housesData]);
 
   return (
     <QueryClientProvider client={queryClient}>
