@@ -1,13 +1,5 @@
 export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity';
 
-export interface Apartment {
-  id: string;
-  number: string;
-  floor: number;
-  status: 'available' | 'sold' | 'pending' | 'reserved';
-  details?: any;
-}
-
 export interface MapElement {
   id: string;
   x: number;
@@ -16,7 +8,7 @@ export interface MapElement {
   height: number;
   type: ElementType;
   label: string;
-  // بيانات خاصة بالبرج
+  rotation?: number; // زاوية الدوران بالدرجات
   floors?: number;
   apartmentsPerFloor?: number;
 }

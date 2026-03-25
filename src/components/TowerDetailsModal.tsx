@@ -39,7 +39,8 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     }
   };
 
-  const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor}`;
+  // المنطق المطلوب: الطابق 1 هو الأرضي، الطابق 2 هو الطابق 1
+  const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor - 1}`;
 
   return (
     <>
