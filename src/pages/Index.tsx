@@ -4,8 +4,10 @@ import React from 'react';
 import InteractiveMap from '@/components/InteractiveMap';
 import HouseDetailsModal from '@/components/HouseDetailsModal';
 import { showSuccess } from '@/utils/toast';
-import { Map as MapIcon, LayoutGrid, List } from 'lucide-react';
+import { Map as MapIcon, LayoutGrid, List, Settings } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 const Index = () => {
   const [selectedHouseId, setSelectedHouseId] = React.useState<string | null>(null);
@@ -43,15 +45,23 @@ const Index = () => {
             </div>
           </div>
           
-          <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-            <button className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm text-blue-600 font-bold transition-all">
-              <LayoutGrid className="w-4 h-4" />
-              <span>عرض الخريطة</span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-slate-500 font-bold hover:bg-white/50 rounded-xl transition-all">
-              <List className="w-4 h-4" />
-              <span>قائمة العقارات</span>
-            </button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+              <button className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm text-blue-600 font-bold transition-all">
+                <LayoutGrid className="w-4 h-4" />
+                <span>عرض الخريطة</span>
+              </button>
+              <button className="flex items-center gap-2 px-4 py-2 text-slate-500 font-bold hover:bg-white/50 rounded-xl transition-all">
+                <List className="w-4 h-4" />
+                <span>قائمة العقارات</span>
+              </button>
+            </div>
+            <Link to="/admin">
+              <Button variant="outline" className="rounded-xl gap-2 border-slate-200">
+                <Settings size={18} />
+                لوحة الإدارة
+              </Button>
+            </Link>
           </div>
         </header>
 
