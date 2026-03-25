@@ -31,7 +31,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType>('house');
-  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'rotate' | 'pan', index?: number } | null>(null);
+  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan', index?: number } | null>(null);
   const [gridLock, setGridLock] = useState(true);
   
   const [scale, setScale] = useState(1);
@@ -101,6 +101,22 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         return { ...el, points: newPoints };
       }
 
+      if (dragMode.type === 'edge' && dragMode.index !== undefined) {
+        const idx1 = dragMode.index;
+        const idx2 = (dragMode.index + 1) % pts.length;
+        
+        // Calculate delta from the midpoint of the edge
+        const midX = (pts[idx1].x + pts[idx2].x) / 2;
+        const midY = (pts[idx1].y + pts[idx2].y) / 2;
+        const dx = snap(pos.x) - midX;
+        const dy = snap(pos.y) - midY;
+
+        const newPoints = [...pts];
+        newPoints[idx1] = { x: pts[idx1].x + dx, y: pts[idx1].y + dy };
+        newPoints[idx2] = { x: pts[idx2].x + dx, y: pts[idx2].y + dy };
+        return { ...el, points: newPoints };
+      }
+
       if (dragMode.type === 'move') {
         const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
         const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
@@ -120,6 +136,28 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     }));
   };
 
+  const handleSizeChange = (id: string, dimension: 'width' | 'height', newVal: number) => {
+    setElements(prev => prev.map(el => {
+      if (el.id !== id) return el;
+      const pts = getElementPoints(el);
+      const minX = Math.min(...pts.map(p => p.x));
+      const maxX = Math.max(...pts.map(p => p.x));
+      const minY = Math.min(...pts.map(p => p.y));
+      const maxY = Math.max(...pts.map(p => p.y));
+      
+      const currentW = maxX - minX;
+      const currentH = maxY - minY;
+
+      if (dimension === 'width') {
+        const ratio = newVal / (currentW || 1);
+        return { ...el, points: pts.map(p => ({ x: minX + (p.x - minX) * ratio, y: p.y })) };
+      } else {
+        const ratio = newVal / (currentH || 1);
+        return { ...el, points: pts.map(p => ({ x: p.x, y: minY + (p.y - minY) * ratio })) };
+      }
+    }));
+  };
+
   const pointsToPath = (points: Point[]) => {
     if (!points || points.length === 0) return "";
     return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + " Z";
@@ -135,6 +173,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       default: return 'fill-white stroke-slate-300';
     }
   };
+
+  const selectedElement = elements.find(el => el.id === selectedId);
+  const selectedPts = selectedElement ? getElementPoints(selectedElement) : [];
+  const boundingBox = selectedPts.length > 0 ? {
+    w: Math.round(Math.max(...selectedPts.map(p => p.x)) - Math.min(...selectedPts.map(p => p.x))),
+    h: Math.round(Math.max(...selectedPts.map(p => p.y)) - Math.min(...selectedPts.map(p => p.y)))
+  } : { w: 0, h: 0 };
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
@@ -203,21 +248,33 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
                   {isSelected && (
                     <>
+                      {/* Edge Handles (Draggable lines) */}
+                      {pts.map((p, i) => {
+                        const nextP = pts[(i + 1) % pts.length];
+                        return (
+                          <line
+                            key={`edge-${i}`}
+                            x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y}
+                            className="stroke-blue-400/50 stroke-[8px] cursor-move hover:stroke-blue-500/80 transition-all"
+                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i }); }}
+                          />
+                        );
+                      })}
+                      
+                      {/* Vertex Handles */}
                       {pts.map((p, i) => (
                         <circle
-                          key={i}
-                          cx={p.x}
-                          cy={p.y}
-                          r={6}
+                          key={`vertex-${i}`}
+                          cx={p.x} cy={p.y} r={6}
                           className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
                           onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }}
                         />
                       ))}
+                      
+                      {/* Rotation Handle */}
                       <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
                       <circle
-                        cx={centerX}
-                        cy={pts[0].y - 30}
-                        r={8}
+                        cx={centerX} cy={pts[0].y - 30} r={8}
                         className="fill-blue-600 cursor-pointer"
                         onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
                       />
@@ -231,29 +288,44 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
         <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
           <h3 className="font-black text-xl border-b pb-4 text-slate-800">خصائص العنصر</h3>
-          {selectedId ? (
+          {selectedId && selectedElement ? (
             <div className="space-y-5">
-              {elements.find(el => el.id === selectedId) && (
-                <>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
-                    <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={elements.find(el => el.id === selectedId)?.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
-                  </div>
-                  
-                  {elements.find(el => el.id === selectedId)?.type === 'tower' && (
-                    <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عدد الطوابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={elements.find(el => el.id === selectedId)?.floors} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, floors: parseInt(e.target.value)} : el))} /></div>
-                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">شقق/طابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={elements.find(el => el.id === selectedId)?.apartmentsPerFloor} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, apartmentsPerFloor: parseInt(e.target.value)} : el))} /></div>
-                    </div>
-                  )}
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
+                <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={selectedElement.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
+              </div>
 
-                  <Button variant="destructive" className="w-full gap-2 rounded-xl h-12 font-bold" onClick={() => { setElements(elements.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button>
-                </>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-500">العرض (px)</label>
+                  <input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={boundingBox.w} onChange={(e) => handleSizeChange(selectedId, 'width', parseInt(e.target.value) || 1)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-500">الطول (px)</label>
+                  <input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={boundingBox.h} onChange={(e) => handleSizeChange(selectedId, 'height', parseInt(e.target.value) || 1)} />
+                </div>
+              </div>
+              
+              {selectedElement.type === 'tower' && (
+                <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عدد الطوابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={selectedElement.floors} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, floors: parseInt(e.target.value)} : el))} /></div>
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">شقق/طابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={selectedElement.apartmentsPerFloor} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, apartmentsPerFloor: parseInt(e.target.value)} : el))} /></div>
+                </div>
               )}
+
+              <Button variant="destructive" className="w-full gap-2 rounded-xl h-12 font-bold" onClick={() => { setElements(elements.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button>
             </div>
           ) : (
             <div className="text-center py-20 text-slate-400"><p className="font-bold">حدد عنصراً من الخريطة لتعديله</p></div>
           )}
+          
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+            <p className="text-xs font-bold text-blue-600 leading-relaxed">
+              • اسحب النقاط لتعديل الزوايا.<br/>
+              • اسحب الأضلاع (الخطوط) لتحريك الضلع بالكامل.<br/>
+              • استخدم حقول العرض والطول لتغيير الحجم بدقة.
+            </p>
+          </div>
         </div>
       </div>
     </div>
