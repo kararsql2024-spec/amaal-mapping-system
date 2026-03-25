@@ -1,4 +1,3 @@
-D3) عند تكرار المنازل.">
 "use client";
 
 import React, { useState, useRef } from 'react';
