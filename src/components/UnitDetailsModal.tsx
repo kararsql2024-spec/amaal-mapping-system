@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, User, Phone, MapPin, Info, Building2 } from "lucide-react";
+import { Home, User, Phone, Info, Building2, Snowflake } from "lucide-react";
 
 interface UnitDetailsModalProps {
   isOpen: boolean;
@@ -33,7 +33,6 @@ interface UnitDetailsModalProps {
 const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, isApartment }: UnitDetailsModalProps) => {
   const [formData, setFormData] = React.useState({
     status: 'available',
-    address: '',
     name: '',
     phone: '',
     details: '',
@@ -45,7 +44,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     } else {
       setFormData({
         status: 'available',
-        address: '',
         name: '',
         phone: '',
         details: '',
@@ -59,6 +57,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   };
 
   const isAvailable = formData.status === 'available';
+  const isFrozen = formData.status.startsWith('frozen');
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -85,11 +84,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <SelectItem value="pending">حجز أولي</SelectItem>
                 <SelectItem value="reserved">محجوز</SelectItem>
                 <SelectItem value="sold">مباع</SelectItem>
+                <SelectItem value="frozen_counted">تجميد (محسوب في المجموع)</SelectItem>
+                <SelectItem value="frozen_uncounted">تجميد (غير محسوب في المجموع)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {!isAvailable && (
+          {(!isAvailable && !isFrozen) && (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="space-y-2">
                 <Label className="text-right block font-bold text-slate-600">الاسم الكامل</Label>
@@ -117,18 +118,20 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                   />
                 </div>
               </div>
+            </div>
+          )}
 
-              <div className="space-y-2">
-                <Label className="text-right block font-bold text-slate-600">ملاحظات إضافية</Label>
-                <div className="relative">
-                  <Info className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                  <Input 
-                    className="pr-10 rounded-xl h-12 border-slate-200"
-                    placeholder="أي تفاصيل أخرى..."
-                    value={formData.details}
-                    onChange={(e) => setFormData({...formData, details: e.target.value})}
-                  />
-                </div>
+          {(isFrozen || !isAvailable) && (
+            <div className="space-y-2">
+              <Label className="text-right block font-bold text-slate-600">ملاحظات / سبب التجميد</Label>
+              <div className="relative">
+                <Info className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                <Input 
+                  className="pr-10 rounded-xl h-12 border-slate-200"
+                  placeholder="أي تفاصيل أخرى..."
+                  value={formData.details}
+                  onChange={(e) => setFormData({...formData, details: e.target.value})}
+                />
               </div>
             </div>
           )}

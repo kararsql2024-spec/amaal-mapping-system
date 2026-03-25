@@ -61,8 +61,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'green') return { fill: '#d1fae5', stroke: '#10b981', opacity: 1 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1 };
     
-    // منطق المنازل: الأخضر هو الافتراضي للمتوفر
     if (el.type === 'house') {
+      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1 };
       if (!data || data.status === 'available') return { fill: '#10b981', stroke: '#059669', opacity: 1 };
       if (data.status === 'sold') return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1 };
       if (data.status === 'reserved') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1 };

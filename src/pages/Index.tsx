@@ -44,19 +44,36 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showSuccess(`تم تحديث البيانات بنجاح`);
   };
 
-  // Calculate Stats
-  const totalHouses = activeProject?.elements.filter(el => el.type === 'house').length || 0;
-  const totalTowerApts = activeProject?.elements.filter(el => el.type === 'tower').reduce((acc, el) => acc + (el.floors! * el.apartmentsPerFloor!), 0) || 0;
-  const totalUnits = totalHouses + totalTowerApts;
+  // حساب الإحصائيات مع مراعاة التجميد
+  const calculateStats = () => {
+    if (!activeProject) return { total: 0, sold: 0 };
+    
+    let total = 0;
+    let sold = 0;
 
-  const soldUnits = Object.entries(housesData).filter(([key, data]) => {
-    const isProjectUnit = activeProject?.elements.some(el => {
-      if (el.type === 'house') return el.id === key;
-      if (el.type === 'tower') return key.startsWith(el.id);
-      return false;
+    activeProject.elements.forEach(el => {
+      if (el.type === 'house') {
+        const data = housesData[el.id];
+        if (data?.status !== 'frozen_uncounted') total++;
+        if (data?.status === 'sold') sold++;
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 0;
+        const aptsPerFloor = el.apartmentsPerFloor || 0;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            const data = housesData[key];
+            if (data?.status !== 'frozen_uncounted') total++;
+            if (data?.status === 'sold') sold++;
+          }
+        }
+      }
     });
-    return isProjectUnit && data.status === 'sold';
-  }).length;
+
+    return { total, sold };
+  };
+
+  const stats = calculateStats();
 
   return (
     <div className="min-h-screen bg-[#f0f4f8] p-4 md:p-8" dir="rtl">
@@ -101,9 +118,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
               <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات {activeProject?.name}</h3>
               <div className="space-y-4">
-                <StatItem label="إجمالي الوحدات" value={totalUnits.toString()} color="bg-blue-500" />
-                <StatItem label="الوحدات المباعة" value={soldUnits.toString()} color="bg-rose-500" />
-                <StatItem label="الوحدات المتاحة" value={(totalUnits - soldUnits).toString()} color="bg-emerald-500" />
+                <StatItem label="إجمالي الوحدات" value={stats.total.toString()} color="bg-blue-500" />
+                <StatItem label="الوحدات المباعة" value={stats.sold.toString()} color="bg-rose-500" />
+                <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold).toString()} color="bg-emerald-500" />
               </div>
             </div>
           </div>

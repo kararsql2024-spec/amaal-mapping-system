@@ -1,3 +1,4 @@
+D3) عند تكرار المنازل.">
 "use client";
 
 import React, { useState, useRef } from 'react';
@@ -5,7 +6,7 @@ import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, TreeDeciduous, 
-  MoveRight, Coffee, Grid3X3, Copy, ArrowDown, ArrowLeft,
+  MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
   ZoomIn, ZoomOut, RotateCcw, Type
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -70,8 +71,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
       type: activeTool,
-      label: activeTool === 'house' ? `H${elements.filter(el => el.type === 'house').length + 1}` : 
-             activeTool === 'tower' ? `T${elements.filter(el => el.type === 'tower').length + 1}` : 
+      label: activeTool === 'house' ? `D1` : 
+             activeTool === 'tower' ? `T1` : 
              activeTool === 'label_area' ? 'منطقة جديدة' : '',
       points: [
         { x: snap(pos.x - w/2), y: snap(pos.y - h/2) },
@@ -105,11 +106,20 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
     const offset = direction === 'right' ? { x: w + 10, y: 0 } : { x: 0, y: h + 10 };
 
+    // منطق التسمية الفردية: D1 -> D3 -> D5
+    let newLabel = el.label;
+    const match = el.label.match(/(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1]);
+      const prefix = el.label.substring(0, match.index);
+      newLabel = `${prefix}${num + 2}`;
+    }
+
     const newElement: MapElement = {
       ...el,
       id: Math.random().toString(36).substr(2, 9),
       points: pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y })),
-      label: el.type === 'house' ? `H${elements.filter(e => e.type === 'house').length + 1}` : el.label
+      label: newLabel
     };
 
     setElements([...elements, newElement]);
@@ -222,7 +232,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     maxX: Math.max(...selectedPts.map(p => p.x))
   } : { w: 0, h: 0, minY: 0, minX: 0, maxX: 0 };
 
-  // ترتيب العناصر: مناطق التسمية أولاً (في الأسفل)
   const sortedElements = [...elements].sort((a, b) => {
     if (a.type === 'label_area' && b.type !== 'label_area') return -1;
     if (a.type !== 'label_area' && b.type === 'label_area') return 1;
@@ -280,7 +289,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
               const isSelected = selectedId === el.id;
               
-              // حساب أعلى نقطة في المنتصف للنص
               const minY = Math.min(...pts.map(p => p.y));
               const minX = Math.min(...pts.map(p => p.x));
               const maxX = Math.max(...pts.map(p => p.x));
@@ -367,19 +375,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   <input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={boundingBox.h} onChange={(e) => handleSizeChange(selectedId, 'height', parseInt(e.target.value) || 1)} />
                 </div>
               </div>
-
-              {selectedElement.type === 'label_area' && (
-                <div className="space-y-4 p-4 bg-purple-50 rounded-2xl border border-purple-100">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-purple-700">لون المنطقة</label>
-                    <input type="color" className="w-full h-10 rounded-lg cursor-pointer" value={selectedElement.color || '#a855f7'} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, color: e.target.value} : el))} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-purple-700">الشفافية ({Math.round((selectedElement.opacity || 0.2) * 100)}%)</label>
-                    <input type="range" min="0" max="1" step="0.1" className="w-full" value={selectedElement.opacity || 0.2} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, opacity: parseFloat(e.target.value)} : el))} />
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-500">تكرار العنصر</label>
