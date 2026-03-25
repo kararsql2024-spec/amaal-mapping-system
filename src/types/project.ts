@@ -1,16 +1,24 @@
 export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity';
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface MapElement {
   id: string;
-  x: number;
+  type: ElementType;
+  label: string;
+  points: Point[]; // مصفوفة نقاط تشكل المضلع
+  rotation: number;
+  // بيانات إضافية للأبراج
+  floors?: number;
+  apartmentsPerFloor?: number;
+  // للحفاظ على التوافق مع الكود القديم مؤقتاً أو للعمليات الحسابية
+  x: number; 
   y: number;
   width: number;
   height: number;
-  type: ElementType;
-  label: string;
-  rotation?: number; // زاوية الدوران بالدرجات
-  floors?: number;
-  apartmentsPerFloor?: number;
 }
 
 export interface Project {

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { cn } from "@/lib/utils";
-import { MapElement } from '@/types/project';
+import { MapElement, Point } from '@/types/project';
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 interface InteractiveMapProps {
@@ -37,6 +37,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
+  const pointsToPath = (points: Point[]) => {
+    if (!points || points.length === 0) return "";
+    return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + " Z";
+  };
+
   const getElementStyles = (el: MapElement) => {
     const data = housesData[el.id];
     if (el.type === 'road') return { fill: 'fill-gray-300', stroke: 'none' };
@@ -66,20 +71,27 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
           <g filter="url(#road-merge-view)">
-            {elements.filter(el => el.type === 'road').map(el => (
-              <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} className="fill-gray-300" />
-            ))}
+            {elements.filter(el => el.type === 'road').map(el => {
+              const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
+              const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+              return (
+                <path key={el.id} d={pointsToPath(el.points)} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`} className="fill-gray-300" />
+              );
+            })}
           </g>
 
           {elements.filter(el => el.type !== 'road').map((el) => {
             const styles = getElementStyles(el);
             const isSelected = selectedHouseId === el.id;
             const isInteractive = el.type === 'house' || el.type === 'tower';
+            const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
+            const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+
             return (
-              <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")}>
-                <rect x={el.x} y={el.y} width={el.width} height={el.height} rx={6} transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} className={cn("transition-all duration-300 stroke-2", styles.fill, styles.stroke, isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+              <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                <path d={pointsToPath(el.points)} className={cn("transition-all duration-300 stroke-2", styles.fill, styles.stroke, isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
                 {el.label && (
-                  <text x={el.x + el.width / 2} y={el.y + el.height / 2} textAnchor="middle" dominantBaseline="middle" transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} className={cn("text-[12px] font-black pointer-events-none select-none", el.type === 'tower' || housesData[el.id] ? "fill-white" : "fill-slate-500")}>
+                  <text x={centerX} y={centerY} textAnchor="middle" dominantBaseline="middle" className={cn("text-[12px] font-black pointer-events-none select-none", el.type === 'tower' || housesData[el.id] ? "fill-white" : "fill-slate-500")}>
                     {el.label}
                   </text>
                 )}

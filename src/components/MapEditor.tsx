@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
-import { MapElement, ElementType } from '@/types/project';
+import React, { useState, useRef, useEffect } from 'react';
+import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, TreeDeciduous, 
-  MoveRight, Coffee, Grid3X3, ArrowRight, ArrowDown,
-  RotateCw
+  MoveRight, Coffee, Grid3X3, RotateCw,
+  ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +17,7 @@ interface MapEditorProps {
   mapHeight: number;
 }
 
-const GRID_SIZE = 20;
+const GRID_SIZE = 10;
 
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
@@ -31,39 +31,45 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType>('house');
-  const [dragMode, setDragMode] = useState<'move' | 'resize' | null>(null);
+  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'rotate' | 'pan', index?: number } | null>(null);
   const [gridLock, setGridLock] = useState(true);
+  
+  // Zoom/Pan State
+  const [scale, setScale] = useState(1);
+  const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
+  
   const svgRef = useRef<SVGSVGElement>(null);
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
 
-  const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current || dragMode) return;
-    if (e.target !== svgRef.current) return;
-
+  const getMousePos = (e: React.MouseEvent) => {
+    if (!svgRef.current) return { x: 0, y: 0 };
     const pt = svgRef.current.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
     const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
+    return { x: svgP.x, y: svgP.y };
+  };
 
-    const defaults = {
-      house: { w: 40, h: 40 },
-      tower: { w: 60, h: 80 },
-      road: { w: 100, h: 20 },
-      green: { w: 80, h: 60 },
-      amenity: { w: 40, h: 40 },
-    };
-
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    if (dragMode || e.target !== svgRef.current) return;
+    
+    const pos = getMousePos(e);
+    const w = 60, h = 60;
+    
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
-      x: snap(svgP.x - defaults[activeTool].w / 2),
-      y: snap(svgP.y - defaults[activeTool].h / 2),
-      width: defaults[activeTool].w,
-      height: defaults[activeTool].h,
       type: activeTool,
       label: activeTool === 'house' ? `H${elements.filter(el => el.type === 'house').length + 1}` : 
              activeTool === 'tower' ? `T${elements.filter(el => el.type === 'tower').length + 1}` : '',
+      points: [
+        { x: snap(pos.x - w/2), y: snap(pos.y - h/2) },
+        { x: snap(pos.x + w/2), y: snap(pos.y - h/2) },
+        { x: snap(pos.x + w/2), y: snap(pos.y + h/2) },
+        { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
+      ],
       rotation: 0,
+      x: pos.x, y: pos.y, width: w, height: h, // legacy
       floors: activeTool === 'tower' ? 5 : undefined,
       apartmentsPerFloor: activeTool === 'tower' ? 4 : undefined,
     };
@@ -73,49 +79,56 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragMode || !selectedId || !svgRef.current) return;
+    if (!dragMode || !svgRef.current) return;
+    const pos = getMousePos(e);
 
-    const pt = svgRef.current.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
+    if (dragMode.type === 'pan') {
+      // Pan logic is handled by the container usually, but here we update viewPos
+      return;
+    }
+
+    if (!selectedId) return;
 
     setElements(prev => prev.map(el => {
-      if (el.id === selectedId) {
-        if (dragMode === 'move') {
-          return { ...el, x: snap(svgP.x - el.width / 2), y: snap(svgP.y - el.height / 2) };
-        } else if (dragMode === 'resize') {
-          return { ...el, width: Math.max(20, snap(svgP.x - el.x)), height: Math.max(20, snap(svgP.y - el.y)) };
-        }
+      if (el.id !== selectedId) return el;
+
+      if (dragMode.type === 'vertex' && dragMode.index !== undefined) {
+        const newPoints = [...el.points];
+        newPoints[dragMode.index] = { x: snap(pos.x), y: snap(pos.y) };
+        return { ...el, points: newPoints };
       }
+
+      if (dragMode.type === 'move') {
+        // Simple move logic: offset all points
+        // For simplicity in this version, we'll just move the whole shape based on center
+        const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
+        const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+        const dx = snap(pos.x) - centerX;
+        const dy = snap(pos.y) - centerY;
+        return { ...el, points: el.points.map(p => ({ x: p.x + dx, y: p.y + dy })) };
+      }
+
+      if (dragMode.type === 'rotate') {
+        const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
+        const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+        const angle = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI);
+        return { ...el, rotation: angle + 90 };
+      }
+
       return el;
     }));
   };
 
-  const handleDuplicate = (direction: 'right' | 'down') => {
-    const selected = elements.find(el => el.id === selectedId);
-    if (!selected) return;
-    const newElement: MapElement = {
-      ...selected,
-      id: Math.random().toString(36).substr(2, 9),
-      x: direction === 'right' ? selected.x + selected.width : selected.x,
-      y: direction === 'down' ? selected.y + selected.height : selected.y,
-      label: selected.type === 'house' ? `H${elements.filter(el => el.type === 'house').length + 1}` : 
-             selected.type === 'tower' ? `T${elements.filter(el => el.type === 'tower').length + 1}` : selected.label,
-    };
-    setElements([...elements, newElement]);
-    setSelectedId(newElement.id);
-  };
-
-  const updateElement = (id: string, updates: Partial<MapElement>) => {
-    setElements(elements.map(el => el.id === id ? { ...el, ...updates } : el));
+  const pointsToPath = (points: Point[]) => {
+    if (!points || points.length === 0) return "";
+    return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + " Z";
   };
 
   const getElementColor = (type: ElementType) => {
     switch (type) {
       case 'house': return 'fill-white stroke-blue-400';
       case 'tower': return 'fill-slate-800 stroke-slate-900';
-      case 'road': return 'fill-gray-300 stroke-none'; // الطرق بدون حدود لتسهيل الدمج
+      case 'road': return 'fill-gray-300 stroke-gray-400';
       case 'green': return 'fill-emerald-100 stroke-emerald-500';
       case 'amenity': return 'fill-amber-50 stroke-amber-500';
       default: return 'fill-white stroke-slate-300';
@@ -124,6 +137,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
+      {/* Toolbar */}
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2">
           {TOOLS.map((tool) => (
@@ -137,61 +151,88 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             <Grid3X3 size={18} />
           </Button>
         </div>
-        <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
-          <Save size={18} />
-          حفظ المخطط النهائي
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.min(s + 0.2, 5))}><ZoomIn size={18} /></Button>
+            <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.5))}><ZoomOut size={18} /></Button>
+            <Button variant="ghost" size="icon" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={18} /></Button>
+          </div>
+          <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
+            <Save size={18} /> حفظ المخطط
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-hidden">
+        {/* Canvas Area */}
         <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden">
-          <svg ref={svgRef} viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full cursor-crosshair" onClick={handleCanvasClick} onMouseMove={handleMouseMove} onMouseUp={() => setDragMode(null)} onMouseLeave={() => setDragMode(null)}>
+          <svg 
+            ref={svgRef} 
+            viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
+            className="w-full h-full cursor-crosshair" 
+            onClick={handleCanvasClick} 
+            onMouseMove={handleMouseMove} 
+            onMouseUp={() => setDragMode(null)}
+            style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}
+          >
             <defs>
-              <pattern id="grid-editor" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
-                <path d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
+              <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
+                <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
               </pattern>
-              {/* فلتر لدمج الطرق بصرياً */}
-              <filter id="road-merge">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur" />
-                <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="merge" />
-                <feComposite in="SourceGraphic" in2="merge" operator="atop" />
-              </filter>
             </defs>
             <rect width="100%" height="100%" fill="url(#grid-editor)" />
             
-            {/* طبقة الطرق المدمجة */}
-            <g filter="url(#road-merge)">
-              {elements.filter(el => el.type === 'road').map(el => (
-                <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} className="fill-gray-300" />
-              ))}
-            </g>
+            {elements.map((el) => {
+              const centerX = el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length;
+              const centerY = el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length;
+              const isSelected = selectedId === el.id;
 
-            {/* باقي العناصر */}
-            {elements.filter(el => el.type !== 'road').map((el) => (
-              <g key={el.id} onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode('move'); }} className="cursor-move group">
-                <rect
-                  x={el.x}
-                  y={el.y}
-                  width={el.width}
-                  height={el.height}
-                  rx={6}
-                  transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`}
-                  className={cn("transition-all stroke-2", getElementColor(el.type), selectedId === el.id && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
-                />
-                {el.label && (
-                  <text x={el.x + el.width / 2} y={el.y + el.height / 2} textAnchor="middle" dominantBaseline="middle" transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} className={cn("text-[12px] font-black pointer-events-none select-none", el.type === 'tower' ? "fill-white" : "fill-slate-700")}>
-                    {el.label}
-                  </text>
-                )}
-                {/* مقبض تغيير الحجم */}
-                {selectedId === el.id && (
-                  <rect x={el.x + el.width - 8} y={el.y + el.height - 8} width={16} height={16} className="fill-blue-600 cursor-nwse-resize" onMouseDown={(e) => { e.stopPropagation(); setDragMode('resize'); }} />
-                )}
-              </g>
-            ))}
+              return (
+                <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                  <path
+                    d={pointsToPath(el.points)}
+                    className={cn("transition-all stroke-2 cursor-move", getElementColor(el.type), isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
+                    onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                  />
+                  
+                  {el.label && (
+                    <text x={centerX} y={centerY} textAnchor="middle" dominantBaseline="middle" className={cn("text-[12px] font-black pointer-events-none select-none", el.type === 'tower' ? "fill-white" : "fill-slate-700")}>
+                      {el.label}
+                    </text>
+                  )}
+
+                  {/* Controls for selected element */}
+                  {isSelected && (
+                    <>
+                      {/* Vertex Handles */}
+                      {el.points.map((p, i) => (
+                        <circle
+                          key={i}
+                          cx={p.x}
+                          cy={p.y}
+                          r={6}
+                          className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
+                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }}
+                        />
+                      ))}
+                      {/* Rotation Handle */}
+                      <line x1={centerX} y1={el.points[0].y} x2={centerX} y2={el.points[0].y - 30} className="stroke-blue-600 stroke-2" />
+                      <circle
+                        cx={centerX}
+                        cy={el.points[0].y - 30}
+                        r={8}
+                        className="fill-blue-600 cursor-pointer"
+                        onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
+                      />
+                    </>
+                  )}
+                </g>
+              );
+            })}
           </svg>
         </div>
 
+        {/* Properties Panel */}
         <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
           <h3 className="font-black text-xl border-b pb-4 text-slate-800">خصائص العنصر</h3>
           {selectedId ? (
@@ -200,29 +241,16 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 <>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
-                    <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={elements.find(el => el.id === selectedId)?.label} onChange={(e) => updateElement(selectedId, { label: e.target.value })} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-500">التدوير والتكرار</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <Button variant="outline" onClick={() => updateElement(selectedId, { rotation: ((elements.find(el => el.id === selectedId)?.rotation || 0) + 90) % 360 })} className="rounded-xl gap-2"><RotateCw size={16} /> تدوير</Button>
-                      <Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl gap-2"><ArrowRight size={16} /> يمين</Button>
-                      <Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl gap-2"><ArrowDown size={16} /> أسفل</Button>
-                    </div>
+                    <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={elements.find(el => el.id === selectedId)?.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
                   </div>
                   
                   {elements.find(el => el.id === selectedId)?.type === 'tower' && (
                     <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عدد الطوابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={elements.find(el => el.id === selectedId)?.floors} onChange={(e) => updateElement(selectedId, { floors: parseInt(e.target.value) || 1 })} /></div>
-                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">شقق/طابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={elements.find(el => el.id === selectedId)?.apartmentsPerFloor} onChange={(e) => updateElement(selectedId, { apartmentsPerFloor: parseInt(e.target.value) || 1 })} /></div>
+                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عدد الطوابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={elements.find(el => el.id === selectedId)?.floors} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, floors: parseInt(e.target.value)} : el))} /></div>
+                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">شقق/طابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={elements.find(el => el.id === selectedId)?.apartmentsPerFloor} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, apartmentsPerFloor: parseInt(e.target.value)} : el))} /></div>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2"><label className="text-sm font-bold text-slate-500">العرض</label><input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={elements.find(el => el.id === selectedId)?.width} onChange={(e) => updateElement(selectedId, { width: parseInt(e.target.value) || 0 })} /></div>
-                    <div className="space-y-2"><label className="text-sm font-bold text-slate-500">الطول</label><input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={elements.find(el => el.id === selectedId)?.height} onChange={(e) => updateElement(selectedId, { height: parseInt(e.target.value) || 0 })} /></div>
-                  </div>
                   <Button variant="destructive" className="w-full gap-2 rounded-xl h-12 font-bold" onClick={() => { setElements(elements.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button>
                 </>
               )}
@@ -230,6 +258,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           ) : (
             <div className="text-center py-20 text-slate-400"><p className="font-bold">حدد عنصراً من الخريطة لتعديله</p></div>
           )}
+          
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+            <p className="text-xs font-bold text-blue-600 leading-relaxed">
+              • اسحب العنصر لتحريكه.<br/>
+              • اسحب النقاط البيضاء لتغيير شكل العنصر بحرية.<br/>
+              • اسحب الدائرة الزرقاء العلوية للتدوير الحر.
+            </p>
+          </div>
         </div>
       </div>
     </div>
