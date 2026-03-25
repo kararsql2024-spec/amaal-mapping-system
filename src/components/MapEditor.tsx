@@ -5,13 +5,16 @@ import { MapElement, ElementType } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, MousePointer2, Home, 
-  Building2, TreeDeciduous, MoveRight, Coffee 
+  Building2, TreeDeciduous, MoveRight, Coffee,
+  Copy, ClipboardPaste
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MapEditorProps {
   initialElements: MapElement[];
   onSave: (elements: MapElement[]) => void;
+  mapWidth: number;
+  mapHeight: number;
 }
 
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
@@ -22,11 +25,12 @@ const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = 
   { type: 'amenity', label: 'مرفق', icon: Coffee, color: 'bg-amber-500' },
 ];
 
-const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
+const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType>('house');
   const [isDragging, setIsDragging] = useState(false);
+  const [clipboard, setClipboard] = useState<MapElement | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -40,7 +44,7 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
 
     const defaults = {
       house: { w: 40, h: 40 },
-      tower: { w: 50, h: 70 },
+      tower: { w: 60, h: 80 },
       road: { w: 100, h: 20 },
       green: { w: 80, h: 60 },
       amenity: { w: 40, h: 40 },
@@ -53,10 +57,29 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
       width: defaults[activeTool].w,
       height: defaults[activeTool].h,
       type: activeTool,
-      label: activeTool === 'house' ? (elements.filter(el => el.type === 'house').length + 1).toString() : '',
-      status: activeTool === 'road' || activeTool === 'green' ? 'public' : 'available'
+      label: activeTool === 'house' ? `H${elements.filter(el => el.type === 'house').length + 1}` : 
+             activeTool === 'tower' ? `T${elements.filter(el => el.type === 'tower').length + 1}` : '',
+      floors: activeTool === 'tower' ? 5 : undefined,
+      apartmentsPerFloor: activeTool === 'tower' ? 4 : undefined,
     };
 
+    setElements([...elements, newElement]);
+    setSelectedId(newElement.id);
+  };
+
+  const handleCopy = () => {
+    const selected = elements.find(el => el.id === selectedId);
+    if (selected) setClipboard(selected);
+  };
+
+  const handlePaste = () => {
+    if (!clipboard) return;
+    const newElement: MapElement = {
+      ...clipboard,
+      id: Math.random().toString(36).substr(2, 9),
+      x: clipboard.x + 20,
+      y: clipboard.y + 20,
+    };
     setElements([...elements, newElement]);
     setSelectedId(newElement.id);
   };
@@ -86,9 +109,7 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
     }));
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const handleMouseUp = () => setIsDragging(false);
 
   const updateElement = (id: string, updates: Partial<MapElement>) => {
     setElements(elements.map(el => el.id === id ? { ...el, ...updates } : el));
@@ -97,7 +118,7 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
   const getElementColor = (type: ElementType) => {
     switch (type) {
       case 'house': return 'fill-white stroke-blue-400';
-      case 'tower': return 'fill-slate-200 stroke-slate-600';
+      case 'tower': return 'fill-slate-800 stroke-slate-900';
       case 'road': return 'fill-gray-300 stroke-gray-400';
       case 'green': return 'fill-emerald-100 stroke-emerald-500';
       case 'amenity': return 'fill-amber-50 stroke-amber-500';
@@ -107,7 +128,6 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
-      {/* Toolbar */}
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2">
           {TOOLS.map((tool) => (
@@ -125,6 +145,13 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
               <span className="hidden md:inline">{tool.label}</span>
             </button>
           ))}
+          <div className="w-px h-8 bg-slate-200 mx-2" />
+          <Button variant="outline" size="icon" onClick={handleCopy} disabled={!selectedId} className="rounded-xl">
+            <Copy size={18} />
+          </Button>
+          <Button variant="outline" size="icon" onClick={handlePaste} disabled={!clipboard} className="rounded-xl">
+            <ClipboardPaste size={18} />
+          </Button>
         </div>
         <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
           <Save size={18} />
@@ -133,11 +160,10 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-hidden">
-        {/* Canvas */}
         <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden">
           <svg
             ref={svgRef}
-            viewBox="0 0 1000 800"
+            viewBox={`0 0 ${mapWidth} ${mapHeight}`}
             className="w-full h-full cursor-crosshair"
             onClick={handleCanvasClick}
             onMouseMove={handleMouseMove}
@@ -154,10 +180,7 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
             {elements.map((el) => (
               <g 
                 key={el.id} 
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  handleMouseDown(el.id);
-                }}
+                onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(el.id); }}
                 className="cursor-move group"
               >
                 <rect
@@ -178,7 +201,10 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
                     y={el.y + el.height / 2}
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    className="text-[12px] font-black fill-slate-700 pointer-events-none select-none"
+                    className={cn(
+                      "text-[12px] font-black pointer-events-none select-none",
+                      el.type === 'tower' ? "fill-white" : "fill-slate-700"
+                    )}
                   >
                     {el.label}
                   </text>
@@ -188,7 +214,6 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
           </svg>
         </div>
 
-        {/* Properties Sidebar */}
         <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
           <h3 className="font-black text-xl border-b pb-4 text-slate-800">خصائص العنصر</h3>
           {selectedId ? (
@@ -199,11 +224,35 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
                     <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
                     <input 
                       type="text"
-                      className="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full p-3 rounded-xl border border-slate-200"
                       value={elements.find(el => el.id === selectedId)?.label}
                       onChange={(e) => updateElement(selectedId, { label: e.target.value })}
                     />
                   </div>
+                  
+                  {elements.find(el => el.id === selectedId)?.type === 'tower' && (
+                    <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500">عدد الطوابق</label>
+                        <input 
+                          type="number"
+                          className="w-full p-2 rounded-lg border border-slate-200"
+                          value={elements.find(el => el.id === selectedId)?.floors}
+                          onChange={(e) => updateElement(selectedId, { floors: parseInt(e.target.value) || 1 })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500">شقق/طابق</label>
+                        <input 
+                          type="number"
+                          className="w-full p-2 rounded-lg border border-slate-200"
+                          value={elements.find(el => el.id === selectedId)?.apartmentsPerFloor}
+                          onChange={(e) => updateElement(selectedId, { apartmentsPerFloor: parseInt(e.target.value) || 1 })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <label className="text-sm font-bold text-slate-500">العرض</label>
@@ -224,27 +273,19 @@ const MapEditor = ({ initialElements, onSave }: MapEditorProps) => {
                       />
                     </div>
                   </div>
-                  <div className="pt-4">
-                    <Button 
-                      variant="destructive" 
-                      className="w-full gap-2 rounded-xl h-12 font-bold"
-                      onClick={() => {
-                        setElements(elements.filter(el => el.id !== selectedId));
-                        setSelectedId(null);
-                      }}
-                    >
-                      <Trash2 size={18} />
-                      حذف العنصر
-                    </Button>
-                  </div>
+                  <Button 
+                    variant="destructive" 
+                    className="w-full gap-2 rounded-xl h-12 font-bold"
+                    onClick={() => { setElements(elements.filter(el => el.id !== selectedId)); setSelectedId(null); }}
+                  >
+                    <Trash2 size={18} />
+                    حذف العنصر
+                  </Button>
                 </>
               )}
             </div>
           ) : (
             <div className="text-center py-20 text-slate-400">
-              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <MousePointer2 size={32} className="opacity-20" />
-              </div>
               <p className="font-bold">حدد عنصراً من الخريطة لتعديله</p>
             </div>
           )}

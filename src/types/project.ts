@@ -1,5 +1,13 @@
 export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity';
 
+export interface Apartment {
+  id: string;
+  number: string;
+  floor: number;
+  status: 'available' | 'sold' | 'pending' | 'reserved';
+  details?: any;
+}
+
 export interface MapElement {
   id: string;
   x: number;
@@ -8,7 +16,9 @@ export interface MapElement {
   height: number;
   type: ElementType;
   label: string;
-  status: 'available' | 'sold' | 'pending' | 'public';
+  // بيانات خاصة بالبرج
+  floors?: number;
+  apartmentsPerFloor?: number;
 }
 
 export interface Project {
@@ -16,5 +26,7 @@ export interface Project {
   name: string;
   description: string;
   elements: MapElement[];
+  mapWidth: number;
+  mapHeight: number;
   createdAt: string;
 }
