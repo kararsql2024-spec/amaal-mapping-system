@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, TreeDeciduous, 
   MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
-  ZoomIn, ZoomOut, RotateCcw, Type
+  ZoomIn, ZoomOut, RotateCcw, Type, Palette
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Slider } from "@/components/ui/slider";
 
 interface MapEditorProps {
   initialElements: MapElement[];
@@ -105,7 +106,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
     const offset = direction === 'right' ? { x: w + 10, y: 0 } : { x: 0, y: h + 10 };
 
-    // منطق التسمية الفردية: D1 -> D3 -> D5
     let newLabel = el.label;
     const match = el.label.match(/(\d+)$/);
     if (match) {
@@ -363,6 +363,30 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
                 <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={selectedElement.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
               </div>
+
+              {selectedElement.type === 'label_area' && (
+                <div className="space-y-4 p-4 bg-purple-50 rounded-2xl border border-purple-100">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-purple-700 flex items-center gap-2"><Palette size={16} /> لون التعبئة</label>
+                    <input 
+                      type="color" 
+                      className="w-full h-10 rounded-lg cursor-pointer border-none" 
+                      value={selectedElement.color || '#a855f7'} 
+                      onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, color: e.target.value} : el))} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-purple-700">الشفافية ({Math.round((selectedElement.opacity || 0.2) * 100)}%)</label>
+                    <Slider 
+                      value={[selectedElement.opacity || 0.2]} 
+                      min={0} 
+                      max={1} 
+                      step={0.05} 
+                      onValueChange={([val]) => setElements(elements.map(el => el.id === selectedId ? {...el, opacity: val} : el))} 
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
