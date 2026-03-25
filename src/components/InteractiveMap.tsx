@@ -81,7 +81,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   return (
     <div className={cn(
       "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300",
-      isFullScreen ? "fixed inset-0 z-[100] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
+      isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
     )}>
       <div className="w-full h-full" onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
         <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
