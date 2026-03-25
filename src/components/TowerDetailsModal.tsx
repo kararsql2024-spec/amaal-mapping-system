@@ -31,10 +31,31 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
   const getAptKey = (floor: number, aptNum: number) => `${tower.id}_F${floor}_A${aptNum}`;
   
-  // الترقيم المطلوب: P1, P2... تسلسلي عبر الطوابق
+  // منطق الترقيم الديناميكي: تخطي المجمد غير المحسوب
   const getAptLabel = (floor: number, aptNum: number) => {
-    const globalIndex = ((floor - 1) * aptsPerFloor) + aptNum;
-    return `P${globalIndex}`;
+    let pCounter = 0;
+    const currentKey = getAptKey(floor, aptNum);
+    const currentData = housesData[currentKey];
+
+    // إذا كانت الشقة الحالية مجمدة غير محسوبة، لا تأخذ رقم P
+    if (currentData?.status === 'frozen_uncounted') return "مجمدة";
+
+    // حساب ترتيب الشقة الحالية بين الشقق "المحسوبة" فقط في البرج بالكامل
+    for (let f = 1; f <= (tower.floors || 1); f++) {
+      for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
+        const key = getAptKey(f, a);
+        const data = housesData[key];
+        
+        if (data?.status !== 'frozen_uncounted') {
+          pCounter++;
+        }
+        
+        if (f === floor && a === aptNum) {
+          return `P${pCounter}`;
+        }
+      }
+    }
+    return "";
   };
 
   const getStatusColor = (status: string) => {
@@ -88,7 +109,6 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                 </DialogTitle>
               </DialogHeader>
 
-              {/* عرض الشقق: 3 في كل صف، من اليسار لليمين */}
               <div className="grid grid-cols-3 gap-4" dir="ltr">
                 {apts.map((aptNum) => {
                   const key = getAptKey(selectedFloor, aptNum);
