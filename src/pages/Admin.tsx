@@ -24,7 +24,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
   
-  // Excel Mapping State
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
     unitCol: 'B',
@@ -34,7 +33,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // جلب الإعدادات من Supabase عند تحميل الصفحة
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -77,6 +75,19 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     }
   };
 
+  // وظيفة لتنظيف وتطبيع النصوص العربية (إزالة المد، توحيد الهمزات، إلخ)
+  const normalizeArabic = (text: string) => {
+    if (!text) return "";
+    return text
+      .toString()
+      .trim()
+      .replace(/[\u064B-\u0652\u0640]/g, "") // إزالة التشكيل والمد (الكشيدة)
+      .replace(/[أإآ]/g, "ا") // توحيد الألف
+      .replace(/ة/g, "ه") // توحيد التاء المربوطة والهاء
+      .replace(/ى/g, "ي") // توحيد الياء
+      .replace(/\s+/g, " "); // إزالة المسافات الزائدة
+  };
+
   const colToIdx = (col: string) => {
     let res = 0;
     const cleanCol = col.trim().toUpperCase();
@@ -107,7 +118,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        const projectMap = new Map(projects.map(p => [p.name.trim(), p.id]));
+        // إنشاء خريطة للمشاريع باستخدام الاسم المطبّع (Normalized)
+        const projectMap = new Map(projects.map(p => [normalizeArabic(p.name), p.id]));
         
         const { data: currentUnits, error: fetchError } = await supabase
           .from('houses_data')
@@ -120,12 +132,15 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         data.forEach((row, index) => {
           if (index === 0) return; 
-          const rowCityName = String(row[cityIdx] || '').trim();
+          
+          const rowCityName = normalizeArabic(String(row[cityIdx] || ''));
           const projectId = projectMap.get(rowCityName);
           
           if (projectId) {
             citiesFoundInExcel.add(projectId);
-            const unitKey = String(row[unitIdx] || '').trim();
+            // تطبيع رقم الوحدة أيضاً لضمان المطابقة
+            const unitKey = normalizeArabic(String(row[unitIdx] || ''));
+            
             if (unitKey) {
               if (!excelDataByProject.has(projectId)) {
                 excelDataByProject.set(projectId, new Map());
@@ -146,7 +161,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         for (const unit of currentUnits) {
           if (citiesFoundInExcel.has(unit.project_id)) {
             const projectExcelData = excelDataByProject.get(unit.project_id);
-            const unitExcelData = projectExcelData?.get(unit.unit_key);
+            // مطابقة الوحدة باستخدام الاسم المطبّع
+            const unitExcelData = projectExcelData?.get(normalizeArabic(unit.unit_key));
 
             if (unitExcelData) {
               updates.push({
@@ -178,7 +194,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           if (upsertError) throw upsertError;
           showSuccess(`تمت المزامنة بنجاح: تحديث ${updates.length} وحدة في المشاريع المتطابقة`);
         } else {
-          showSuccess("لم يتم العثور على مشاريع متطابقة أو وحدات للتحديث في الملف");
+          showSuccess("لم يتم العثور على مشاريع متطابقة أو وحدات للتحديث في الملف. تأكد من تطابق أسماء المشاريع.");
         }
 
       } catch (error) {
