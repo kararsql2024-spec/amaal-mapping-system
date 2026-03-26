@@ -123,14 +123,26 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                <path 
-                  d={pointsToPath(pts)} 
-                  fill={styles.fill}
-                  stroke={styles.stroke}
-                  fillOpacity={styles.opacity}
-                  strokeWidth={el.type === 'pitch' ? 2 : (el.type === 'road' ? 0 : 2)}
-                  className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
-                />
+                {el.type === 'label_area' ? (
+                  <rect
+                    x={minX} y={minY} width={w} height={h}
+                    rx="20" ry="20"
+                    fill={styles.fill}
+                    stroke={styles.stroke}
+                    fillOpacity={styles.opacity}
+                    strokeWidth="2"
+                    className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
+                  />
+                ) : (
+                  <path 
+                    d={pointsToPath(pts)} 
+                    fill={styles.fill}
+                    stroke={styles.stroke}
+                    fillOpacity={styles.opacity}
+                    strokeWidth={el.type === 'pitch' ? 2 : (el.type === 'road' ? 0 : 2)}
+                    className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
+                  />
+                )}
 
                 {/* أيقونات تعبيرية صريحة */}
                 {el.type === 'house' && (
@@ -184,7 +196,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 {el.label && (
                   <text 
                     x={el.type === 'label_area' ? topCenterX : centerX} 
-                    y={minY + 20} 
+                    y={el.type === 'label_area' ? minY - 10 : minY + 20} 
                     textAnchor="middle" 
                     dominantBaseline="auto"
                     fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')}

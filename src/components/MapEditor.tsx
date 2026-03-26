@@ -351,15 +351,28 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                    <path
-                      d={pointsToPath(pts)}
-                      fill={getElementColor(el)}
-                      stroke={getElementStroke(el)}
-                      fillOpacity={el.type === 'label_area' ? el.opacity : 1}
-                      strokeWidth={el.type === 'pitch' ? 2 : 1}
-                      className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
-                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
-                    />
+                    {el.type === 'label_area' ? (
+                      <rect
+                        x={minX} y={minY} width={w} height={h}
+                        rx="20" ry="20"
+                        fill={getElementColor(el)}
+                        stroke={getElementStroke(el)}
+                        fillOpacity={el.opacity}
+                        strokeWidth="2"
+                        className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                      />
+                    ) : (
+                      <path
+                        d={pointsToPath(pts)}
+                        fill={getElementColor(el)}
+                        stroke={getElementStroke(el)}
+                        fillOpacity={1}
+                        strokeWidth={el.type === 'pitch' ? 2 : 1}
+                        className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                      />
+                    )}
                     
                     {/* أيقونات تعبيرية صريحة */}
                     {el.type === 'house' && (
@@ -413,7 +426,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     {el.label && (
                       <text 
                         x={el.type === 'label_area' ? topCenterX : centerX} 
-                        y={minY + 20} 
+                        y={el.type === 'label_area' ? minY - 10 : minY + 20} 
                         textAnchor="middle" 
                         dominantBaseline="auto"
                         fill={el.textColor || '#1e293b'}
