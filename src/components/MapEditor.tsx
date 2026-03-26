@@ -247,10 +247,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     }
   };
 
-  const getShortLabel = (label: string) => {
+  const getShortLabel = (label: string, type: ElementType) => {
     if (!label) return "";
-    const parts = label.split('-');
-    return parts[parts.length - 1];
+    if (type === 'house' || type === 'tower') {
+      const parts = label.split('-');
+      return parts[parts.length - 1];
+    }
+    return label;
   };
 
   const renderAmenityIcon = (type: string | undefined, color: string) => {
@@ -438,7 +441,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         fill={el.textColor || '#1e293b'}
                         className="font-black pointer-events-none select-none text-[12px]"
                       >
-                        {getShortLabel(el.label)}
+                        {getShortLabel(el.label, el.type)}
                       </text>
                     )}
 
@@ -626,7 +629,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (match) {
       const num = parseInt(match[1]);
       const prefix = lastPart.substring(0, match.index);
-      newLastPart = `${prefix}${num + 1}`;
+      newLastPart = `${prefix}${num + 2}`; // قفزة بمقدار 2 كما طلبت
     }
     
     parts[parts.length - 1] = newLastPart;
