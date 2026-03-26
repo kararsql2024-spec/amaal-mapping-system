@@ -9,7 +9,7 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  Settings2, MoonStar, Maximize2, School, Landmark, Utensils, Coffee, Car, Trees
+  Settings2, MoonStar, Maximize2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -402,15 +402,50 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const renderAmenityIcon = (type: string | undefined, color: string) => {
-    const size = 24;
     switch (type) {
-      case 'shop': return <Store size={size} color={color} />;
-      case 'school': return <School size={size} color={color} />;
-      case 'medical': return <Stethoscope size={size} color={color} />;
-      case 'nursery': return <Baby size={size} color={color} />;
-      case 'mall': return <ShoppingBag size={size} color={color} />;
-      case 'gym': return <Dumbbell size={size} color={color} />;
-      case 'supermarket': return <ShoppingCart size={size} color={color} />;
+      case 'shop': return (
+        <g transform="translate(-12, -12)">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M9 22V12h6v10" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M3 9h18" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'school': return (
+        <g transform="translate(-12, -12)">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'medical': return (
+        <g transform="translate(-12, -12)">
+          <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M12 7v10M7 12h10" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'nursery': return (
+        <g transform="translate(-12, -12)">
+          <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />
+          <circle cx="12" cy="14" r="3" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'mall': return (
+        <g transform="translate(-12, -12)">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M3 6h18M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'gym': return (
+        <g transform="translate(-12, -12)">
+          <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'supermarket': return (
+        <g transform="translate(-12, -12)">
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />
+          <circle cx="10" cy="21" r="1" fill={color} />
+          <circle cx="20" cy="21" r="1" fill={color} />
+        </g>
+      );
       case 'mosque': return (
         <g transform="translate(-12, -12)">
           <path d="M12 22v-8M12 14c-4 0-7-3-7-7 0-1 1-2 2-2s2 1 2 2c0 2 2 3 3 3s3-1 3-3c0-1 1-2 2-2s2 1 2 2c0 4-3 7-7 7z" fill="none" stroke={color} strokeWidth="2" />
@@ -419,7 +454,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           <path d="M20 10V8l-1-1 1-1 1 1-1 1" fill="none" stroke={color} strokeWidth="1" />
         </g>
       );
-      default: return <MapPin size={size} color={color} />;
+      default: return <circle cx="0" cy="0" r="10" fill="none" stroke={color} strokeWidth="2" />;
     }
   };
 
@@ -568,26 +603,35 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       />
                     )}
                     
-                    {/* Icons using foreignObject for real Lucide icons */}
-                    <foreignObject 
-                      x={centerX - 15} 
-                      y={centerY - 15} 
-                      width="30" 
-                      height="30" 
-                      pointerEvents="none"
-                    >
-                      <div className="w-full h-full flex items-center justify-center">
-                        {el.type === 'house' && <Home size={20} className="text-blue-600" />}
-                        {el.type === 'tower' && <Building2 size={20} className="text-white" />}
-                        {el.type === 'amenity' && (
-                          AMENITY_TYPES.find(t => t.id === el.amenityType)?.icon ? 
-                          React.createElement(AMENITY_TYPES.find(t => t.id === el.amenityType)!.icon, { size: 20, color: el.textColor || '#1e293b' }) : 
-                          <MapPin size={20} color={el.textColor || '#1e293b'} />
-                        )}
-                        {el.type === 'green' && <Trees size={20} className="text-emerald-800" />}
-                        {el.type === 'pitch' && <Trophy size={20} className="text-white" />}
-                      </div>
-                    </foreignObject>
+                    {el.type === 'house' && (
+                      <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                        <path d="M -18 8 L -18 -4 L 0 -18 L 18 -4 L 18 8 Z" fill="none" stroke="#3b82f6" strokeWidth="2" />
+                        <rect x="-6" y="0" width="12" height="8" fill="none" stroke="#3b82f6" strokeWidth="1" opacity="0.5" />
+                        <path d="M -18 -4 L 0 -18 L 18 -4" fill="none" stroke="#3b82f6" strokeWidth="2" />
+                      </g>
+                    )}
+
+                    {el.type === 'tower' && (
+                      <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                        <rect x="-12" y="-25" width="24" height="45" rx="2" fill="none" stroke="white" strokeWidth="2" />
+                        <g opacity="0.4">
+                          <rect x="-8" y="-20" width="4" height="4" fill="white" />
+                          <rect x="4" y="-20" width="4" height="4" fill="white" />
+                          <rect x="-8" y="-12" width="4" height="4" fill="white" />
+                          <rect x="4" y="-12" width="4" height="4" fill="white" />
+                          <rect x="-8" y="-4" width="4" height="4" fill="white" />
+                          <rect x="4" y="-4" width="4" height="4" fill="white" />
+                          <rect x="-8" y="4" width="4" height="4" fill="white" />
+                          <rect x="4" y="4" width="4" height="4" fill="white" />
+                        </g>
+                      </g>
+                    )}
+
+                    {el.type === 'amenity' && (
+                      <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                        {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
+                      </g>
+                    )}
 
                     {el.type === 'road' && (
                       el.orientation === 'vertical' ? 
@@ -617,7 +661,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     {el.label && (
                       <text 
                         x={el.type === 'label_area' ? topCenterX : centerX} 
-                        y={el.type === 'label_area' ? minY - 10 : maxY + 15} 
+                        y={el.type === 'label_area' ? minY - 10 : minY + 20} 
                         textAnchor="middle" 
                         dominantBaseline="auto"
                         fill={el.textColor || '#1e293b'}
