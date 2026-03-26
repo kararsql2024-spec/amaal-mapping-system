@@ -37,8 +37,9 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
   const colToIdx = (col: string) => {
     let res = 0;
-    for (let i = 0; i < col.length; i++) {
-      res = res * 26 + (col.charCodeAt(i) - 64);
+    const cleanCol = col.trim().toUpperCase();
+    for (let i = 0; i < cleanCol.length; i++) {
+      res = res * 26 + (cleanCol.charCodeAt(i) - 64);
     }
     return res - 1;
   };
@@ -46,7 +47,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !excelMapping.cityName) {
-      showError("يرجى إدخال اسم المدينة واختيار ملف");
+      showError("يرجى إدخال اسم المشروع/المدينة للمطابقة واختيار ملف");
       return;
     }
 
@@ -75,17 +76,20 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         if (fetchError) throw fetchError;
 
         const excelUnitsMap = new Map();
+        const targetCity = excelMapping.cityName.trim();
         
-        // معالجة بيانات الإكسل
+        // 1. تجميع البيانات من الإكسل التي تطابق اسم المدينة/المشروع
         data.forEach((row, index) => {
           if (index === 0) return; // Skip header
           const rowCity = String(row[cityIdx] || '').trim();
-          if (rowCity === excelMapping.cityName.trim()) {
+          
+          if (rowCity === targetCity) {
             const unitKey = String(row[unitIdx] || '').trim();
             if (unitKey) {
               excelUnitsMap.set(unitKey, {
                 name: String(row[nameIdx] || ''),
                 phone: String(row[phoneIdx] || ''),
+                // معالجة تاريخ الإكسل (Excel serial date to ISO)
                 saleDate: row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '',
                 status: 'sold'
               });
@@ -95,23 +99,30 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         const updates = [];
 
-        // 1. تحديث الوحدات الموجودة في الإكسل أو تحويلها لمتوفر إذا كانت مباعة وغير موجودة
+        // 2. تطبيق منطق التحديث على الوحدات الموجودة في النظام
         for (const unit of currentUnits) {
           const excelData = excelUnitsMap.get(unit.unit_key);
           
           if (excelData) {
-            // موجود في الإكسل -> تحديث لمباع
+            // الحالة أ: الوحدة موجودة في الإكسل -> تحويل لمباع وتحديث البيانات (بغض النظر عن حالتها السابقة)
             updates.push({
               unit_key: unit.unit_key,
               project_id: unit.project_id,
               data: { ...unit.data, ...excelData }
             });
           } else if (unit.data?.status === 'sold') {
-            // كان مباع وغير موجود في الإكسل -> تحويل لمتوفر
+            // الحالة ب: الوحدة غير موجودة في الإكسل ولكنها "مباعة" في النظام -> تحويل لمتوفر
+            // ملاحظة: إذا كانت "محجوزة" أو غير ذلك، لا يتم تغييرها كما طلبت
             updates.push({
               unit_key: unit.unit_key,
               project_id: unit.project_id,
-              data: { ...unit.data, status: 'available', name: '', phone: '', saleDate: '' }
+              data: { 
+                ...unit.data, 
+                status: 'available', 
+                name: '', 
+                phone: '', 
+                saleDate: '' 
+              }
             });
           }
         }
@@ -122,14 +133,14 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             .upsert(updates, { onConflict: 'unit_key' });
 
           if (upsertError) throw upsertError;
-          showSuccess(`تم تحديث ${updates.length} وحدة بنجاح`);
+          showSuccess(`تمت العملية بنجاح: تحديث ${updates.length} وحدة`);
         } else {
-          showSuccess("لم يتم العثور على تغييرات لتحديثها");
+          showSuccess("لم يتم العثور على وحدات للمطابقة أو التحديث");
         }
 
       } catch (error) {
         console.error("Excel processing error:", error);
-        showError("حدث خطأ أثناء معالجة ملف الإكسل");
+        showError("حدث خطأ أثناء معالجة ملف الإكسل. تأكد من صحة أسماء الأعمدة.");
       } finally {
         setIsProcessing(false);
         if (e.target) e.target.value = '';
@@ -310,8 +321,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> اسم المدينة (الشرط)</label>
-                    <Input placeholder="مثال: الرياض" value={excelMapping.cityName} onChange={(e) => setExcelMapping({...excelMapping, cityName: e.target.value})} className="rounded-xl h-12 border-slate-200" />
+                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> اسم المشروع/المدينة (للمطابقة)</label>
+                    <Input placeholder="ادخل الاسم كما هو في ملف الإكسل" value={excelMapping.cityName} onChange={(e) => setExcelMapping({...excelMapping, cityName: e.target.value})} className="rounded-xl h-12 border-slate-200" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-600">عمود المدينة (A, B, ...)</label>
@@ -354,9 +365,11 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
                 <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
                   <AlertCircle className="text-amber-600 shrink-0" size={20} />
-                  <p className="text-xs text-amber-800 leading-relaxed font-medium">
-                    تنبيه: سيقوم النظام بالبحث عن الوحدات التي تطابق "اسم المدينة". إذا كانت الوحدة مباعة في النظام وغير موجودة في الملف، سيتم إعادتها لحالة "متوفر".
-                  </p>
+                  <div className="text-xs text-amber-800 leading-relaxed font-medium space-y-1">
+                    <p>• سيتم تحويل أي وحدة موجودة في الملف (للمدينة المحددة) إلى حالة <strong>مباع</strong>.</p>
+                    <p>• إذا كانت الوحدة <strong>مباعة</strong> في النظام وغير موجودة في الملف، سيتم إعادتها لحالة <strong>متوفر</strong>.</p>
+                    <p>• الوحدات <strong>المحجوزة</strong> أو غيرها لن تتأثر إذا لم تكن موجودة في الملف.</p>
+                  </div>
                 </div>
               </div>
             ) : (
