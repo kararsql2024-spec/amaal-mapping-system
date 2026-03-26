@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, TreeDeciduous, 
   MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
-  ZoomIn, ZoomOut, RotateCcw, Type, Palette
+  ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -32,8 +32,8 @@ const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = 
 const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTool, setActiveTool] = useState<ElementType>('house');
-  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan', index?: number } | null>(null);
+  const [activeTool, setActiveTool] = useState<ElementType | null>(null);
+  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan', startPos?: Point } | null>(null);
   const [gridLock, setGridLock] = useState(true);
   
   const [scale, setScale] = useState(1);
@@ -53,7 +53,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     ];
   };
 
-  const getMousePos = (e: React.MouseEvent) => {
+  const getMousePos = (e: React.MouseEvent | WheelEvent) => {
     if (!svgRef.current) return { x: 0, y: 0 };
     const pt = svgRef.current.createSVGPoint();
     pt.x = e.clientX;
@@ -62,8 +62,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     return { x: svgP.x, y: svgP.y };
   };
 
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.min(Math.max(scale * delta, 0.1), 10);
+    setScale(newScale);
+  };
+
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (dragMode || e.target !== svgRef.current) return;
+    if (dragMode || e.target !== svgRef.current || !activeTool) return;
     
     const pos = getMousePos(e);
     const w = 60, h = 60;
@@ -92,56 +99,42 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     setSelectedId(newElement.id);
   };
 
-  const handleDuplicate = (direction: 'right' | 'down') => {
-    const el = elements.find(e => e.id === selectedId);
-    if (!el) return;
-
-    const pts = getElementPoints(el);
-    const minX = Math.min(...pts.map(p => p.x));
-    const maxX = Math.max(...pts.map(p => p.x));
-    const minY = Math.min(...pts.map(p => p.y));
-    const maxY = Math.max(...pts.map(p => p.y));
-    const w = maxX - minX;
-    const h = maxY - minY;
-
-    const offset = direction === 'right' ? { x: w + 10, y: 0 } : { x: 0, y: h + 10 };
-
-    let newLabel = el.label;
-    const match = el.label.match(/(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1]);
-      const prefix = el.label.substring(0, match.index);
-      newLabel = `${prefix}${num + 2}`;
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.target === svgRef.current && !activeTool) {
+      setDragMode({ type: 'pan', startPos: { x: e.clientX, y: e.clientY } });
     }
-
-    const newElement: MapElement = {
-      ...el,
-      id: Math.random().toString(36).substr(2, 9),
-      points: pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y })),
-      label: newLabel
-    };
-
-    setElements([...elements, newElement]);
-    setSelectedId(newElement.id);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragMode || !svgRef.current || !selectedId) return;
+    if (!dragMode || !svgRef.current) return;
+
+    if (dragMode.type === 'pan' && dragMode.startPos) {
+      const dx = e.clientX - dragMode.startPos.x;
+      const dy = e.clientY - dragMode.startPos.y;
+      setViewPos(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setDragMode({ ...dragMode, startPos: { x: e.clientX, y: e.clientY } });
+      return;
+    }
+
+    if (!selectedId) return;
     const pos = getMousePos(e);
 
     setElements(prev => prev.map(el => {
       if (el.id !== selectedId) return el;
       const pts = getElementPoints(el);
 
-      if (dragMode.type === 'vertex' && dragMode.index !== undefined) {
+      // @ts-ignore - index is stored in dragMode for vertex/edge
+      const dragIdx = (dragMode as any).index;
+
+      if (dragMode.type === 'vertex' && dragIdx !== undefined) {
         const newPoints = [...pts];
-        newPoints[dragMode.index] = { x: snap(pos.x), y: snap(pos.y) };
+        newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
         return { ...el, points: newPoints };
       }
 
-      if (dragMode.type === 'edge' && dragMode.index !== undefined) {
-        const idx1 = dragMode.index;
-        const idx2 = (dragMode.index + 1) % pts.length;
+      if (dragMode.type === 'edge' && dragIdx !== undefined) {
+        const idx1 = dragIdx;
+        const idx2 = (dragIdx + 1) % pts.length;
         const midX = (pts[idx1].x + pts[idx2].x) / 2;
         const midY = (pts[idx1].y + pts[idx2].y) / 2;
         const dx = snap(pos.x) - midX;
@@ -241,8 +234,20 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setActiveTool(null)} 
+            className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", !activeTool ? "bg-indigo-600 text-white shadow-lg scale-105" : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
+          >
+            <Hand size={18} />
+            <span className="hidden md:inline">تصفح</span>
+          </button>
+          <div className="w-px h-8 bg-slate-200 mx-1" />
           {TOOLS.map((tool) => (
-            <button key={tool.type} onClick={() => setActiveTool(tool.type)} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", activeTool === tool.type ? `${tool.color} text-white shadow-lg scale-105` : "bg-slate-50 text-slate-600 hover:bg-slate-100")}>
+            <button 
+              key={tool.type} 
+              onClick={() => setActiveTool(activeTool === tool.type ? null : tool.type)} 
+              className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", activeTool === tool.type ? `${tool.color} text-white shadow-lg scale-105` : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
+            >
               <tool.icon size={18} />
               <span className="hidden md:inline">{tool.label}</span>
             </button>
@@ -255,7 +260,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.min(s + 0.2, 5))}><ZoomIn size={18} /></Button>
-            <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.5))}><ZoomOut size={18} /></Button>
+            <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.1))}><ZoomOut size={18} /></Button>
             <Button variant="ghost" size="icon" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={18} /></Button>
           </div>
           <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
@@ -269,10 +274,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           <svg 
             ref={svgRef} 
             viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
-            className="w-full h-full cursor-crosshair" 
+            className={cn("w-full h-full", !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")}
             onClick={handleCanvasClick} 
+            onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove} 
             onMouseUp={() => setDragMode(null)}
+            onWheel={handleWheel}
             style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}
           >
             <defs>
@@ -329,7 +336,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                             key={`edge-${i}`}
                             x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y}
                             className="stroke-blue-400/50 stroke-[8px] cursor-move hover:stroke-blue-500/80 transition-all"
-                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i }); }}
+                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i } as any); }}
                           />
                         );
                       })}
@@ -338,7 +345,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                           key={`vertex-${i}`}
                           cx={p.x} cy={p.y} r={6}
                           className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
-                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }}
+                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i } as any); }}
                         />
                       ))}
                       <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
@@ -423,6 +430,39 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       </div>
     </div>
   );
+
+  function handleDuplicate(direction: 'right' | 'down') {
+    const el = elements.find(e => e.id === selectedId);
+    if (!el) return;
+
+    const pts = getElementPoints(el);
+    const minX = Math.min(...pts.map(p => p.x));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxY = Math.max(...pts.map(p => p.y));
+    const w = maxX - minX;
+    const h = maxY - minY;
+
+    const offset = direction === 'right' ? { x: w + 10, y: 0 } : { x: 0, y: h + 10 };
+
+    let newLabel = el.label;
+    const match = el.label.match(/(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1]);
+      const prefix = el.label.substring(0, match.index);
+      newLabel = `${prefix}${num + 2}`;
+    }
+
+    const newElement: MapElement = {
+      ...el,
+      id: Math.random().toString(36).substr(2, 9),
+      points: pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y })),
+      label: newLabel
+    };
+
+    setElements([...elements, newElement]);
+    setSelectedId(newElement.id);
+  }
 };
 
 export default MapEditor;
