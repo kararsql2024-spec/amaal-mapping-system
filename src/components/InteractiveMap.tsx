@@ -74,6 +74,19 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
   };
 
+  const renderAmenityIcon = (type: string | undefined, color: string) => {
+    switch (type) {
+      case 'shop': return <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />;
+      case 'school': return <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />;
+      case 'medical': return <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" fill="none" stroke={color} strokeWidth="2" />;
+      case 'nursery': return <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />;
+      case 'mall': return <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />;
+      case 'gym': return <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />;
+      case 'supermarket': return <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />;
+      default: return <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />;
+    }
+  };
+
   const sortedElements = [...elements].sort((a, b) => {
     if (a.type === 'label_area' && b.type !== 'label_area') return -1;
     if (a.type !== 'label_area' && b.type === 'label_area') return 1;
@@ -119,22 +132,28 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
                 />
 
-                {/* أيقونات تعبيرية */}
+                {/* أيقونات تعبيرية صريحة */}
                 {el.type === 'house' && (
-                  <path d={`M ${centerX - 10} ${centerY + 5} L ${centerX - 10} ${centerY - 5} L ${centerX} ${centerY - 12} L ${centerX + 10} ${centerY - 5} L ${centerX + 10} ${centerY + 5} Z`} fill="none" stroke="white" strokeWidth="2" opacity="0.5" pointerEvents="none" />
+                  <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
+                    <path d="M -15 5 L -15 -5 L 0 -18 L 15 -5 L 15 5 Z" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
+                    <rect x="-5" y="-2" width="10" height="7" fill="none" stroke="white" strokeWidth="1" opacity="0.5" />
+                  </g>
                 )}
 
                 {el.type === 'tower' && (
-                  <g pointerEvents="none" opacity="0.3">
-                    <rect x={centerX - 8} y={centerY - 15} width={16} height={30} fill="none" stroke="white" strokeWidth="2" />
-                    <line x1={centerX - 4} y1={centerY - 10} x2={centerX + 4} y2={centerY - 10} stroke="white" strokeWidth="1" />
-                    <line x1={centerX - 4} y1={centerY} x2={centerX + 4} y2={centerY} stroke="white" strokeWidth="1" />
-                    <line x1={centerX - 4} y1={centerY + 10} x2={centerX + 4} y2={centerY + 10} stroke="white" strokeWidth="1" />
+                  <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none" opacity="0.3">
+                    <rect x="-10" y="-20" width="20" height="35" fill="none" stroke="white" strokeWidth="2" />
+                    <line x1="-6" y1="-14" x2="6" y2="-14" stroke="white" strokeWidth="1" />
+                    <line x1="-6" y1="-6" x2="6" y2="-6" stroke="white" strokeWidth="1" />
+                    <line x1="-6" y1="2" x2="6" y2="2" stroke="white" strokeWidth="1" />
+                    <line x1="-6" y1="10" x2="6" y2="10" stroke="white" strokeWidth="1" />
                   </g>
                 )}
 
                 {el.type === 'amenity' && (
-                  <circle cx={centerX} cy={centerY} r={12} fill="white" stroke={el.color || '#f59e0b'} strokeWidth="2" pointerEvents="none" />
+                  <g transform={`translate(${centerX - 12}, ${centerY - 2})`} pointerEvents="none">
+                    {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
+                  </g>
                 )}
 
                 {el.type === 'road' && (
@@ -165,7 +184,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 {el.label && (
                   <text 
                     x={el.type === 'label_area' ? topCenterX : centerX} 
-                    y={minY - 10} 
+                    y={minY + 20} 
                     textAnchor="middle" 
                     dominantBaseline="auto"
                     fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')}
