@@ -8,7 +8,7 @@ import {
   MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
   Trophy, Store, School, HeartPulse, Baby, ShoppingBag, Dumbbell, ShoppingCart,
-  AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter
+  AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, Type as TypeIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -119,7 +119,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       points: newPoints,
       rotation: 0,
       orientation: 'horizontal',
-      color: activeTool === 'label_area' ? '#a855f7' : undefined,
+      color: activeTool === 'label_area' ? '#a855f7' : (activeTool === 'amenity' ? '#f59e0b' : undefined),
+      textColor: '#1e293b',
       opacity: activeTool === 'label_area' ? 0.2 : 1,
       x: pos.x, y: pos.y, width: w, height: h,
       floors: activeTool === 'tower' ? 5 : undefined,
@@ -223,41 +224,26 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const getElementColor = (el: MapElement) => {
-    if (el.type === 'label_area') return el.color || '#a855f7';
+    if (el.type === 'label_area' || el.type === 'amenity') return el.color || (el.type === 'amenity' ? '#f59e0b' : '#a855f7');
     switch (el.type) {
       case 'house': return '#ffffff';
       case 'tower': return '#1e293b';
       case 'road': return '#475569';
       case 'green': return '#22c55e';
       case 'pitch': return '#16a34a';
-      case 'amenity': return '#f59e0b';
       default: return '#ffffff';
     }
   };
 
   const getElementStroke = (el: MapElement) => {
-    if (el.type === 'label_area') return el.color || '#a855f7';
+    if (el.type === 'label_area' || el.type === 'amenity') return el.color || (el.type === 'amenity' ? '#d97706' : '#a855f7');
     switch (el.type) {
       case 'house': return '#3b82f6';
       case 'tower': return '#0f172a';
       case 'road': return '#1e293b';
       case 'green': return '#15803d';
       case 'pitch': return '#ffffff';
-      case 'amenity': return '#d97706';
       default: return '#cbd5e1';
-    }
-  };
-
-  const getTextColorClass = (el: MapElement) => {
-    switch (el.type) {
-      case 'tower': return "fill-white";
-      case 'road': return "fill-white";
-      case 'pitch': return "fill-white";
-      case 'house': return "fill-blue-600";
-      case 'green': return "fill-emerald-900";
-      case 'amenity': return "fill-amber-900";
-      case 'label_area': return "fill-slate-800";
-      default: return "fill-slate-700";
     }
   };
 
@@ -362,6 +348,24 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
                     />
                     
+                    {/* أيقونات تعبيرية */}
+                    {el.type === 'house' && (
+                      <path d={`M ${centerX - 10} ${centerY + 5} L ${centerX - 10} ${centerY - 5} L ${centerX} ${centerY - 12} L ${centerX + 10} ${centerY - 5} L ${centerX + 10} ${centerY + 5} Z`} fill="none" stroke="#3b82f6" strokeWidth="2" pointerEvents="none" />
+                    )}
+
+                    {el.type === 'tower' && (
+                      <g pointerEvents="none">
+                        <rect x={centerX - 8} y={centerY - 15} width={16} height={30} fill="none" stroke="white" strokeWidth="2" />
+                        <line x1={centerX - 4} y1={centerY - 10} x2={centerX + 4} y2={centerY - 10} stroke="white" strokeWidth="1" opacity="0.5" />
+                        <line x1={centerX - 4} y1={centerY} x2={centerX + 4} y2={centerY} stroke="white" strokeWidth="1" opacity="0.5" />
+                        <line x1={centerX - 4} y1={centerY + 10} x2={centerX + 4} y2={centerY + 10} stroke="white" strokeWidth="1" opacity="0.5" />
+                      </g>
+                    )}
+
+                    {el.type === 'amenity' && (
+                      <circle cx={centerX} cy={centerY} r={12} fill="white" stroke={el.color || '#f59e0b'} strokeWidth="2" pointerEvents="none" />
+                    )}
+
                     {el.type === 'road' && (
                       el.orientation === 'vertical' ? 
                       <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" /> :
@@ -387,31 +391,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       </g>
                     )}
 
-                    {el.type === 'tower' && (
-                      <g pointerEvents="none" opacity="0.3">
-                        {Array.from({ length: 3 }).map((_, i) => (
-                          <line key={i} x1={minX + 5} y1={minY + (h/4)*(i+1)} x2={maxX - 5} y2={minY + (h/4)*(i+1)} stroke="white" strokeWidth="1" />
-                        ))}
-                      </g>
-                    )}
-
-                    {el.type === 'house' && (
-                      <path 
-                        d={el.orientation === 'vertical' ? 
-                          `M ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} L ${centerX - w/4} ${centerY} Z` :
-                          `M ${centerX - w/4} ${centerY} L ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} Z`
-                        } 
-                        fill="none" stroke="#3b82f6" strokeWidth="1" pointerEvents="none" opacity="0.5" 
-                      />
-                    )}
-
                     {el.label && (
                       <text 
                         x={el.type === 'label_area' ? topCenterX : centerX} 
-                        y={el.type === 'label_area' ? minY - 10 : centerY} 
+                        y={el.type === 'label_area' ? minY - 10 : minY - 10} 
                         textAnchor="middle" 
-                        dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
-                        className={cn("font-black pointer-events-none select-none text-[12px]", getTextColorClass(el))}
+                        dominantBaseline="auto"
+                        fill={el.textColor || '#1e293b'}
+                        className="font-black pointer-events-none select-none text-[12px]"
                       >
                         {el.label}
                       </text>
@@ -463,6 +450,30 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               </div>
 
               <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500">ألوان العنصر</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Palette size={12} /> لون العنصر</label>
+                    <input 
+                      type="color" 
+                      className="w-full h-10 rounded-lg cursor-pointer border-none" 
+                      value={selectedElement.color || '#f59e0b'} 
+                      onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, color: e.target.value} : el))} 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><TypeIcon size={12} /> لون الخط</label>
+                    <input 
+                      type="color" 
+                      className="w-full h-10 rounded-lg cursor-pointer border-none" 
+                      value={selectedElement.textColor || '#1e293b'} 
+                      onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, textColor: e.target.value} : el))} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-500">اتجاه العنصر</label>
                 <div className="grid grid-cols-2 gap-2">
                   <Button 
@@ -507,26 +518,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               )}
 
               {selectedElement.type === 'label_area' && (
-                <div className="space-y-4 p-4 bg-purple-50 rounded-2xl border border-purple-100">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-purple-700 flex items-center gap-2"><Palette size={16} /> لون التعبئة</label>
-                    <input 
-                      type="color" 
-                      className="w-full h-10 rounded-lg cursor-pointer border-none" 
-                      value={selectedElement.color || '#a855f7'} 
-                      onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, color: e.target.value} : el))} 
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-purple-700">الشفافية ({Math.round((selectedElement.opacity || 0.2) * 100)}%)</label>
-                    <Slider 
-                      value={[selectedElement.opacity || 0.2]} 
-                      min={0} 
-                      max={1} 
-                      step={0.05} 
-                      onValueChange={([val]) => setElements(elements.map(el => el.id === selectedId ? {...el, opacity: val} : el))} 
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-purple-700">الشفافية ({Math.round((selectedElement.opacity || 0.2) * 100)}%)</label>
+                  <Slider 
+                    value={[selectedElement.opacity || 0.2]} 
+                    min={0} 
+                    max={1} 
+                    step={0.05} 
+                    onValueChange={([val]) => setElements(elements.map(el => el.id === selectedId ? {...el, opacity: val} : el))} 
+                  />
                 </div>
               )}
 

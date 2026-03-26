@@ -61,7 +61,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'green') return { fill: '#22c55e', stroke: '#15803d', opacity: 1 };
     if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1 };
-    if (el.type === 'amenity') return { fill: '#f59e0b', stroke: '#d97706', opacity: 1 };
+    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1 };
     
     if (el.type === 'house') {
       if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1 };
@@ -72,22 +72,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     }
     
     return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
-  };
-
-  const getTextColorClass = (el: MapElement) => {
-    const data = housesData[el.id];
-    if (el.type === 'house') {
-      if (!data || data.status === 'available' || data.status === 'sold' || data.status === 'pending' || data.status === 'reserved') return "fill-white";
-      return "fill-slate-700";
-    }
-    switch (el.type) {
-      case 'tower': return "fill-white";
-      case 'road': return "fill-white";
-      case 'pitch': return "fill-white";
-      case 'green': return "fill-emerald-900";
-      case 'amenity': return "fill-amber-900";
-      default: return "fill-slate-800";
-    }
   };
 
   const sortedElements = [...elements].sort((a, b) => {
@@ -135,6 +119,24 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
                 />
 
+                {/* أيقونات تعبيرية */}
+                {el.type === 'house' && (
+                  <path d={`M ${centerX - 10} ${centerY + 5} L ${centerX - 10} ${centerY - 5} L ${centerX} ${centerY - 12} L ${centerX + 10} ${centerY - 5} L ${centerX + 10} ${centerY + 5} Z`} fill="none" stroke="white" strokeWidth="2" opacity="0.5" pointerEvents="none" />
+                )}
+
+                {el.type === 'tower' && (
+                  <g pointerEvents="none" opacity="0.3">
+                    <rect x={centerX - 8} y={centerY - 15} width={16} height={30} fill="none" stroke="white" strokeWidth="2" />
+                    <line x1={centerX - 4} y1={centerY - 10} x2={centerX + 4} y2={centerY - 10} stroke="white" strokeWidth="1" />
+                    <line x1={centerX - 4} y1={centerY} x2={centerX + 4} y2={centerY} stroke="white" strokeWidth="1" />
+                    <line x1={centerX - 4} y1={centerY + 10} x2={centerX + 4} y2={centerY + 10} stroke="white" strokeWidth="1" />
+                  </g>
+                )}
+
+                {el.type === 'amenity' && (
+                  <circle cx={centerX} cy={centerY} r={12} fill="white" stroke={el.color || '#f59e0b'} strokeWidth="2" pointerEvents="none" />
+                )}
+
                 {el.type === 'road' && (
                   el.orientation === 'vertical' ? 
                   <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
@@ -160,31 +162,14 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   </g>
                 )}
 
-                {el.type === 'tower' && (
-                  <g opacity="0.3">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <line key={i} x1={minX + 5} y1={minY + (h/4)*(i+1)} x2={maxX - 5} y2={minY + (h/4)*(i+1)} stroke="white" strokeWidth="1" />
-                    ))}
-                  </g>
-                )}
-
-                {el.type === 'house' && (
-                  <path 
-                    d={el.orientation === 'vertical' ? 
-                      `M ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} L ${centerX - w/4} ${centerY} Z` :
-                      `M ${centerX - w/4} ${centerY} L ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} Z`
-                    } 
-                    fill="none" stroke="white" strokeWidth="1" opacity="0.3" 
-                  />
-                )}
-
                 {el.label && (
                   <text 
                     x={el.type === 'label_area' ? topCenterX : centerX} 
-                    y={el.type === 'label_area' ? minY - 10 : centerY} 
+                    y={minY - 10} 
                     textAnchor="middle" 
-                    dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
-                    className={cn("font-black pointer-events-none select-none text-[12px]", getTextColorClass(el))}
+                    dominantBaseline="auto"
+                    fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')}
+                    className="font-black pointer-events-none select-none text-[12px]"
                   >
                     {el.label}
                   </text>
