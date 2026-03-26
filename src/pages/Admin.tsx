@@ -26,7 +26,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   
   // Excel Mapping State
   const [excelMapping, setExcelMapping] = useState({
-    cityName: '',
     cityCol: 'A',
     unitCol: 'B',
     nameCol: 'C',
@@ -46,10 +45,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !excelMapping.cityName) {
-      showError("يرجى إدخال اسم المشروع/المدينة للمطابقة واختيار ملف");
-      return;
-    }
+    if (!file) return;
 
     setIsProcessing(true);
     const reader = new FileReader();
@@ -68,28 +64,37 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // جلب جميع بيانات الوحدات الحالية
+        // 1. إنشاء خريطة للمشاريع الحالية (الاسم -> المعرف) لسهولة البحث
+        const projectMap = new Map(projects.map(p => [p.name.trim(), p.id]));
+        
+        // 2. جلب جميع بيانات الوحدات الحالية
         const { data: currentUnits, error: fetchError } = await supabase
           .from('houses_data')
           .select('*');
 
         if (fetchError) throw fetchError;
 
-        const excelUnitsMap = new Map();
-        const targetCity = excelMapping.cityName.trim();
-        
-        // 1. تجميع البيانات من الإكسل التي تطابق اسم المدينة/المشروع
+        // 3. معالجة بيانات الإكسل وتجميع الوحدات حسب المشروع
+        // excelDataByProject: Map<projectId, Map<unitKey, data>>
+        const excelDataByProject = new Map<string, Map<string, any>>();
+        const citiesFoundInExcel = new Set<string>();
+
         data.forEach((row, index) => {
           if (index === 0) return; // Skip header
-          const rowCity = String(row[cityIdx] || '').trim();
+          const rowCityName = String(row[cityIdx] || '').trim();
+          const projectId = projectMap.get(rowCityName);
           
-          if (rowCity === targetCity) {
+          if (projectId) {
+            citiesFoundInExcel.add(projectId);
             const unitKey = String(row[unitIdx] || '').trim();
             if (unitKey) {
-              excelUnitsMap.set(unitKey, {
+              if (!excelDataByProject.has(projectId)) {
+                excelDataByProject.set(projectId, new Map());
+              }
+              
+              excelDataByProject.get(projectId)?.set(unitKey, {
                 name: String(row[nameIdx] || ''),
                 phone: String(row[phoneIdx] || ''),
-                // معالجة تاريخ الإكسل (Excel serial date to ISO)
                 saleDate: row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '',
                 status: 'sold'
               });
@@ -99,31 +104,34 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         const updates = [];
 
-        // 2. تطبيق منطق التحديث على الوحدات الموجودة في النظام
+        // 4. تطبيق منطق التحديث
         for (const unit of currentUnits) {
-          const excelData = excelUnitsMap.get(unit.unit_key);
-          
-          if (excelData) {
-            // الحالة أ: الوحدة موجودة في الإكسل -> تحويل لمباع وتحديث البيانات (بغض النظر عن حالتها السابقة)
-            updates.push({
-              unit_key: unit.unit_key,
-              project_id: unit.project_id,
-              data: { ...unit.data, ...excelData }
-            });
-          } else if (unit.data?.status === 'sold') {
-            // الحالة ب: الوحدة غير موجودة في الإكسل ولكنها "مباعة" في النظام -> تحويل لمتوفر
-            // ملاحظة: إذا كانت "محجوزة" أو غير ذلك، لا يتم تغييرها كما طلبت
-            updates.push({
-              unit_key: unit.unit_key,
-              project_id: unit.project_id,
-              data: { 
-                ...unit.data, 
-                status: 'available', 
-                name: '', 
-                phone: '', 
-                saleDate: '' 
-              }
-            });
+          // نتحقق فقط إذا كان مشروع هذه الوحدة موجوداً في ملف الإكسل المرفوع
+          if (citiesFoundInExcel.has(unit.project_id)) {
+            const projectExcelData = excelDataByProject.get(unit.project_id);
+            const unitExcelData = projectExcelData?.get(unit.unit_key);
+
+            if (unitExcelData) {
+              // الحالة أ: الوحدة موجودة في الإكسل لهذا المشروع -> تحويل لمباع وتحديث البيانات
+              updates.push({
+                unit_key: unit.unit_key,
+                project_id: unit.project_id,
+                data: { ...unit.data, ...unitExcelData }
+              });
+            } else if (unit.data?.status === 'sold') {
+              // الحالة ب: الوحدة غير موجودة في الإكسل ولكنها "مباعة" في النظام لهذا المشروع -> تحويل لمتوفر
+              updates.push({
+                unit_key: unit.unit_key,
+                project_id: unit.project_id,
+                data: { 
+                  ...unit.data, 
+                  status: 'available', 
+                  name: '', 
+                  phone: '', 
+                  saleDate: '' 
+                }
+              });
+            }
           }
         }
 
@@ -133,14 +141,14 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             .upsert(updates, { onConflict: 'unit_key' });
 
           if (upsertError) throw upsertError;
-          showSuccess(`تمت العملية بنجاح: تحديث ${updates.length} وحدة`);
+          showSuccess(`تمت المزامنة بنجاح: تحديث ${updates.length} وحدة في المشاريع المتطابقة`);
         } else {
-          showSuccess("لم يتم العثور على وحدات للمطابقة أو التحديث");
+          showSuccess("لم يتم العثور على مشاريع متطابقة أو وحدات للتحديث في الملف");
         }
 
       } catch (error) {
         console.error("Excel processing error:", error);
-        showError("حدث خطأ أثناء معالجة ملف الإكسل. تأكد من صحة أسماء الأعمدة.");
+        showError("حدث خطأ أثناء معالجة ملف الإكسل. تأكد من مطابقة أسماء المشاريع.");
       } finally {
         setIsProcessing(false);
         if (e.target) e.target.value = '';
@@ -321,20 +329,17 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> اسم المشروع/المدينة (للمطابقة)</label>
-                    <Input placeholder="ادخل الاسم كما هو في ملف الإكسل" value={excelMapping.cityName} onChange={(e) => setExcelMapping({...excelMapping, cityName: e.target.value})} className="rounded-xl h-12 border-slate-200" />
+                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> عمود المدينة (A, B, ...)</label>
+                    <Input placeholder="A" value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" />
+                    <p className="text-[10px] text-slate-400">سيتم مطابقة الاسم في هذا العمود مع أسماء المشاريع الحالية تلقائياً</p>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-600">عمود المدينة (A, B, ...)</label>
-                    <Input placeholder="A" value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" />
+                    <label className="text-sm font-bold text-slate-600">عمود رقم الوحدة</label>
+                    <Input placeholder="B" value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500">عمود رقم الوحدة</label>
-                    <Input placeholder="B" value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" />
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-500">عمود الاسم</label>
                     <Input placeholder="C" value={excelMapping.nameCol} onChange={(e) => setExcelMapping({...excelMapping, nameCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" />
@@ -366,9 +371,10 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                 <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
                   <AlertCircle className="text-amber-600 shrink-0" size={20} />
                   <div className="text-xs text-amber-800 leading-relaxed font-medium space-y-1">
-                    <p>• سيتم تحويل أي وحدة موجودة في الملف (للمدينة المحددة) إلى حالة <strong>مباع</strong>.</p>
-                    <p>• إذا كانت الوحدة <strong>مباعة</strong> في النظام وغير موجودة في الملف، سيتم إعادتها لحالة <strong>متوفر</strong>.</p>
-                    <p>• الوحدات <strong>المحجوزة</strong> أو غيرها لن تتأثر إذا لم تكن موجودة في الملف.</p>
+                    <p>• يتم مطابقة <strong>اسم المشروع</strong> تلقائياً من العمود المحدد.</p>
+                    <p>• أي وحدة موجودة في الملف يتم تحويلها إلى حالة <strong>مباع</strong> وتحديث بياناتها.</p>
+                    <p>• إذا كانت الوحدة <strong>مباعة</strong> في النظام وغير موجودة في الملف (لنفس المشروع)، يتم إعادتها لحالة <strong>متوفر</strong>.</p>
+                    <p>• الوحدات <strong>المحجوزة</strong> لا تتأثر إذا لم تكن موجودة في الملف.</p>
                   </div>
                 </div>
               </div>
