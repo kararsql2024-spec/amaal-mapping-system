@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface MapEditorProps {
   initialElements: MapElement[];
-  onSave: (elements: MapElement[]) => void;
+  onSave: (elements: MapElement[], width: number, height: number) => void;
   mapWidth: number;
   mapHeight: number;
 }
@@ -49,6 +49,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [activeTool, setActiveTool] = useState<ElementType | null>(null);
   const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan', startPos?: Point } | null>(null);
   const [gridLock, setGridLock] = useState(true);
+  const [dims, setDims] = useState({ w: mapWidth, h: mapHeight });
   
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
@@ -84,6 +85,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     setScale(newScale);
   };
 
+  const checkAndExpandMap = (pts: Point[]) => {
+    const maxX = Math.max(...pts.map(p => p.x));
+    const maxY = Math.max(...pts.map(p => p.y));
+    if (maxX > dims.w - 50) setDims(prev => ({ ...prev, w: maxX + 200 }));
+    if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: maxY + 200 }));
+  };
+
   const handleCanvasClick = (e: React.MouseEvent) => {
     const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
     if (dragMode || !isBackground || !activeTool) return;
@@ -92,6 +100,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const w = activeTool === 'road' ? 200 : 60;
     const h = activeTool === 'road' ? 40 : 60;
     
+    const newPoints = [
+      { x: snap(pos.x - w/2), y: snap(pos.y - h/2) },
+      { x: snap(pos.x + w/2), y: snap(pos.y - h/2) },
+      { x: snap(pos.x + w/2), y: snap(pos.y + h/2) },
+      { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
+    ];
+
+    checkAndExpandMap(newPoints);
+
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
       type: activeTool,
@@ -99,12 +116,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
              activeTool === 'tower' ? `T1` : 
              activeTool === 'pitch' ? 'ملعب' :
              activeTool === 'label_area' ? 'منطقة جديدة' : '',
-      points: [
-        { x: snap(pos.x - w/2), y: snap(pos.y - h/2) },
-        { x: snap(pos.x + w/2), y: snap(pos.y - h/2) },
-        { x: snap(pos.x + w/2), y: snap(pos.y + h/2) },
-        { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
-      ],
+      points: newPoints,
       rotation: 0,
       orientation: 'horizontal',
       color: activeTool === 'label_area' ? '#a855f7' : undefined,
@@ -144,39 +156,37 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       if (el.id !== selectedId) return el;
       const pts = getElementPoints(el);
       const dragIdx = (dragMode as any).index;
+      let newPoints = [...pts];
 
       if (dragMode.type === 'vertex' && dragIdx !== undefined) {
-        const newPoints = [...pts];
         newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
-        return { ...el, points: newPoints };
-      }
-
-      if (dragMode.type === 'edge' && dragIdx !== undefined) {
+      } else if (dragMode.type === 'edge' && dragIdx !== undefined) {
         const idx1 = dragIdx;
         const idx2 = (dragIdx + 1) % pts.length;
         const midX = (pts[idx1].x + pts[idx2].x) / 2;
         const midY = (pts[idx1].y + pts[idx2].y) / 2;
         const dx = snap(pos.x) - midX;
         const dy = snap(pos.y) - midY;
-        const newPoints = [...pts];
         newPoints[idx1] = { x: pts[idx1].x + dx, y: pts[idx1].y + dy };
         newPoints[idx2] = { x: pts[idx2].x + dx, y: pts[idx2].y + dy };
-        return { ...el, points: newPoints };
-      }
-
-      if (dragMode.type === 'move') {
+      } else if (dragMode.type === 'move') {
         const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
         const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
         const dx = snap(pos.x) - centerX;
         const dy = snap(pos.y) - centerY;
-        return { ...el, points: pts.map(p => ({ x: p.x + dx, y: p.y + dy })) };
+        newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      }
+
+      if (dragMode.type !== 'rotate') {
+        checkAndExpandMap(newPoints);
+        return { ...el, points: newPoints };
       }
 
       if (dragMode.type === 'rotate') {
         const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
         const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
         const angle = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI);
-        return { ...el, rotation: angle + 90, points: pts };
+        return { ...el, rotation: angle + 90 };
       }
 
       return el;
@@ -194,13 +204,16 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       const currentW = maxX - minX;
       const currentH = maxY - minY;
 
+      let newPoints = [...pts];
       if (dimension === 'width') {
         const ratio = newVal / (currentW || 1);
-        return { ...el, points: pts.map(p => ({ x: minX + (p.x - minX) * ratio, y: p.y })) };
+        newPoints = pts.map(p => ({ x: minX + (p.x - minX) * ratio, y: p.y }));
       } else {
         const ratio = newVal / (currentH || 1);
-        return { ...el, points: pts.map(p => ({ x: p.x, y: minY + (p.y - minY) * ratio })) };
+        newPoints = pts.map(p => ({ x: p.x, y: minY + (p.y - minY) * ratio }));
       }
+      checkAndExpandMap(newPoints);
+      return { ...el, points: newPoints };
     }));
   };
 
@@ -232,6 +245,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       case 'pitch': return '#ffffff';
       case 'amenity': return '#d97706';
       default: return '#cbd5e1';
+    }
+  };
+
+  const getTextColorClass = (el: MapElement) => {
+    switch (el.type) {
+      case 'tower': return "fill-white";
+      case 'road': return "fill-white";
+      case 'pitch': return "fill-white";
+      case 'house': return "fill-blue-600";
+      case 'green': return "fill-emerald-900";
+      case 'amenity': return "fill-amber-900";
+      case 'label_area': return "fill-slate-800";
+      default: return "fill-slate-700";
     }
   };
 
@@ -285,7 +311,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.1))}><ZoomOut size={18} /></Button>
             <Button variant="ghost" size="icon" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={18} /></Button>
           </div>
-          <Button onClick={() => onSave(elements)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
+          <Button onClick={() => onSave(elements, dims.w, dims.h)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6">
             <Save size={18} /> حفظ المخطط
           </Button>
         </div>
@@ -305,10 +331,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
               <defs>
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
-                  <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
+                  <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/>
                 </pattern>
               </defs>
-              <rect id="map-background" width={mapWidth} height={mapHeight} fill="url(#grid-editor)" />
+              <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
               
               {sortedElements.map((el) => {
                 const pts = getElementPoints(el);
@@ -336,7 +362,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
                     />
                     
-                    {/* لمسات بصرية فنية */}
                     {el.type === 'road' && (
                       el.orientation === 'vertical' ? 
                       <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" /> :
@@ -386,11 +411,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         y={el.type === 'label_area' ? minY - 10 : centerY} 
                         textAnchor="middle" 
                         dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
-                        className={cn(
-                          "font-black pointer-events-none select-none", 
-                          el.type === 'tower' ? "fill-white text-[12px]" : 
-                          el.type === 'label_area' ? "fill-slate-800 text-[14px]" : "fill-slate-700 text-[12px]"
-                        )}
+                        className={cn("font-black pointer-events-none select-none text-[12px]", getTextColorClass(el))}
                       >
                         {el.label}
                       </text>
@@ -567,10 +588,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       newLabel = `${prefix}${num + 2}`;
     }
 
+    const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
+    checkAndExpandMap(newPoints);
+
     const newElement: MapElement = {
       ...el,
       id: Math.random().toString(36).substr(2, 9),
-      points: pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y })),
+      points: newPoints,
       label: newLabel
     };
 

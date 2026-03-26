@@ -106,17 +106,26 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     }
   };
 
-  const handleSaveMap = async (elements: MapElement[]) => {
+  const handleSaveMap = async (elements: MapElement[], newWidth: number, newHeight: number) => {
     if (editingMapProject) {
       try {
         const { error } = await supabase
           .from('projects')
-          .update({ elements })
+          .update({ 
+            elements,
+            map_width: newWidth,
+            map_height: newHeight
+          })
           .eq('id', editingMapProject.id);
 
         if (error) throw error;
 
-        setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements } : p));
+        setProjects(projects.map(p => p.id === editingMapProject.id ? { 
+          ...p, 
+          elements,
+          mapWidth: newWidth,
+          mapHeight: newHeight
+        } : p));
         setEditingMapProject(null);
         showSuccess('تم حفظ المخطط بنجاح');
       } catch (error) {
@@ -138,7 +147,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => setEditingMapProject(null)} className="rounded-xl"><ArrowRight className="ml-2" />العودة</Button>
-            <h1 className="text-2xl font-black">تعديل مخطط: {editingMapProject.name} ({editingMapProject.mapWidth}x{editingMapProject.mapHeight})</h1>
+            <h1 className="text-2xl font-black">تعديل مخطط: {editingMapProject.name}</h1>
           </div>
           <MapEditor 
             initialElements={editingMapProject.elements} 

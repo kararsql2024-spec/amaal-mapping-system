@@ -74,6 +74,22 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
   };
 
+  const getTextColorClass = (el: MapElement) => {
+    const data = housesData[el.id];
+    if (el.type === 'house') {
+      if (!data || data.status === 'available' || data.status === 'sold' || data.status === 'pending' || data.status === 'reserved') return "fill-white";
+      return "fill-slate-700";
+    }
+    switch (el.type) {
+      case 'tower': return "fill-white";
+      case 'road': return "fill-white";
+      case 'pitch': return "fill-white";
+      case 'green': return "fill-emerald-900";
+      case 'amenity': return "fill-amber-900";
+      default: return "fill-slate-800";
+    }
+  };
+
   const sortedElements = [...elements].sort((a, b) => {
     if (a.type === 'label_area' && b.type !== 'label_area') return -1;
     if (a.type !== 'label_area' && b.type === 'label_area') return 1;
@@ -119,7 +135,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
                 />
 
-                {/* لمسات بصرية فنية في العرض */}
                 {el.type === 'road' && (
                   el.orientation === 'vertical' ? 
                   <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
@@ -169,11 +184,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                     y={el.type === 'label_area' ? minY - 10 : centerY} 
                     textAnchor="middle" 
                     dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
-                    className={cn(
-                      "font-black pointer-events-none select-none", 
-                      el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? "fill-white text-[12px]" : 
-                      el.type === 'label_area' ? "fill-slate-800 text-[14px]" : "fill-slate-500 text-[12px]"
-                    )}
+                    className={cn("font-black pointer-events-none select-none text-[12px]", getTextColorClass(el))}
                   >
                     {el.label}
                   </text>
