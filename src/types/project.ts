@@ -15,7 +15,7 @@ export interface MapElement {
   color?: string; 
   textColor?: string;
   opacity?: number; 
-  hideIcon?: boolean; // الخيار الجديد
+  hideIcon?: boolean;
   floors?: number;
   apartmentsPerFloor?: number;
   x: number; 
@@ -23,6 +23,8 @@ export interface MapElement {
   width: number;
   height: number;
   amenityType?: string;
+  strokeWidth?: number; // حجم الفرشاة أو سمك الخط
+  isStroke?: boolean;   // هل العنصر مرسوم بالفرشاة (خط سميك) أم مضلع مغلق
 }
 
 export interface Project {

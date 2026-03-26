@@ -9,7 +9,8 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2, Square
+  Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2, Square,
+  SlidersHorizontal
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -44,9 +45,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType | null>(null);
   const [isBrushMode, setIsBrushMode] = useState(false);
-  const [brushType, setBrushType] = useState<'rect' | 'free'>('rect');
+  const [brushSize, setBrushSize] = useState(40);
   const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush', startPos?: Point, index?: number } | null>(null);
-  const [brushPreview, setBrushPreview] = useState<{ start: Point, end: Point } | null>(null);
   const [tempPoints, setTempPoints] = useState<Point[]>([]);
   const [gridLock, setGridLock] = useState(true);
   const [dims, setDims] = useState({ w: mapWidth, h: mapHeight });
@@ -134,7 +134,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     createElement(activeTool, newPoints);
   };
 
-  const createElement = (type: ElementType, pts: Point[]) => {
+  const createElement = (type: ElementType, pts: Point[], isStroke = false) => {
     checkAndExpandMap(pts);
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
@@ -151,6 +151,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       floors: type === 'tower' ? 5 : undefined,
       apartmentsPerFloor: type === 'tower' ? 4 : undefined,
       amenityType: type === 'amenity' ? 'shop' : undefined,
+      strokeWidth: isStroke ? brushSize : undefined,
+      isStroke: isStroke
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
@@ -160,12 +162,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
     const pos = getMousePos(e);
     if (isBrushMode && activeTool && isBackground) {
-      setDragMode({ type: 'brush', startPos: pos });
-      if (brushType === 'rect') {
-        setBrushPreview({ start: pos, end: pos });
-      } else {
-        setTempPoints([pos]);
-      }
+      setDragMode({ type: 'brush' });
+      setTempPoints([pos]);
       return;
     }
     if (isBackground && !activeTool) {
@@ -176,15 +174,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!dragMode) return;
     const pos = getMousePos(e);
-    if (dragMode.type === 'brush' && dragMode.startPos) {
-      if (brushType === 'rect') {
-        setBrushPreview({ start: dragMode.startPos, end: pos });
-      } else {
-        const lastPt = tempPoints[tempPoints.length - 1];
-        const dist = Math.sqrt(Math.pow(pos.x - lastPt.x, 2) + Math.pow(pos.y - lastPt.y, 2));
-        // تنعيم المسار أثناء الرسم: إضافة نقطة فقط إذا تحرك الماوس مسافة كافية
-        if (dist > 20) setTempPoints(prev => [...prev, pos]);
-      }
+    if (dragMode.type === 'brush') {
+      const lastPt = tempPoints[tempPoints.length - 1];
+      const dist = Math.sqrt(Math.pow(pos.x - lastPt.x, 2) + Math.pow(pos.y - lastPt.y, 2));
+      // تتبع الماوس مثل الفرشاة: إضافة نقطة فقط إذا تحرك الماوس مسافة كافية لضمان أضلاع مستقيمة طويلة
+      if (dist > 30) setTempPoints(prev => [...prev, pos]);
       return;
     }
     if (dragMode.type === 'pan' && dragMode.startPos) {
@@ -229,28 +223,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleMouseUp = () => {
-    if (dragMode?.type === 'brush' && activeTool) {
-      if (brushType === 'rect' && brushPreview) {
-        const x1 = snap(brushPreview.start.x);
-        const y1 = snap(brushPreview.start.y);
-        const x2 = snap(brushPreview.end.x);
-        const y2 = snap(brushPreview.end.y);
-        const minX = Math.min(x1, x2);
-        const maxX = Math.max(x1, x2);
-        const minY = Math.min(y1, y2);
-        const maxY = Math.max(y1, y2);
-        if (maxX - minX > 5 && maxY - minY > 5) {
-          createElement(activeTool, [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }]);
-        }
-      } else if (brushType === 'free' && tempPoints.length > 2) {
-        // تبسيط المسار الحر لتحويله إلى أضلاع حادة
-        // نأخذ النقاط المتباعدة فقط لضمان أضلاع مستقيمة طويلة
-        const simplified = tempPoints.filter((_, i) => i % 3 === 0 || i === tempPoints.length - 1);
-        createElement(activeTool, simplified);
-      }
+    if (dragMode?.type === 'brush' && activeTool && tempPoints.length > 1) {
+      createElement(activeTool, tempPoints, true);
     }
     setDragMode(null);
-    setBrushPreview(null);
     setTempPoints([]);
   };
 
@@ -264,12 +240,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const maxY = Math.max(...pts.map(p => p.y));
     const offset = direction === 'right' ? { x: (maxX - minX) + 10, y: 0 } : { x: 0, y: (maxY - minY) + 10 };
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
-    createElement(el.type, newPoints);
+    createElement(el.type, newPoints, el.isStroke);
   };
 
-  const pointsToPath = (points: Point[]) => {
+  const pointsToPath = (points: Point[], closed = true) => {
     if (!points || points.length === 0) return "";
-    return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + " Z";
+    let path = `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ');
+    return closed ? path + " Z" : path;
   };
 
   const getElementColor = (el: MapElement) => {
@@ -324,6 +301,26 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
+        {/* شريط الأدوات على اليسار */}
+        <div className="w-20 flex flex-col gap-2 bg-white p-2 rounded-[2rem] border border-slate-200 shadow-xl overflow-y-auto no-scrollbar">
+          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", !activeTool && !isBrushMode ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+            <MousePointer2 size={20} />
+            <span className="text-[10px] font-bold">تصفح</span>
+          </button>
+          <div className="h-px bg-slate-100 mx-2" />
+          {TOOLS.map((tool) => (
+            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", activeTool === tool.type && !isBrushMode ? `${tool.color} text-white shadow-lg` : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+              <tool.icon size={20} />
+              <span className="text-[10px] font-bold">{tool.label}</span>
+            </button>
+          ))}
+          <div className="h-px bg-slate-100 mx-2" />
+          <button onClick={() => setIsBrushMode(!isBrushMode)} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", isBrushMode ? "bg-slate-900 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+            <Paintbrush size={20} />
+            <span className="text-[10px] font-bold">فرشاة</span>
+          </button>
+        </div>
+
         <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
           <svg ref={svgRef} className={cn("w-full h-full", isBrushMode ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel}>
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
@@ -349,11 +346,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
                     <path 
-                      d={pointsToPath(pts)} 
-                      fill={getElementColor(el)} 
-                      stroke={getElementStroke(el)} 
+                      d={pointsToPath(pts, !el.isStroke)} 
+                      fill={el.isStroke ? "none" : getElementColor(el)} 
+                      stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
                       fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
-                      strokeWidth={['road', 'green', 'sidewalk', 'parking'].includes(el.type) ? 10 : (isSelected ? 3 : 2)} 
+                      strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green', 'sidewalk', 'parking'].includes(el.type) ? 10 : (isSelected ? 3 : 2))} 
                       strokeLinejoin="round"
                       strokeLinecap="round"
                       className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 filter drop-shadow-lg")} 
@@ -371,30 +368,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 );
               })}
 
-              {brushPreview && activeTool && brushType === 'rect' && (
-                <rect
-                  x={Math.min(snap(brushPreview.start.x), snap(brushPreview.end.x))}
-                  y={Math.min(snap(brushPreview.start.y), snap(brushPreview.end.y))}
-                  width={Math.abs(snap(brushPreview.end.x) - snap(brushPreview.start.x))}
-                  height={Math.abs(snap(brushPreview.end.y) - snap(brushPreview.start.y))}
-                  fill={activeTool === 'road' ? '#475569' : activeTool === 'green' ? '#22c55e' : activeTool === 'sidewalk' ? '#cbd5e1' : '#334155'}
-                  fillOpacity="0.5"
-                  stroke="#3b82f6"
-                  strokeWidth="2"
-                  strokeDasharray="5,5"
-                  pointerEvents="none"
-                />
-              )}
-
-              {tempPoints.length > 1 && brushType === 'free' && (
+              {tempPoints.length > 1 && isBrushMode && (
                 <path
-                  d={pointsToPath(tempPoints)}
+                  d={pointsToPath(tempPoints, false)}
                   fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="4"
-                  strokeDasharray="5,5"
+                  stroke={activeTool ? getElementColor({ type: activeTool } as any) : "#3b82f6"}
+                  strokeWidth={brushSize}
                   strokeLinejoin="round"
                   strokeLinecap="round"
+                  opacity="0.5"
                   pointerEvents="none"
                 />
               )}
@@ -402,47 +384,48 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           </svg>
         </div>
 
-        <div className="w-20 flex flex-col gap-2 bg-white p-2 rounded-[2rem] border border-slate-200 shadow-xl overflow-y-auto no-scrollbar">
-          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", !activeTool && !isBrushMode ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
-            <MousePointer2 size={20} />
-            <span className="text-[10px] font-bold">تصفح</span>
-          </button>
-          <div className="h-px bg-slate-100 mx-2" />
-          {TOOLS.map((tool) => (
-            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", activeTool === tool.type && !isBrushMode ? `${tool.color} text-white shadow-lg` : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
-              <tool.icon size={20} />
-              <span className="text-[10px] font-bold">{tool.label}</span>
-            </button>
-          ))}
-          <div className="h-px bg-slate-100 mx-2" />
-          <button onClick={() => setIsBrushMode(!isBrushMode)} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", isBrushMode ? "bg-slate-900 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
-            <Paintbrush size={20} />
-            <span className="text-[10px] font-bold">فرشاة</span>
-          </button>
+        {/* لوحة الخصائص وإعدادات الفرشاة على اليمين */}
+        <div className="w-80 flex flex-col gap-4">
           {isBrushMode && (
-            <div className="flex flex-col gap-2 mt-2 p-1 bg-slate-50 rounded-xl border border-slate-100">
-              <button onClick={() => setBrushType('rect')} className={cn("w-full aspect-square rounded-lg flex items-center justify-center transition-all", brushType === 'rect' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400")} title="رسم مستطيل"><Square size={18} /></button>
-              <button onClick={() => setBrushType('free')} className={cn("w-full aspect-square rounded-lg flex items-center justify-center transition-all", brushType === 'free' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400")} title="رسم حر"><Paintbrush size={18} /></button>
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-100"><SlidersHorizontal className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">إعدادات الفرشاة</h3></div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الفرشاة</Label><span className="text-xs font-bold text-indigo-600">{brushSize}px</span></div>
+                  <Slider value={[brushSize]} min={10} max={200} step={5} onValueChange={(val) => setBrushSize(val[0])} className="py-4" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع العنصر</Label>
+                  <Select value={activeTool || ''} onValueChange={(val) => setActiveTool(val as ElementType)}>
+                    <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {TOOLS.filter(t => ['road', 'green', 'sidewalk', 'parking'].includes(t.type)).map(t => (
+                        <SelectItem key={t.type} value={t.type} className="font-bold">{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedElement && (
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص العنصر</h3></div>
+                <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="rounded-full hover:bg-rose-50 hover:text-rose-500"><X size={18} /></Button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
+                <div className="space-y-4">
+                  <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">تسمية العنصر</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
+                  <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>
+                </div>
+                <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
+              </div>
             </div>
           )}
         </div>
-
-        {selectedElement && (
-          <div className="w-80 bg-white rounded-[2rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص العنصر</h3></div>
-              <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="rounded-full hover:bg-rose-50 hover:text-rose-500"><X size={18} /></Button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
-              <div className="space-y-4">
-                <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">تسمية العنصر</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
-                <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>
-              </div>
-              <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -89,9 +89,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     ];
   };
 
-  const pointsToPath = (points: Point[]) => {
+  const pointsToPath = (points: Point[], closed = true) => {
     if (!points || points.length === 0) return "";
-    return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ') + " Z";
+    let path = `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ');
+    return closed ? path + " Z" : path;
   };
 
   const getElementStyles = (el: MapElement) => {
@@ -214,8 +215,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) :
                             el.type === 'pitch' ? Trophy : null;
 
-            const isAreaElement = ['road', 'green', 'sidewalk', 'parking'].includes(el.type);
-
             return (
               <g 
                 key={el.id} 
@@ -224,11 +223,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
               >
                 <path 
-                  d={pointsToPath(pts)} 
-                  fill={styles.fill}
-                  stroke={styles.stroke}
+                  d={pointsToPath(pts, !el.isStroke)} 
+                  fill={el.isStroke ? "none" : styles.fill}
+                  stroke={el.isStroke ? styles.fill : styles.stroke}
                   fillOpacity={styles.opacity}
-                  strokeWidth={styles.strokeWidth}
+                  strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth}
                   strokeLinejoin="round"
                   strokeLinecap="round"
                   className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
@@ -252,7 +251,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   </foreignObject>
                 )}
 
-                {el.type === 'road' && (
+                {el.type === 'road' && !el.isStroke && (
                   el.orientation === 'vertical' ? 
                   <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
