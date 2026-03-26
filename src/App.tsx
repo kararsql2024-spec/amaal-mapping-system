@@ -8,29 +8,66 @@ import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import { Project } from "./types/project";
+import { supabase } from "@/integrations/supabase/client";
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  // Load initial state from localStorage
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem('real-estate-projects');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [housesData, setHousesData] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(true);
 
-  const [housesData, setHousesData] = useState<Record<string, any>>(() => {
-    const saved = localStorage.getItem('real-estate-houses');
-    return saved ? JSON.parse(saved) : {};
-  });
-
-  // Save to localStorage whenever state changes
+  // جلب البيانات عند تحميل التطبيق
   useEffect(() => {
-    localStorage.setItem('real-estate-projects', JSON.stringify(projects));
-  }, [projects]);
+    const fetchData = async () => {
+      try {
+        // جلب المشاريع
+        const { data: projectsData, error: projectsError } = await supabase
+          .from('projects')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-  useEffect(() => {
-    localStorage.setItem('real-estate-houses', JSON.stringify(housesData));
-  }, [housesData]);
+        if (projectsError) throw projectsError;
+        
+        // تحويل البيانات لتناسب النوع Project
+        const formattedProjects = (projectsData || []).map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description || '',
+          elements: p.elements || [],
+          mapWidth: p.map_width,
+          mapHeight: p.map_height,
+          createdAt: p.created_at
+        }));
+
+        setProjects(formattedProjects);
+
+        // جلب بيانات الوحدات
+        const { data: unitsData, error: unitsError } = await supabase
+          .from('houses_data')
+          .select('*');
+
+        if (unitsError) throw unitsError;
+
+        const formattedUnits: Record<string, any> = {};
+        (unitsData || []).forEach(u => {
+          formattedUnits[u.unit_key] = u.data;
+        });
+
+        setHousesData(formattedUnits);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center font-bold">جاري تحميل البيانات...</div>;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

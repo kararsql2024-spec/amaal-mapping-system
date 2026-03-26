@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
-import { showSuccess } from '@/utils/toast';
+import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
+import { supabase } from "@/integrations/supabase/client";
 
 interface AdminProps {
   projects: Project[];
@@ -20,46 +21,108 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
 
-  const handleCreateProject = () => {
+  const handleCreateProject = async () => {
     if (!formData.name) return;
-    const newProject: Project = {
-      id: Math.random().toString(36).substr(2, 9),
+    
+    const newId = Math.random().toString(36).substr(2, 9);
+    const newProject = {
+      id: newId,
       name: formData.name,
       description: '',
       elements: [],
-      mapWidth: formData.width,
-      mapHeight: formData.height,
-      createdAt: new Date().toISOString()
+      map_width: formData.width,
+      map_height: formData.height,
     };
-    setProjects([...projects, newProject]);
-    setFormData({ name: '', width: 1000, height: 800 });
-    setIsCreating(false);
-    showSuccess('تم إنشاء المشروع بنجاح');
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .insert(newProject);
+
+      if (error) throw error;
+
+      setProjects([{
+        ...newProject,
+        mapWidth: formData.width,
+        mapHeight: formData.height,
+        createdAt: new Date().toISOString(),
+        elements: []
+      }, ...projects]);
+      
+      setFormData({ name: '', width: 1000, height: 800 });
+      setIsCreating(false);
+      showSuccess('تم إنشاء المشروع بنجاح');
+    } catch (error) {
+      console.error("Error creating project:", error);
+      showError("فشل في إنشاء المشروع");
+    }
   };
 
-  const handleUpdateProjectInfo = () => {
+  const handleUpdateProjectInfo = async () => {
     if (!editingProjectInfo || !formData.name) return;
-    setProjects(projects.map(p => p.id === editingProjectInfo.id ? { 
-      ...p, 
-      name: formData.name, 
-      mapWidth: formData.width, 
-      mapHeight: formData.height 
-    } : p));
-    setEditingProjectInfo(null);
-    setFormData({ name: '', width: 1000, height: 800 });
-    showSuccess('تم تحديث بيانات المشروع بنجاح');
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ 
+          name: formData.name, 
+          map_width: formData.width, 
+          map_height: formData.height 
+        })
+        .eq('id', editingProjectInfo.id);
+
+      if (error) throw error;
+
+      setProjects(projects.map(p => p.id === editingProjectInfo.id ? { 
+        ...p, 
+        name: formData.name, 
+        mapWidth: formData.width, 
+        mapHeight: formData.height 
+      } : p));
+      
+      setEditingProjectInfo(null);
+      setFormData({ name: '', width: 1000, height: 800 });
+      showSuccess('تم تحديث بيانات المشروع بنجاح');
+    } catch (error) {
+      console.error("Error updating project:", error);
+      showError("فشل في تحديث المشروع");
+    }
   };
 
-  const handleDeleteProject = (id: string) => {
-    setProjects(projects.filter(p => p.id !== id));
-    showSuccess('تم حذف المشروع');
+  const handleDeleteProject = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setProjects(projects.filter(p => p.id !== id));
+      showSuccess('تم حذف المشروع');
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      showError("فشل في حذف المشروع");
+    }
   };
 
-  const handleSaveMap = (elements: MapElement[]) => {
+  const handleSaveMap = async (elements: MapElement[]) => {
     if (editingMapProject) {
-      setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements } : p));
-      setEditingMapProject(null);
-      showSuccess('تم حفظ المخطط بنجاح');
+      try {
+        const { error } = await supabase
+          .from('projects')
+          .update({ elements })
+          .eq('id', editingMapProject.id);
+
+        if (error) throw error;
+
+        setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements } : p));
+        setEditingMapProject(null);
+        showSuccess('تم حفظ المخطط بنجاح');
+      } catch (error) {
+        console.error("Error saving map:", error);
+        showError("فشل في حفظ المخطط");
+      }
     }
   };
 

@@ -4,12 +4,13 @@ import React, { useState } from 'react';
 import InteractiveMap from '@/components/InteractiveMap';
 import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
-import { showSuccess } from '@/utils/toast';
+import { showSuccess, showError } from '@/utils/toast';
 import { Map as MapIcon, Settings, ChevronDown } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Project } from '@/types/project';
+import { supabase } from "@/integrations/supabase/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,12 +40,28 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     else setIsUnitModalOpen(true);
   };
 
-  const handleSaveData = (key: string, data: any) => {
-    setHousesData(prev => ({ ...prev, [key]: data }));
-    showSuccess(`تم تحديث البيانات بنجاح`);
+  const handleSaveData = async (key: string, data: any) => {
+    if (!selectedProjectId) return;
+
+    try {
+      const { error } = await supabase
+        .from('houses_data')
+        .upsert({ 
+          unit_key: key, 
+          project_id: selectedProjectId, 
+          data: data 
+        }, { onConflict: 'unit_key' });
+
+      if (error) throw error;
+
+      setHousesData(prev => ({ ...prev, [key]: data }));
+      showSuccess(`تم تحديث البيانات بنجاح`);
+    } catch (error) {
+      console.error("Error saving unit data:", error);
+      showError("فشل في حفظ البيانات");
+    }
   };
 
-  // حساب الإحصائيات مع مراعاة التجميد
   const calculateStats = () => {
     if (!activeProject) return { total: 0, sold: 0 };
     
