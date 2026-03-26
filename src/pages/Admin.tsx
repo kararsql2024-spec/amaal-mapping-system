@@ -10,7 +10,7 @@ import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
-import { cn } from '@/lib/utils';
+import { cn } from '@/utils/toast';
 
 interface AdminProps {
   projects: Project[];
@@ -32,6 +32,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     dateCol: 'E'
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -75,17 +76,19 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     }
   };
 
-  // وظيفة لتنظيف وتطبيع النصوص العربية (إزالة المد، توحيد الهمزات، إلخ)
-  const normalizeArabic = (text: string) => {
-    if (!text) return "";
+  // وظيفة تطبيع نصوص متقدمة جداً للمطابقة
+  const normalizeForMatch = (text: any) => {
+    if (text === null || text === undefined) return "";
     return text
       .toString()
+      .toLowerCase()
       .trim()
-      .replace(/[\u064B-\u0652\u0640]/g, "") // إزالة التشكيل والمد (الكشيدة)
+      .replace(/[\u064B-\u0652\u0640]/g, "") // إزالة التشكيل والمد (الكشيدة) تماماً
       .replace(/[أإآ]/g, "ا") // توحيد الألف
-      .replace(/ة/g, "ه") // توحيد التاء المربوطة والهاء
-      .replace(/ى/g, "ي") // توحيد الياء
-      .replace(/\s+/g, " "); // إزالة المسافات الزائدة
+      .replace(/[ة]/g, "ه") // توحيد التاء المربوطة
+      .replace(/[ى]/g, "ي") // توحيد الياء
+      .replace(/[^a-z0-9\u0621-\u064A]/gi, "") // إزالة أي رموز أو مسافات أو فواصل (مقارنة خام)
+      .replace(/\s+/g, "");
   };
 
   const colToIdx = (col: string) => {
@@ -112,14 +115,22 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
 
+        console.log("--- بدء معالجة ملف الإكسل ---");
+        console.log("إجمالي الصفوف المقروءة:", data.length);
+
         const cityIdx = colToIdx(excelMapping.cityCol);
         const unitIdx = colToIdx(excelMapping.unitCol);
         const nameIdx = colToIdx(excelMapping.nameCol);
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // إنشاء خريطة للمشاريع باستخدام الاسم المطبّع (Normalized)
-        const projectMap = new Map(projects.map(p => [normalizeArabic(p.name), p.id]));
+        // إنشاء خريطة للمشاريع
+        const projectMap = new Map();
+        projects.forEach(p => {
+          const normalizedName = normalizeForMatch(p.name);
+          projectMap.set(normalizedName, p.id);
+          console.log(`مشروع مسجل: "${p.name}" -> مفتاح المطابقة: "${normalizedName}"`);
+        });
         
         const { data: currentUnits, error: fetchError } = await supabase
           .from('houses_data')
@@ -128,49 +139,58 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         if (fetchError) throw fetchError;
 
         const excelDataByProject = new Map<string, Map<string, any>>();
-        const citiesFoundInExcel = new Set<string>();
+        const projectsFoundInExcel = new Set<string>();
 
         data.forEach((row, index) => {
-          if (index === 0) return; 
+          if (index === 0) return; // تخطي العنوان
           
-          const rowCityName = normalizeArabic(String(row[cityIdx] || ''));
-          const projectId = projectMap.get(rowCityName);
+          const rawCity = row[cityIdx];
+          const normalizedCity = normalizeForMatch(rawCity);
+          const projectId = projectMap.get(normalizedCity);
           
           if (projectId) {
-            citiesFoundInExcel.add(projectId);
-            // تطبيع رقم الوحدة أيضاً لضمان المطابقة
-            const unitKey = normalizeArabic(String(row[unitIdx] || ''));
+            projectsFoundInExcel.add(projectId);
+            const rawUnit = row[unitIdx];
+            const normalizedUnit = normalizeForMatch(rawUnit);
             
-            if (unitKey) {
+            if (normalizedUnit) {
               if (!excelDataByProject.has(projectId)) {
                 excelDataByProject.set(projectId, new Map());
               }
               
-              excelDataByProject.get(projectId)?.set(unitKey, {
+              excelDataByProject.get(projectId)?.set(normalizedUnit, {
                 name: String(row[nameIdx] || ''),
                 phone: String(row[phoneIdx] || ''),
                 saleDate: row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '',
                 status: 'sold'
               });
             }
+          } else if (rawCity) {
+            // سجل للمساعدة في التشخيص إذا لم يجد المشروع
+            // console.log(`لم يتم العثور على مطابقة لمدينة الإكسل: "${rawCity}" (مفتاح: "${normalizedCity}")`);
           }
         });
 
+        console.log("المشاريع التي تم العثور عليها في الإكسل:", projectsFoundInExcel.size);
+
         const updates = [];
+        let matchCount = 0;
 
         for (const unit of currentUnits) {
-          if (citiesFoundInExcel.has(unit.project_id)) {
+          if (projectsFoundInExcel.has(unit.project_id)) {
             const projectExcelData = excelDataByProject.get(unit.project_id);
-            // مطابقة الوحدة باستخدام الاسم المطبّع
-            const unitExcelData = projectExcelData?.get(normalizeArabic(unit.unit_key));
+            const normalizedUnitKey = normalizeForMatch(unit.unit_key);
+            const unitExcelData = projectExcelData?.get(normalizedUnitKey);
 
             if (unitExcelData) {
+              matchCount++;
               updates.push({
                 unit_key: unit.unit_key,
                 project_id: unit.project_id,
                 data: { ...unit.data, ...unitExcelData }
               });
             } else if (unit.data?.status === 'sold') {
+              // إذا كانت مباعة في النظام وغير موجودة في الإكسل لهذا المشروع، نعيدها متوفرة
               updates.push({
                 unit_key: unit.unit_key,
                 project_id: unit.project_id,
@@ -186,20 +206,22 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           }
         }
 
+        console.log("عدد الوحدات المتطابقة التي سيتم تحديثها:", matchCount);
+
         if (updates.length > 0) {
           const { error: upsertError } = await supabase
             .from('houses_data')
             .upsert(updates, { onConflict: 'unit_key' });
 
           if (upsertError) throw upsertError;
-          showSuccess(`تمت المزامنة بنجاح: تحديث ${updates.length} وحدة في المشاريع المتطابقة`);
+          showSuccess(`تمت المزامنة: تحديث ${matchCount} وحدة بنجاح`);
         } else {
-          showSuccess("لم يتم العثور على مشاريع متطابقة أو وحدات للتحديث في الملف. تأكد من تطابق أسماء المشاريع.");
+          showError("لم يتم العثور على وحدات متطابقة. تأكد من أن أرقام الوحدات في الإكسل تطابق الأسماء على الخريطة (مثلاً D1 أو T1-F1-P1)");
         }
 
       } catch (error) {
         console.error("Excel processing error:", error);
-        showError("حدث خطأ أثناء معالجة ملف الإكسل. تأكد من مطابقة أسماء المشاريع.");
+        showError("حدث خطأ أثناء معالجة الملف");
       } finally {
         setIsProcessing(false);
         if (e.target) e.target.value = '';
@@ -208,8 +230,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
     reader.readAsBinaryString(file);
   };
-
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleCreateProject = async () => {
     if (!formData.name) return;
