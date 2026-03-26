@@ -11,6 +11,7 @@ export interface MapElement {
   label: string;
   points: Point[];
   rotation: number;
+  orientation?: 'horizontal' | 'vertical'; // الخاصية الجديدة
   color?: string; 
   opacity?: number; 
   floors?: number;

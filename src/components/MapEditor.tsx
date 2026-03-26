@@ -7,7 +7,8 @@ import {
   Trash2, Save, Home, Building2, TreeDeciduous, 
   MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
-  Trophy, Store, School, HeartPulse, Baby, ShoppingBag, Dumbbell, ShoppingCart
+  Trophy, Store, School, HeartPulse, Baby, ShoppingBag, Dumbbell, ShoppingCart,
+  AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -105,6 +106,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
       ],
       rotation: 0,
+      orientation: 'horizontal',
       color: activeTool === 'label_area' ? '#a855f7' : undefined,
       opacity: activeTool === 'label_area' ? 0.2 : 1,
       x: pos.x, y: pos.y, width: w, height: h,
@@ -240,8 +242,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     h: Math.round(Math.max(...selectedPts.map(p => p.y)) - Math.min(...selectedPts.map(p => p.y))),
     minY: Math.min(...selectedPts.map(p => p.y)),
     minX: Math.min(...selectedPts.map(p => p.x)),
-    maxX: Math.max(...selectedPts.map(p => p.x))
-  } : { w: 0, h: 0, minY: 0, minX: 0, maxX: 0 };
+    maxX: Math.max(...selectedPts.map(p => p.x)),
+    maxY: Math.max(...selectedPts.map(p => p.y))
+  } : { w: 0, h: 0, minY: 0, minX: 0, maxX: 0, maxY: 0 };
 
   const sortedElements = [...elements].sort((a, b) => {
     if (a.type === 'label_area' && b.type !== 'label_area') return -1;
@@ -335,15 +338,27 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     
                     {/* لمسات بصرية فنية */}
                     {el.type === 'road' && (
-                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" />
+                      el.orientation === 'vertical' ? 
+                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" /> :
+                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" />
                     )}
                     
                     {el.type === 'pitch' && (
-                      <g pointerEvents="none">
-                        <circle cx={centerX} cy={centerY} r={h/6} fill="none" stroke="white" strokeWidth="1" />
-                        <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
-                        <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
-                        <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                      <g pointerEvents="none" opacity="0.8">
+                        <circle cx={centerX} cy={centerY} r={Math.min(w, h)/6} fill="none" stroke="white" strokeWidth="1" />
+                        {el.orientation === 'vertical' ? (
+                          <>
+                            <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
+                            <rect x={centerX - w/4} y={minY} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
+                            <rect x={centerX - w/4} y={maxY - h/6} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
+                          </>
+                        ) : (
+                          <>
+                            <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
+                            <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                            <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                          </>
+                        )}
                       </g>
                     )}
 
@@ -356,7 +371,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     )}
 
                     {el.type === 'house' && (
-                      <path d={`M ${centerX - w/4} ${centerY} L ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} Z`} fill="none" stroke="#3b82f6" strokeWidth="1" pointerEvents="none" opacity="0.5" />
+                      <path 
+                        d={el.orientation === 'vertical' ? 
+                          `M ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} L ${centerX - w/4} ${centerY} Z` :
+                          `M ${centerX - w/4} ${centerY} L ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} Z`
+                        } 
+                        fill="none" stroke="#3b82f6" strokeWidth="1" pointerEvents="none" opacity="0.5" 
+                      />
                     )}
 
                     {el.label && (
@@ -418,6 +439,26 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
                 <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={selectedElement.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500">اتجاه العنصر</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button 
+                    variant={selectedElement.orientation === 'horizontal' ? 'default' : 'outline'} 
+                    className="rounded-xl gap-2"
+                    onClick={() => setElements(elements.map(el => el.id === selectedId ? {...el, orientation: 'horizontal'} : el))}
+                  >
+                    <AlignHorizontalJustifyCenter size={16} /> أفقي
+                  </Button>
+                  <Button 
+                    variant={selectedElement.orientation === 'vertical' ? 'default' : 'outline'} 
+                    className="rounded-xl gap-2"
+                    onClick={() => setElements(elements.map(el => el.id === selectedId ? {...el, orientation: 'vertical'} : el))}
+                  >
+                    <AlignVerticalJustifyCenter size={16} /> عمودي
+                  </Button>
+                </div>
               </div>
 
               {selectedElement.type === 'amenity' && (

@@ -121,16 +121,46 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
                 {/* لمسات بصرية فنية في العرض */}
                 {el.type === 'road' && (
+                  el.orientation === 'vertical' ? 
+                  <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                 )}
                 
                 {el.type === 'pitch' && (
                   <g opacity="0.8">
-                    <circle cx={centerX} cy={centerY} r={h/6} fill="none" stroke="white" strokeWidth="1" />
-                    <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
-                    <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
-                    <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                    <circle cx={centerX} cy={centerY} r={Math.min(w, h)/6} fill="none" stroke="white" strokeWidth="1" />
+                    {el.orientation === 'vertical' ? (
+                      <>
+                        <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
+                        <rect x={centerX - w/4} y={minY} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
+                        <rect x={centerX - w/4} y={maxY - h/6} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
+                      </>
+                    ) : (
+                      <>
+                        <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
+                        <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                        <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                      </>
+                    )}
                   </g>
+                )}
+
+                {el.type === 'tower' && (
+                  <g opacity="0.3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <line key={i} x1={minX + 5} y1={minY + (h/4)*(i+1)} x2={maxX - 5} y2={minY + (h/4)*(i+1)} stroke="white" strokeWidth="1" />
+                    ))}
+                  </g>
+                )}
+
+                {el.type === 'house' && (
+                  <path 
+                    d={el.orientation === 'vertical' ? 
+                      `M ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} L ${centerX - w/4} ${centerY} Z` :
+                      `M ${centerX - w/4} ${centerY} L ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} L ${centerX} ${centerY + h/4} Z`
+                    } 
+                    fill="none" stroke="white" strokeWidth="1" opacity="0.3" 
+                  />
                 )}
 
                 {el.label && (
