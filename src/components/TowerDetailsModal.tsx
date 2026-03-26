@@ -29,18 +29,26 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
   const aptsPerFloor = tower.apartmentsPerFloor || 1;
   const apts = Array.from({ length: aptsPerFloor }, (_, i) => i + 1);
 
+  // منطق إعادة الترتيب بنمط حرف N (من الأسفل للأعلى)
+  // الصف الأول (العلوي): 2, 4, 6...
+  // الصف الثاني (السفلي): 1, 3, 5...
+  const reorderedApts = [];
+  for (let i = 0; i < apts.length; i += 2) {
+    if (i + 1 < apts.length) {
+      reorderedApts.push(apts[i + 1]); // الرقم الزوجي (للصف العلوي)
+    }
+    reorderedApts.push(apts[i]); // الرقم الفردي (للصف السفلي)
+  }
+
   const getAptKey = (floor: number, aptNum: number) => `${tower.id}_F${floor}_A${aptNum}`;
   
-  // منطق الترقيم الديناميكي: تخطي المجمد غير المحسوب
   const getAptLabel = (floor: number, aptNum: number) => {
     let pCounter = 0;
     const currentKey = getAptKey(floor, aptNum);
     const currentData = housesData[currentKey];
 
-    // إذا كانت الشقة الحالية مجمدة غير محسوبة، لا تأخذ رقم P
     if (currentData?.status === 'frozen_uncounted') return "مجمدة";
 
-    // حساب ترتيب الشقة الحالية بين الشقق "المحسوبة" فقط في البرج بالكامل
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
         const key = getAptKey(f, a);
@@ -109,8 +117,9 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                 </DialogTitle>
               </DialogHeader>
 
-              <div className="grid grid-cols-3 gap-4" dir="ltr">
-                {apts.map((aptNum) => {
+              {/* استخدام grid-rows-2 و grid-flow-col لتحقيق نمط N */}
+              <div className="grid grid-rows-2 grid-flow-col gap-4" dir="ltr">
+                {reorderedApts.map((aptNum) => {
                   const key = getAptKey(selectedFloor, aptNum);
                   const label = getAptLabel(selectedFloor, aptNum);
                   const data = housesData[key] || { status: 'available' };
@@ -120,7 +129,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                     <div 
                       key={key}
                       className={cn(
-                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left",
+                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full",
                         getStatusColor(data.status)
                       )}
                       onClick={() => setSelectedAptKey(key)}
