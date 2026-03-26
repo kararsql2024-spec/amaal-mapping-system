@@ -5,9 +5,8 @@ import InteractiveMap from '@/components/InteractiveMap';
 import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, Settings, ChevronDown } from 'lucide-react';
+import { Map as MapIcon, ChevronDown } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Project } from '@/types/project';
 import { supabase } from "@/integrations/supabase/client";
@@ -98,7 +97,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><MapIcon className="text-white w-8 h-8" /></div>
-            <div><h1 className="text-2xl font-black text-slate-800">نظام إدارة العقارات</h1><p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p></div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-800">نظام ادارة الوحدات السكنية التفاعلي</h1>
+              <p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             {projects.length > 0 && (
@@ -111,7 +113,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Link to="/admin"><Button variant="outline" className="rounded-xl gap-2 border-slate-200"><Settings size={18} />لوحة الإدارة</Button></Link>
           </div>
         </header>
 

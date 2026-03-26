@@ -4,13 +4,15 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
 
 interface AdminProps {
   projects: Project[];
@@ -18,6 +20,7 @@ interface AdminProps {
 }
 
 const Admin = ({ projects, setProjects }: AdminProps) => {
+  const [session, setSession] = useState<any>(null);
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
@@ -35,6 +38,20 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    
     const fetchSettings = async () => {
       try {
         const { data, error } = await supabase
@@ -53,7 +70,60 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     };
 
     fetchSettings();
-  }, []);
+  }, [session]);
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 mx-auto mb-4">
+              <Settings2 className="text-white w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول الإدارة</h1>
+            <p className="text-slate-500 font-medium mt-2">يرجى إدخال بيانات الاعتماد للوصول</p>
+          </div>
+          <Auth
+            supabaseClient={supabase}
+            providers={[]}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: '#4f46e5',
+                    brandAccent: '#4338ca',
+                  },
+                },
+              },
+              className: {
+                container: 'font-bold',
+                button: 'rounded-xl h-12 font-bold',
+                input: 'rounded-xl h-12 border-slate-200',
+              }
+            }}
+            localization={{
+              variables: {
+                sign_in: {
+                  email_label: 'البريد الإلكتروني',
+                  password_label: 'كلمة المرور',
+                  button_label: 'تسجيل الدخول',
+                  loading_button_label: 'جاري تسجيل الدخول...',
+                  email_input_placeholder: 'بريدك الإلكتروني',
+                  password_input_placeholder: 'كلمة المرور الخاصة بك',
+                },
+              },
+            }}
+            theme="light"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
@@ -120,7 +190,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // 1. جلب كافة بيانات الوحدات الحالية لبناء خريطة التسميات
         const { data: currentHousesData, error: fetchError } = await supabase
           .from('houses_data')
           .select('*');
@@ -132,7 +201,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           housesDataMap[u.unit_key] = u.data;
         });
 
-        // 2. بناء خريطة مطابقة ذكية: (ID المشروع + الاسم المطبّع للوحدة) -> المفتاح التقني
         const labelToKeyMap = new Map<string, string>();
         const projectMap = new Map<string, string>();
 
@@ -170,7 +238,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           });
         });
 
-        // 3. معالجة صفوف الإكسل وتجميع التحديثات
         const updatesMap = new Map<string, any>();
         const projectsInExcel = new Set<string>();
 
@@ -201,9 +268,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           }
         });
 
-        // 4. التعامل مع الوحدات التي أصبحت "متوفرة" في المشاريع المذكورة في الإكسل
         currentHousesData?.forEach(unit => {
-          // إذا كان المشروع موجوداً في الإكسل، والوحدة كانت مباعة ولكنها غير موجودة في الإكسل الحالي
           if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
             if (!updatesMap.has(unit.unit_key)) {
               updatesMap.set(unit.unit_key, {
@@ -403,6 +468,9 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
               <FileSpreadsheet size={18} /> تحديث المبيعات
             </Button>
             <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
+            <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 gap-2">
+              <LogOut size={18} /> خروج
+            </Button>
           </div>
         </header>
 
