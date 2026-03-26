@@ -27,17 +27,6 @@ interface MapEditorProps {
 
 const GRID_SIZE = 10;
 
-const AMENITY_TYPES = [
-  { id: 'shop', label: 'محل تجاري', icon: Store },
-  { id: 'school', label: 'مدرسة', icon: GraduationCap },
-  { id: 'medical', label: 'مركز طبي', icon: Stethoscope },
-  { id: 'nursery', label: 'حضانة', icon: Baby },
-  { id: 'mall', label: 'مول', icon: ShoppingBag },
-  { id: 'gym', label: 'جم', icon: Dumbbell },
-  { id: 'supermarket', label: 'أسواق مركزية', icon: ShoppingCart },
-  { id: 'mosque', label: 'مسجد', icon: MoonStar },
-];
-
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
   { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
@@ -193,7 +182,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       } else {
         const lastPt = tempPoints[tempPoints.length - 1];
         const dist = Math.sqrt(Math.pow(pos.x - lastPt.x, 2) + Math.pow(pos.y - lastPt.y, 2));
-        if (dist > 5) setTempPoints(prev => [...prev, pos]);
+        // تنعيم المسار أثناء الرسم: إضافة نقطة فقط إذا تحرك الماوس مسافة كافية
+        if (dist > 20) setTempPoints(prev => [...prev, pos]);
       }
       return;
     }
@@ -253,7 +243,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           createElement(activeTool, [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }]);
         }
       } else if (brushType === 'free' && tempPoints.length > 2) {
-        createElement(activeTool, tempPoints);
+        // تبسيط المسار الحر لتحويله إلى أضلاع حادة
+        // نأخذ النقاط المتباعدة فقط لضمان أضلاع مستقيمة طويلة
+        const simplified = tempPoints.filter((_, i) => i % 3 === 0 || i === tempPoints.length - 1);
+        createElement(activeTool, simplified);
       }
     }
     setDragMode(null);
@@ -298,7 +291,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     switch (el.type) {
       case 'house': return '#3b82f6';
       case 'tower': return '#0f172a';
-      case 'road': case 'green': case 'sidewalk': case 'parking': return 'none';
+      case 'road': return '#475569';
+      case 'green': return '#22c55e';
+      case 'sidewalk': return '#cbd5e1';
+      case 'parking': return '#334155';
       case 'pitch': return '#ffffff';
       default: return '#cbd5e1';
     }
@@ -311,19 +307,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const updateSelectedElement = (updates: Partial<MapElement>) => {
     if (!selectedId) return;
     setElements(prev => prev.map(el => el.id === selectedId ? { ...el, ...updates } : el));
-  };
-
-  const handleSizeChange = (dim: 'w' | 'h', value: number) => {
-    if (!selectedElement) return;
-    const pts = getElementPoints(selectedElement);
-    const minX = Math.min(...pts.map(p => p.x));
-    const minY = Math.min(...pts.map(p => p.y));
-    const maxX = Math.max(...pts.map(p => p.x));
-    const maxY = Math.max(...pts.map(p => p.y));
-    const scaleX = dim === 'w' ? value / (maxX - minX) : 1;
-    const scaleY = dim === 'h' ? value / (maxY - minY) : 1;
-    const newPoints = pts.map(p => ({ x: minX + (p.x - minX) * scaleX, y: minY + (p.y - minY) * scaleY }));
-    updateSelectedElement({ points: newPoints });
   };
 
   return (
@@ -361,17 +344,22 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 const minX = Math.min(...pts.map(p => p.x));
                 const maxX = Math.max(...pts.map(p => p.x));
                 const maxY = Math.max(...pts.map(p => p.y));
-                const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : el.type === 'amenity' ? getAmenityIcon(el.amenityType) : null;
+                const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : null;
 
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                    {el.type === 'label_area' ? (
-                      <rect x={minX} y={minY} width={maxX-minX} height={maxY-minY} rx="20" ry="20" fill={getElementColor(el)} stroke={getElementStroke(el)} fillOpacity={el.opacity} strokeWidth={isSelected ? 3 : 2} className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 filter drop-shadow-lg")} onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} />
-                    ) : (
-                      <path d={pointsToPath(pts)} fill={getElementColor(el)} stroke={getElementStroke(el)} fillOpacity={1} strokeWidth={isSelected ? 3 : (el.type === 'pitch' ? 2 : 1)} className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 filter drop-shadow-lg")} onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} />
-                    )}
+                    <path 
+                      d={pointsToPath(pts)} 
+                      fill={getElementColor(el)} 
+                      stroke={getElementStroke(el)} 
+                      fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
+                      strokeWidth={['road', 'green', 'sidewalk', 'parking'].includes(el.type) ? 10 : (isSelected ? 3 : 2)} 
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 filter drop-shadow-lg")} 
+                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
+                    />
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
-                    {el.type === 'road' && (el.orientation === 'vertical' ? <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" /> : <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" />)}
                     {el.label && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{el.label}</text>}
                     {isSelected && (
                       <>
@@ -401,11 +389,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               {tempPoints.length > 1 && brushType === 'free' && (
                 <path
                   d={pointsToPath(tempPoints)}
-                  fill={activeTool === 'road' ? '#475569' : activeTool === 'green' ? '#22c55e' : activeTool === 'sidewalk' ? '#cbd5e1' : '#334155'}
-                  fillOpacity="0.5"
+                  fill="none"
                   stroke="#3b82f6"
-                  strokeWidth="2"
+                  strokeWidth="4"
                   strokeDasharray="5,5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                   pointerEvents="none"
                 />
               )}

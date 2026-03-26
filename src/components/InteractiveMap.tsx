@@ -98,10 +98,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.color || '#a855f7', opacity: el.opacity || 0.2, strokeWidth: 2 };
     
     const data = housesData[el.id];
-    if (el.type === 'road') return { fill: '#475569', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    if (el.type === 'sidewalk') return { fill: 'url(#sidewalk-pattern)', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    if (el.type === 'parking') return { fill: 'url(#parking-pattern)', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'road') return { fill: '#475569', stroke: '#475569', opacity: 1, strokeWidth: 10 };
+    if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: '#22c55e', opacity: 1, strokeWidth: 10 };
+    if (el.type === 'sidewalk') return { fill: 'url(#sidewalk-pattern)', stroke: '#cbd5e1', opacity: 1, strokeWidth: 10 };
+    if (el.type === 'parking') return { fill: 'url(#parking-pattern)', stroke: '#334155', opacity: 1, strokeWidth: 10 };
     if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1, strokeWidth: 2 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1, strokeWidth: 2 };
     if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1, strokeWidth: 2 };
@@ -140,7 +140,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     }
   };
 
-  // ترتيب الطبقات: label_area في الأسفل، ثم الطرق والمساحات، ثم المرافق، ثم المنازل والأبراج في الأعلى
   const layerOrder: Record<string, number> = {
     'label_area': 0,
     'road': 1,
@@ -181,17 +180,14 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse">
               <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
             </pattern>
-            {/* نمط المساحة الخضراء */}
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse">
               <rect width="10" height="10" fill="#22c55e" />
               <path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" />
             </pattern>
-            {/* نمط الرصيف */}
             <pattern id="sidewalk-pattern" width="8" height="8" patternUnits="userSpaceOnUse">
               <rect width="8" height="8" fill="#cbd5e1" />
               <path d="M 8 0 L 8 8 M 0 8 L 8 8" fill="none" stroke="#94a3b8" strokeWidth="0.5" />
             </pattern>
-            {/* نمط الكراج */}
             <pattern id="parking-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
               <rect width="20" height="20" fill="#334155" />
               <path d="M 2 0 L 2 20 M 18 0 L 18 20" fill="none" stroke="white" strokeWidth="1" opacity="0.3" />
@@ -212,14 +208,13 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const maxX = Math.max(...pts.map(p => p.x));
             const maxY = Math.max(...pts.map(p => p.y));
             const topCenterX = (minX + maxX) / 2;
-            const w = maxX - minX;
-            const h = maxY - minY;
 
-            // إزالة الأيقونات من الكراج والرصيف والمساحة الخضراء
             const IconComponent = el.type === 'house' ? Home : 
                             el.type === 'tower' ? Building2 : 
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) :
                             el.type === 'pitch' ? Trophy : null;
+
+            const isAreaElement = ['road', 'green', 'sidewalk', 'parking'].includes(el.type);
 
             return (
               <g 
@@ -228,26 +223,16 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} 
                 transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
               >
-                {el.type === 'label_area' ? (
-                  <rect
-                    x={minX} y={minY} width={w} height={h}
-                    rx="20" ry="20"
-                    fill={styles.fill}
-                    stroke={styles.stroke}
-                    fillOpacity={styles.opacity}
-                    strokeWidth={styles.strokeWidth}
-                    className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
-                  />
-                ) : (
-                  <path 
-                    d={pointsToPath(pts)} 
-                    fill={styles.fill}
-                    stroke={styles.stroke}
-                    fillOpacity={styles.opacity}
-                    strokeWidth={styles.strokeWidth}
-                    className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
-                  />
-                )}
+                <path 
+                  d={pointsToPath(pts)} 
+                  fill={styles.fill}
+                  stroke={styles.stroke}
+                  fillOpacity={styles.opacity}
+                  strokeWidth={styles.strokeWidth}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
+                />
 
                 {IconComponent && !el.hideIcon && (
                   <foreignObject 
@@ -271,17 +256,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   el.orientation === 'vertical' ? 
                   <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
-                )}
-                
-                {el.type === 'pitch' && (
-                  <g opacity="0.4" pointerEvents="none">
-                    <circle cx={centerX} cy={centerY} r={Math.min(w, h)/6} fill="none" stroke="white" strokeWidth="1" />
-                    {el.orientation === 'vertical' ? (
-                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
-                    ) : (
-                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
-                    )}
-                  </g>
                 )}
 
                 {el.label && (
