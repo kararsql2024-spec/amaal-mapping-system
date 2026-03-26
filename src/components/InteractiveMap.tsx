@@ -22,6 +22,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
+  const svgRef = useRef<SVGSVGElement>(null);
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -132,11 +134,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     }
   };
 
-  const sortedElements.map((el) => {
-    // ... (rest of the component logic remains the same)
+  const sortedElements = [...elements].sort((a, b) => {
+    if (a.type === 'label_area' && b.type !== 'label_area') return -1;
+    if (a.type !== 'label_area' && b.type === 'label_area') return 1;
+    return 0;
   });
 
-  // Note: I'll rewrite the full file to ensure no errors
   return (
     <div className={cn(
       "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
@@ -153,13 +156,20 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
+        <svg 
+          ref={svgRef}
+          viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
+          className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" 
+          style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}
+        >
           <defs>
-            <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
+            <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse">
+              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
+            </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
-          {elements.map((el) => {
+          {sortedElements.map((el) => {
             const styles = getElementStyles(el);
             const isSelected = selectedHouseId === el.id;
             const isInteractive = el.type === 'house' || el.type === 'tower';
@@ -176,7 +186,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const h = maxY - minY;
 
             return (
-              <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+              <g 
+                key={el.id} 
+                onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} 
+                className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} 
+                transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
+              >
                 {el.type === 'label_area' ? (
                   <rect
                     x={minX} y={minY} width={w} height={h}
