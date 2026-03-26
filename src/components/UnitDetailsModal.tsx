@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, User, Phone, Info, Building2 } from "lucide-react";
+import { Home, User, Phone, Info, Building2, Calendar } from "lucide-react";
 
 interface UnitDetailsModalProps {
   isOpen: boolean;
@@ -36,17 +36,25 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     name: '',
     phone: '',
     details: '',
+    saleDate: '',
   });
 
   React.useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      setFormData({
+        status: initialData.status || 'available',
+        name: initialData.name || '',
+        phone: initialData.phone || '',
+        details: initialData.details || '',
+        saleDate: initialData.saleDate || '',
+      });
     } else {
       setFormData({
         status: 'available',
         name: '',
         phone: '',
         details: '',
+        saleDate: '',
       });
     }
   }, [initialData, isOpen]);
@@ -58,6 +66,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   const isAvailable = formData.status === 'available';
   const isFrozen = formData.status.startsWith('frozen');
+  const showSaleFields = formData.status === 'sold' || formData.status === 'reserved' || formData.status === 'pending';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -90,7 +99,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
             </Select>
           </div>
 
-          {(!isAvailable && !isFrozen) && (
+          {showSaleFields && (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="space-y-2">
                 <Label className="text-right block font-bold text-slate-600">الاسم الكامل</Label>
@@ -115,6 +124,19 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     placeholder="05xxxxxxxx"
                     value={formData.phone}
                     onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-right block font-bold text-slate-600">تاريخ {formData.status === 'sold' ? 'البيع' : 'الحجز'}</Label>
+                <div className="relative">
+                  <Calendar className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                  <Input 
+                    type="date"
+                    className="pr-10 rounded-xl h-12 border-slate-200"
+                    value={formData.saleDate}
+                    onChange={(e) => setFormData({...formData, saleDate: e.target.value})}
                   />
                 </div>
               </div>

@@ -4,11 +4,12 @@ import React, { useState } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2 } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
+import * as XLSX from 'xlsx';
 
 interface AdminProps {
   projects: Project[];
@@ -19,7 +20,128 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
+  const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
+  
+  // Excel Mapping State
+  const [excelMapping, setExcelMapping] = useState({
+    cityName: '',
+    cityCol: 'A',
+    unitCol: 'B',
+    nameCol: 'C',
+    phoneCol: 'D',
+    dateCol: 'E'
+  });
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const colToIdx = (col: string) => {
+    let res = 0;
+    for (let i = 0; i < col.length; i++) {
+      res = res * 26 + (col.charCodeAt(i) - 64);
+    }
+    return res - 1;
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !excelMapping.cityName) {
+      showError("يرجى إدخال اسم المدينة واختيار ملف");
+      return;
+    }
+
+    setIsProcessing(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+
+        const cityIdx = colToIdx(excelMapping.cityCol);
+        const unitIdx = colToIdx(excelMapping.unitCol);
+        const nameIdx = colToIdx(excelMapping.nameCol);
+        const phoneIdx = colToIdx(excelMapping.phoneCol);
+        const dateIdx = colToIdx(excelMapping.dateCol);
+
+        // جلب جميع بيانات الوحدات الحالية
+        const { data: currentUnits, error: fetchError } = await supabase
+          .from('houses_data')
+          .select('*');
+
+        if (fetchError) throw fetchError;
+
+        const excelUnitsMap = new Map();
+        
+        // معالجة بيانات الإكسل
+        data.forEach((row, index) => {
+          if (index === 0) return; // Skip header
+          const rowCity = String(row[cityIdx] || '').trim();
+          if (rowCity === excelMapping.cityName.trim()) {
+            const unitKey = String(row[unitIdx] || '').trim();
+            if (unitKey) {
+              excelUnitsMap.set(unitKey, {
+                name: String(row[nameIdx] || ''),
+                phone: String(row[phoneIdx] || ''),
+                saleDate: row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '',
+                status: 'sold'
+              });
+            }
+          }
+        });
+
+        const updates = [];
+        const processedKeys = new Set();
+
+        // 1. تحديث الوحدات الموجودة في الإكسل أو تحويلها لمتوفر إذا كانت مباعة وغير موجودة
+        for (const unit of currentUnits) {
+          const excelData = excelUnitsMap.get(unit.unit_key);
+          
+          if (excelData) {
+            // موجود في الإكسل -> تحديث لمباع
+            updates.push({
+              unit_key: unit.unit_key,
+              project_id: unit.project_id,
+              data: { ...unit.data, ...excelData }
+            });
+            processedKeys.add(unit.unit_key);
+          } else if (unit.data?.status === 'sold') {
+            // كان مباع وغير موجود في الإكسل -> تحويل لمتوفر
+            updates.push({
+              unit_key: unit.unit_key,
+              project_id: unit.project_id,
+              data: { ...unit.data, status: 'available', name: '', phone: '', saleDate: '' }
+            });
+          }
+        }
+
+        // 2. إضافة الوحدات الجديدة الموجودة في الإكسل وغير موجودة في قاعدة البيانات (اختياري حسب الحاجة)
+        // هنا سنكتفي بتحديث الوحدات المعرفة مسبقاً في النظام لضمان عدم العبث بالهيكلية
+
+        if (updates.length > 0) {
+          const { error: upsertError } = await supabase
+            .from('houses_data')
+            .upsert(updates, { onConflict: 'unit_key' });
+
+          if (upsertError) throw upsertError;
+          showSuccess(`تم تحديث ${updates.length} وحدة بنجاح`);
+        } else {
+          showSuccess("لم يتم العثور على تغييرات لتحديثها");
+        }
+
+      } catch (error) {
+        console.error("Excel processing error:", error);
+        showError("حدث خطأ أثناء معالجة ملف الإكسل");
+      } finally {
+        setIsProcessing(false);
+        if (e.target) e.target.value = '';
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
 
   const handleCreateProject = async () => {
     if (!formData.name) return;
@@ -139,6 +261,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     setEditingProjectInfo(project);
     setFormData({ name: project.name, width: project.mapWidth, height: project.mapHeight });
     setIsCreating(false);
+    setShowSalesUpdate(false);
   };
 
   if (editingMapProject) {
@@ -168,59 +291,130 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white" /></div>
             <div><h1 className="text-2xl font-black text-slate-800">لوحة الإدارة</h1><p className="text-slate-500 font-medium">إدارة المشاريع والمخططات</p></div>
           </div>
-          <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
+          <div className="flex gap-2">
+            <Button 
+              variant={showSalesUpdate ? "default" : "outline"} 
+              onClick={() => { setShowSalesUpdate(!showSalesUpdate); setIsCreating(false); setEditingProjectInfo(null); }}
+              className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}
+            >
+              <FileSpreadsheet size={18} /> تحديث المبيعات
+            </Button>
+            <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">المشاريع الحالية</h2>
-              <Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800 }); }} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button>
-            </div>
+            {showSalesUpdate ? (
+              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
+                <div className="flex items-center gap-3 border-b pb-4">
+                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div>
+                  <h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2>
+                </div>
 
-            {(isCreating || editingProjectInfo) && (
-              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-6">
-                <h3 className="font-black text-xl">{editingProjectInfo ? 'تعديل بيانات المشروع' : 'إنشاء مشروع جديد'}</h3>
-                <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-500">اسم المشروع</label>
-                    <Input placeholder="ادخل اسم المشروع..." value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="rounded-xl h-12" />
+                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> اسم المدينة (الشرط)</label>
+                    <Input placeholder="مثال: الرياض" value={excelMapping.cityName} onChange={(e) => setExcelMapping({...excelMapping, cityName: e.target.value})} className="rounded-xl h-12 border-slate-200" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-bold text-slate-500">عرض المخطط (px)</label>
-                      <Input type="number" value={formData.width} onChange={(e) => setFormData({...formData, width: parseInt(e.target.value)})} className="rounded-xl h-12" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-bold text-slate-500">طول المخطط (px)</label>
-                      <Input type="number" value={formData.height} onChange={(e) => setFormData({...formData, height: parseInt(e.target.value)})} className="rounded-xl h-12" />
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-600">عمود المدينة (A, B, ...)</label>
+                    <Input placeholder="A" value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" />
                   </div>
-                  <div className="flex gap-3 pt-4">
-                    <Button onClick={editingProjectInfo ? handleUpdateProjectInfo : handleCreateProject} className="bg-blue-600 rounded-xl h-12 px-8 font-bold">
-                      {editingProjectInfo ? 'تحديث البيانات' : 'إنشاء المشروع'}
-                    </Button>
-                    <Button variant="ghost" onClick={() => { setIsCreating(false); setEditingProjectInfo(null); }} className="rounded-xl h-12">إلغاء</Button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">عمود رقم الوحدة</label>
+                    <Input placeholder="B" value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" />
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">عمود الاسم</label>
+                    <Input placeholder="C" value={excelMapping.nameCol} onChange={(e) => setExcelMapping({...excelMapping, nameCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">عمود الهاتف</label>
+                    <Input placeholder="D" value={excelMapping.phoneCol} onChange={(e) => setExcelMapping({...excelMapping, phoneCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">عمود التاريخ</label>
+                    <Input placeholder="E" value={excelMapping.dateCol} onChange={(e) => setExcelMapping({...excelMapping, dateCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" />
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-6 rounded-2xl border border-dashed border-slate-300 text-center space-y-4">
+                  <div className="flex justify-center"><Upload className="text-slate-400 w-12 h-12" /></div>
+                  <div>
+                    <p className="font-bold text-slate-700">اختر ملف الإكسل للمزامنة</p>
+                    <p className="text-xs text-slate-500 mt-1">سيتم تحديث الحالات والبيانات تلقائياً بناءً على الأعمدة المحددة</p>
+                  </div>
+                  <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="hidden" id="excel-upload" disabled={isProcessing} />
+                  <Button asChild disabled={isProcessing} className="bg-slate-900 hover:bg-slate-800 rounded-xl px-8 h-12 font-bold">
+                    <label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-2">
+                      {isProcessing ? "جاري المعالجة..." : "رفع الملف وبدء التحديث"}
+                    </label>
+                  </Button>
+                </div>
+
+                <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-xl border border-amber-100">
+                  <AlertCircle className="text-amber-600 shrink-0" size={20} />
+                  <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                    تنبيه: سيقوم النظام بالبحث عن الوحدات التي تطابق "اسم المدينة". إذا كانت الوحدة مباعة في النظام وغير موجودة في الملف، سيتم إعادتها لحالة "متوفر".
+                  </p>
                 </div>
               </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-4">
-              {projects.map(project => (
-                <div key={project.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100"><MapIcon className="text-slate-400" /></div>
-                    <div><h3 className="font-bold text-lg">{project.name}</h3><p className="text-sm text-slate-500">{project.elements.length} عنصر | {project.mapWidth}x{project.mapHeight}</p></div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => startEditingInfo(project)} className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl"><Edit2 size={18} /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteProject(project.id)} className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></Button>
-                    <Button onClick={() => setEditingMapProject(project)} className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"><Settings2 size={16} />تعديل المخطط</Button>
-                  </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold">المشاريع الحالية</h2>
+                  <Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800 }); }} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button>
                 </div>
-              ))}
-            </div>
+
+                {(isCreating || editingProjectInfo) && (
+                  <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-6">
+                    <h3 className="font-black text-xl">{editingProjectInfo ? 'تعديل بيانات المشروع' : 'إنشاء مشروع جديد'}</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-500">اسم المشروع</label>
+                        <Input placeholder="ادخل اسم المشروع..." value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="rounded-xl h-12" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-slate-500">عرض المخطط (px)</label>
+                          <Input type="number" value={formData.width} onChange={(e) => setFormData({...formData, width: parseInt(e.target.value)})} className="rounded-xl h-12" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-slate-500">طول المخطط (px)</label>
+                          <Input type="number" value={formData.height} onChange={(e) => setFormData({...formData, height: parseInt(e.target.value)})} className="rounded-xl h-12" />
+                        </div>
+                      </div>
+                      <div className="flex gap-3 pt-4">
+                        <Button onClick={editingProjectInfo ? handleUpdateProjectInfo : handleCreateProject} className="bg-blue-600 rounded-xl h-12 px-8 font-bold">
+                          {editingProjectInfo ? 'تحديث البيانات' : 'إنشاء المشروع'}
+                        </Button>
+                        <Button variant="ghost" onClick={() => { setIsCreating(false); setEditingProjectInfo(null); }} className="rounded-xl h-12">إلغاء</Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4">
+                  {projects.map(project => (
+                    <div key={project.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100"><MapIcon className="text-slate-400" /></div>
+                        <div><h3 className="font-bold text-lg">{project.name}</h3><p className="text-sm text-slate-500">{project.elements.length} عنصر | {project.mapWidth}x{project.mapHeight}</p></div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => startEditingInfo(project)} className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl"><Edit2 size={18} /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteProject(project.id)} className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></Button>
+                        <Button onClick={() => setEditingMapProject(project)} className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"><Settings2 size={16} />تعديل المخطط</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
