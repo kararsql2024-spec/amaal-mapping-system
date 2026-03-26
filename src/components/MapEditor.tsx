@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
@@ -40,6 +40,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
   
   const svgRef = useRef<SVGSVGElement>(null);
+  const contentRef = useRef<SVGGElement>(null);
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
 
@@ -54,11 +55,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const getMousePos = (e: React.MouseEvent | WheelEvent) => {
-    if (!svgRef.current) return { x: 0, y: 0 };
+    if (!svgRef.current || !contentRef.current) return { x: 0, y: 0 };
     const pt = svgRef.current.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
-    const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
+    // تحويل إحداثيات الشاشة إلى إحداثيات المجموعة الداخلية (المتأثرة بالـ Zoom والـ Pan)
+    const svgP = pt.matrixTransform(contentRef.current.getScreenCTM()?.inverse());
     return { x: svgP.x, y: svgP.y };
   };
 
@@ -70,7 +72,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (dragMode || e.target !== svgRef.current || !activeTool) return;
+    // نتحقق إذا كان الضغط على الخلفية أو الـ SVG نفسه وليس على عنصر موجود
+    const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
+    if (dragMode || !isBackground || !activeTool) return;
     
     const pos = getMousePos(e);
     const w = 60, h = 60;
@@ -100,13 +104,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.target === svgRef.current && !activeTool) {
+    const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
+    if (isBackground && !activeTool) {
       setDragMode({ type: 'pan', startPos: { x: e.clientX, y: e.clientY } });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragMode || !svgRef.current) return;
+    if (!dragMode) return;
 
     if (dragMode.type === 'pan' && dragMode.startPos) {
       const dx = e.clientX - dragMode.startPos.x;
@@ -122,8 +127,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     setElements(prev => prev.map(el => {
       if (el.id !== selectedId) return el;
       const pts = getElementPoints(el);
-
-      // @ts-ignore - index is stored in dragMode for vertex/edge
       const dragIdx = (dragMode as any).index;
 
       if (dragMode.type === 'vertex' && dragIdx !== undefined) {
@@ -273,92 +276,93 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden">
           <svg 
             ref={svgRef} 
-            viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
             className={cn("w-full h-full", !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")}
             onClick={handleCanvasClick} 
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove} 
             onMouseUp={() => setDragMode(null)}
             onWheel={handleWheel}
-            style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}
           >
-            <defs>
-              <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
-                <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid-editor)" />
-            
-            {sortedElements.map((el) => {
-              const pts = getElementPoints(el);
-              const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-              const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-              const isSelected = selectedId === el.id;
+            <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
+              <defs>
+                <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
+                  <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
+                </pattern>
+              </defs>
+              {/* خلفية تفاعلية تغطي مساحة المخطط بالكامل */}
+              <rect id="map-background" width={mapWidth} height={mapHeight} fill="url(#grid-editor)" />
               
-              const minY = Math.min(...pts.map(p => p.y));
-              const minX = Math.min(...pts.map(p => p.x));
-              const maxX = Math.max(...pts.map(p => p.x));
-              const topCenterX = (minX + maxX) / 2;
+              {sortedElements.map((el) => {
+                const pts = getElementPoints(el);
+                const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+                const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+                const isSelected = selectedId === el.id;
+                
+                const minY = Math.min(...pts.map(p => p.y));
+                const minX = Math.min(...pts.map(p => p.x));
+                const maxX = Math.max(...pts.map(p => p.x));
+                const topCenterX = (minX + maxX) / 2;
 
-              return (
-                <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                  <path
-                    d={pointsToPath(pts)}
-                    fill={getElementColor(el)}
-                    stroke={getElementStroke(el)}
-                    fillOpacity={el.type === 'label_area' ? el.opacity : 1}
-                    className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
-                    onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
-                  />
-                  
-                  {el.label && (
-                    <text 
-                      x={el.type === 'label_area' ? topCenterX : centerX} 
-                      y={el.type === 'label_area' ? minY - 10 : centerY} 
-                      textAnchor="middle" 
-                      dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
-                      className={cn(
-                        "font-black pointer-events-none select-none", 
-                        el.type === 'tower' ? "fill-white text-[12px]" : 
-                        el.type === 'label_area' ? "fill-slate-800 text-[14px]" : "fill-slate-700 text-[12px]"
-                      )}
-                    >
-                      {el.label}
-                    </text>
-                  )}
+                return (
+                  <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                    <path
+                      d={pointsToPath(pts)}
+                      fill={getElementColor(el)}
+                      stroke={getElementStroke(el)}
+                      fillOpacity={el.type === 'label_area' ? el.opacity : 1}
+                      className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
+                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                    />
+                    
+                    {el.label && (
+                      <text 
+                        x={el.type === 'label_area' ? topCenterX : centerX} 
+                        y={el.type === 'label_area' ? minY - 10 : centerY} 
+                        textAnchor="middle" 
+                        dominantBaseline={el.type === 'label_area' ? "auto" : "middle"}
+                        className={cn(
+                          "font-black pointer-events-none select-none", 
+                          el.type === 'tower' ? "fill-white text-[12px]" : 
+                          el.type === 'label_area' ? "fill-slate-800 text-[14px]" : "fill-slate-700 text-[12px]"
+                        )}
+                      >
+                        {el.label}
+                      </text>
+                    )}
 
-                  {isSelected && (
-                    <>
-                      {pts.map((p, i) => {
-                        const nextP = pts[(i + 1) % pts.length];
-                        return (
-                          <line
-                            key={`edge-${i}`}
-                            x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y}
-                            className="stroke-blue-400/50 stroke-[8px] cursor-move hover:stroke-blue-500/80 transition-all"
-                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i } as any); }}
+                    {isSelected && (
+                      <>
+                        {pts.map((p, i) => {
+                          const nextP = pts[(i + 1) % pts.length];
+                          return (
+                            <line
+                              key={`edge-${i}`}
+                              x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y}
+                              className="stroke-blue-400/50 stroke-[8px] cursor-move hover:stroke-blue-500/80 transition-all"
+                              onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i } as any); }}
+                            />
+                          );
+                        })}
+                        {pts.map((p, i) => (
+                          <circle
+                            key={`vertex-${i}`}
+                            cx={p.x} cy={p.y} r={6}
+                            className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
+                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i } as any); }}
                           />
-                        );
-                      })}
-                      {pts.map((p, i) => (
+                        ))}
+                        <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
                         <circle
-                          key={`vertex-${i}`}
-                          cx={p.x} cy={p.y} r={6}
-                          className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
-                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i } as any); }}
+                          cx={centerX} cy={pts[0].y - 30} r={8}
+                          className="fill-blue-600 cursor-pointer"
+                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
                         />
-                      ))}
-                      <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
-                      <circle
-                        cx={centerX} cy={pts[0].y - 30} r={8}
-                        className="fill-blue-600 cursor-pointer"
-                        onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
-                      />
-                    </>
-                  )}
-                </g>
-              );
-            })}
+                      </>
+                    )}
+                  </g>
+                );
+              })}
+            </g>
           </svg>
         </div>
 
