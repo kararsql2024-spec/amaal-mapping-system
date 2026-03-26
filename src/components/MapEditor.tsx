@@ -76,7 +76,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: maxY + 200 }));
   };
 
-  // إضافة مستمع لوحة المفاتيح للتحريك
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
@@ -106,11 +105,18 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, gridLock, dims]);
 
-  const getMousePos = (e: React.MouseEvent | WheelEvent) => {
+  const getMousePos = (e: React.MouseEvent | WheelEvent | React.TouchEvent) => {
     if (!svgRef.current || !contentRef.current) return { x: 0, y: 0 };
     const pt = svgRef.current.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
+    
+    if ('touches' in e) {
+      pt.x = e.touches[0].clientX;
+      pt.y = e.touches[0].clientY;
+    } else {
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+    }
+    
     const svgP = pt.matrixTransform(contentRef.current.getScreenCTM()?.inverse());
     return { x: svgP.x, y: svgP.y };
   };
@@ -169,6 +175,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     }
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
+    if (isBackground && !activeTool && e.touches.length === 1) {
+      const touch = e.touches[0];
+      setDragMode({ type: 'pan', startPos: { x: touch.clientX, y: touch.clientY } });
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!dragMode) return;
 
@@ -177,6 +191,62 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       const dy = e.clientY - dragMode.startPos.y;
       setViewPos(prev => ({ x: prev.x + dx, y: prev.y + dy }));
       setDragMode({ ...dragMode, startPos: { x: e.clientX, y: e.clientY } });
+      return;
+    }
+
+    if (!selectedId) return;
+    const pos = getMousePos(e);
+
+    setElements(prev => prev.map(el => {
+      if (el.id !== selectedId) return el;
+      const pts = getElementPoints(el);
+      const dragIdx = (dragMode as any).index;
+      let newPoints = [...pts];
+
+      if (dragMode.type === 'vertex' && dragIdx !== undefined) {
+        newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
+      } else if (dragMode.type === 'edge' && dragIdx !== undefined) {
+        const idx1 = dragIdx;
+        const idx2 = (dragIdx + 1) % pts.length;
+        const midX = (pts[idx1].x + pts[idx2].x) / 2;
+        const midY = (pts[idx1].y + pts[idx2].y) / 2;
+        const dx = snap(pos.x) - midX;
+        const dy = snap(pos.y) - midY;
+        newPoints[idx1] = { x: pts[idx1].x + dx, y: pts[idx1].y + dy };
+        newPoints[idx2] = { x: pts[idx2].x + dx, y: pts[idx2].y + dy };
+      } else if (dragMode.type === 'move') {
+        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+        const dx = snap(pos.x) - centerX;
+        const dy = snap(pos.y) - centerY;
+        newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      }
+
+      if (dragMode.type !== 'rotate') {
+        checkAndExpandMap(newPoints);
+        return { ...el, points: newPoints };
+      }
+
+      if (dragMode.type === 'rotate') {
+        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+        const angle = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI);
+        return { ...el, rotation: angle + 90 };
+      }
+
+      return el;
+    }));
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!dragMode || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+
+    if (dragMode.type === 'pan' && dragMode.startPos) {
+      const dx = touch.clientX - dragMode.startPos.x;
+      const dy = touch.clientY - dragMode.startPos.y;
+      setViewPos(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setDragMode({ ...dragMode, startPos: { x: touch.clientX, y: touch.clientY } });
       return;
     }
 
@@ -355,284 +425,166 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 overflow-hidden">
-        <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden">
-          <svg 
-            ref={svgRef} 
-            className={cn("w-full h-full", !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")}
-            onClick={handleCanvasClick} 
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove} 
-            onMouseUp={() => setDragMode(null)}
-            onWheel={handleWheel}
-          >
-            <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
-              <defs>
-                <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
-                  <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/>
-                </pattern>
-              </defs>
-              <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
+      <div className="lg:col-span-3 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
+        <svg 
+          ref={svgRef} 
+          className={cn("w-full h-full", !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")}
+          onClick={handleCanvasClick} 
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove} 
+          onMouseUp={() => setDragMode(null)}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={() => setDragMode(null)}
+          onWheel={handleWheel}
+        >
+          <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
+            <defs>
+              <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
+                <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/>
+              </pattern>
+            </defs>
+            <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
+            
+            {sortedElements.map((el) => {
+              const pts = getElementPoints(el);
+              const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+              const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+              const isSelected = selectedId === el.id;
               
-              {sortedElements.map((el) => {
-                const pts = getElementPoints(el);
-                const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-                const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-                const isSelected = selectedId === el.id;
-                
-                const minY = Math.min(...pts.map(p => p.y));
-                const minX = Math.min(...pts.map(p => p.x));
-                const maxX = Math.max(...pts.map(p => p.x));
-                const maxY = Math.max(...pts.map(p => p.y));
-                const topCenterX = (minX + maxX) / 2;
-                const w = maxX - minX;
-                const h = maxY - minY;
+              const minY = Math.min(...pts.map(p => p.y));
+              const minX = Math.min(...pts.map(p => p.x));
+              const maxX = Math.max(...pts.map(p => p.x));
+              const maxY = Math.max(...pts.map(p => p.y));
+              const topCenterX = (minX + maxX) / 2;
+              const w = maxX - minX;
+              const h = maxY - minY;
 
-                return (
-                  <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                    {el.type === 'label_area' ? (
-                      <rect
-                        x={minX} y={minY} width={w} height={h}
-                        rx="20" ry="20"
-                        fill={getElementColor(el)}
-                        stroke={getElementStroke(el)}
-                        fillOpacity={el.opacity}
-                        strokeWidth="2"
-                        className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
-                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
-                      />
-                    ) : (
-                      <path
-                        d={pointsToPath(pts)}
-                        fill={getElementColor(el)}
-                        stroke={getElementStroke(el)}
-                        fillOpacity={1}
-                        strokeWidth={el.type === 'pitch' ? 2 : 1}
-                        className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
-                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
-                      />
-                    )}
-                    
-                    {/* أيقونات تعبيرية صريحة */}
-                    {el.type === 'house' && (
-                      <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
-                        <path d="M -15 5 L -15 -5 L 0 -18 L 15 -5 L 15 5 Z" fill="none" stroke="#3b82f6" strokeWidth="2" />
-                        <rect x="-5" y="-2" width="10" height="7" fill="none" stroke="#3b82f6" strokeWidth="1" />
-                      </g>
-                    )}
+              return (
+                <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                  {el.type === 'label_area' ? (
+                    <rect
+                      x={minX} y={minY} width={w} height={h}
+                      rx="20" ry="20"
+                      fill={getElementColor(el)}
+                      stroke={getElementStroke(el)}
+                      fillOpacity={el.opacity}
+                      strokeWidth="2"
+                      className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
+                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                      onTouchStart={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                    />
+                  ) : (
+                    <path
+                      d={pointsToPath(pts)}
+                      fill={getElementColor(el)}
+                      stroke={getElementStroke(el)}
+                      fillOpacity={1}
+                      strokeWidth={el.type === 'pitch' ? 2 : 1}
+                      className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
+                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                      onTouchStart={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                    />
+                  )}
+                  
+                  {el.type === 'house' && (
+                    <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
+                      <path d="M -15 5 L -15 -5 L 0 -18 L 15 -5 L 15 5 Z" fill="none" stroke="#3b82f6" strokeWidth="2" />
+                      <rect x="-5" y="-2" width="10" height="7" fill="none" stroke="#3b82f6" strokeWidth="1" />
+                    </g>
+                  )}
 
-                    {el.type === 'tower' && (
-                      <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
-                        <rect x="-10" y="-20" width="20" height="35" fill="none" stroke="white" strokeWidth="2" />
-                        <line x1="-6" y1="-14" x2="6" y2="-14" stroke="white" strokeWidth="1" opacity="0.5" />
-                        <line x1="-6" y1="-6" x2="6" y2="-6" stroke="white" strokeWidth="1" opacity="0.5" />
-                        <line x1="-6" y1="2" x2="6" y2="2" stroke="white" strokeWidth="1" opacity="0.5" />
-                        <line x1="-6" y1="10" x2="6" y2="10" stroke="white" strokeWidth="1" opacity="0.5" />
-                      </g>
-                    )}
+                  {el.type === 'tower' && (
+                    <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
+                      <rect x="-10" y="-20" width="20" height="35" fill="none" stroke="white" strokeWidth="2" />
+                      <line x1="-6" y1="-14" x2="6" y2="-14" stroke="white" strokeWidth="1" opacity="0.5" />
+                      <line x1="-6" y1="-6" x2="6" y2="-6" stroke="white" strokeWidth="1" opacity="0.5" />
+                      <line x1="-6" y1="2" x2="6" y2="2" stroke="white" strokeWidth="1" opacity="0.5" />
+                      <line x1="-6" y1="10" x2="6" y2="10" stroke="white" strokeWidth="1" opacity="0.5" />
+                    </g>
+                  )}
 
-                    {el.type === 'amenity' && (
-                      <g transform={`translate(${centerX - 12}, ${centerY - 2})`} pointerEvents="none">
-                        {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
-                      </g>
-                    )}
+                  {el.type === 'amenity' && (
+                    <g transform={`translate(${centerX - 12}, ${centerY - 2})`} pointerEvents="none">
+                      {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
+                    </g>
+                  )}
 
-                    {el.type === 'road' && (
-                      el.orientation === 'vertical' ? 
-                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" /> :
-                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" />
-                    )}
-                    
-                    {el.type === 'pitch' && (
-                      <g pointerEvents="none" opacity="0.8">
-                        <circle cx={centerX} cy={centerY} r={Math.min(w, h)/6} fill="none" stroke="white" strokeWidth="1" />
-                        {el.orientation === 'vertical' ? (
-                          <>
-                            <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
-                            <rect x={centerX - w/4} y={minY} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
-                            <rect x={centerX - w/4} y={maxY - h/6} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
-                          </>
-                        ) : (
-                          <>
-                            <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
-                            <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
-                            <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
-                          </>
-                        )}
-                      </g>
-                    )}
+                  {el.type === 'road' && (
+                    el.orientation === 'vertical' ? 
+                    <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" /> :
+                    <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" opacity="0.5" />
+                  )}
+                  
+                  {el.type === 'pitch' && (
+                    <g pointerEvents="none" opacity="0.8">
+                      <circle cx={centerX} cy={centerY} r={Math.min(w, h)/6} fill="none" stroke="white" strokeWidth="1" />
+                      {el.orientation === 'vertical' ? (
+                        <>
+                          <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
+                          <rect x={centerX - w/4} y={minY} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
+                          <rect x={centerX - w/4} y={maxY - h/6} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
+                        </>
+                      ) : (
+                        <>
+                          <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
+                          <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                          <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                        </>
+                      )}
+                    </g>
+                  )}
 
-                    {el.label && (
-                      <text 
-                        x={el.type === 'label_area' ? topCenterX : centerX} 
-                        y={el.type === 'label_area' ? minY - 10 : minY + 20} 
-                        textAnchor="middle" 
-                        dominantBaseline="auto"
-                        fill={el.textColor || '#1e293b'}
-                        className="font-black pointer-events-none select-none text-[12px]"
-                      >
-                        {getShortLabel(el.label, el.type)}
-                      </text>
-                    )}
+                  {el.label && (
+                    <text 
+                      x={el.type === 'label_area' ? topCenterX : centerX} 
+                      y={el.type === 'label_area' ? minY - 10 : minY + 20} 
+                      textAnchor="middle" 
+                      dominantBaseline="auto"
+                      fill={el.textColor || '#1e293b'}
+                      className="font-black pointer-events-none select-none text-[12px]"
+                    >
+                      {getShortLabel(el.label, el.type)}
+                    </text>
+                  )}
 
-                    {isSelected && (
-                      <>
-                        {pts.map((p, i) => {
-                          const nextP = pts[(i + 1) % pts.length];
-                          return (
-                            <line
-                              key={`edge-${i}`}
-                              x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y}
-                              className="stroke-blue-400/50 stroke-[8px] cursor-move hover:stroke-blue-500/80 transition-all"
-                              onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i } as any); }}
-                            />
-                          );
-                        })}
-                        {pts.map((p, i) => (
-                          <circle
-                            key={`vertex-${i}`}
-                            cx={p.x} cy={p.y} r={6}
-                            className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
-                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i } as any); }}
+                  {isSelected && (
+                    <>
+                      {pts.map((p, i) => {
+                        const nextP = pts[(i + 1) % pts.length];
+                        return (
+                          <line
+                            key={`edge-${i}`}
+                            x1={p.x} y1={p.y} x2={nextP.x} y2={nextP.y}
+                            className="stroke-blue-400/50 stroke-[8px] cursor-move hover:stroke-blue-500/80 transition-all"
+                            onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i } as any); }}
+                            onTouchStart={(e) => { e.stopPropagation(); setDragMode({ type: 'edge', index: i } as any); }}
                           />
-                        ))}
-                        <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
+                        );
+                      })}
+                      {pts.map((p, i) => (
                         <circle
-                          cx={centerX} cy={pts[0].y - 30} r={8}
-                          className="fill-blue-600 cursor-pointer"
-                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
+                          key={`vertex-${i}`}
+                          cx={p.x} cy={p.y} r={6}
+                          className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:r-8 transition-all"
+                          onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i } as any); }}
+                          onTouchStart={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i } as any); }}
                         />
-                      </>
-                    )}
-                  </g>
-                );
-              })}
-            </g>
-          </svg>
-        </div>
-
-        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
-          <h3 className="font-black text-xl border-b pb-4 text-slate-800">خصائص العنصر</h3>
-          {selectedId && selectedElement ? (
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
-                <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={selectedElement.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-500">ألوان العنصر</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Palette size={12} /> لون العنصر</label>
-                    <input 
-                      type="color" 
-                      className="w-full h-10 rounded-lg cursor-pointer border-none" 
-                      value={selectedElement.color || '#f59e0b'} 
-                      onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, color: e.target.value} : el))} 
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><TypeIcon size={12} /> لون الخط</label>
-                    <input 
-                      type="color" 
-                      className="w-full h-10 rounded-lg cursor-pointer border-none" 
-                      value={selectedElement.textColor || '#1e293b'} 
-                      onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, textColor: e.target.value} : el))} 
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-500">اتجاه العنصر</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button 
-                    variant={selectedElement.orientation === 'horizontal' ? 'default' : 'outline'} 
-                    className="rounded-xl gap-2"
-                    onClick={() => setElements(elements.map(el => el.id === selectedId ? {...el, orientation: 'horizontal'} : el))}
-                  >
-                    <AlignHorizontalJustifyCenter size={16} /> أفقي
-                  </Button>
-                  <Button 
-                    variant={selectedElement.orientation === 'vertical' ? 'default' : 'outline'} 
-                    className="rounded-xl gap-2"
-                    onClick={() => setElements(elements.map(el => el.id === selectedId ? {...el, orientation: 'vertical'} : el))}
-                  >
-                    <AlignVerticalJustifyCenter size={16} /> عمودي
-                  </Button>
-                </div>
-              </div>
-
-              {selectedElement.type === 'amenity' && (
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-500">نوع المرفق</label>
-                  <Select 
-                    value={selectedElement.amenityType} 
-                    onValueChange={(val) => setElements(elements.map(el => el.id === selectedId ? {...el, amenityType: val, label: AMENITY_TYPES.find(t => t.id === val)?.label || ''} : el))}
-                  >
-                    <SelectTrigger className="rounded-xl h-12">
-                      <SelectValue placeholder="اختر نوع المرفق" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AMENITY_TYPES.map(type => (
-                        <SelectItem key={type.id} value={type.id} className="text-right">
-                          <div className="flex items-center gap-2 justify-end">
-                            <span>{type.label}</span>
-                            <type.icon size={16} />
-                          </div>
-                        </SelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {selectedElement.type === 'label_area' && (
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-purple-700">الشفافية ({Math.round((selectedElement.opacity || 0.2) * 100)}%)</label>
-                  <Slider 
-                    value={[selectedElement.opacity || 0.2]} 
-                    min={0} 
-                    max={1} 
-                    step={0.05} 
-                    onValueChange={([val]) => setElements(elements.map(el => el.id === selectedId ? {...el, opacity: val} : el))} 
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-500">العرض (px)</label>
-                  <input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={boundingBox.w} onChange={(e) => handleSizeChange(selectedId, 'width', parseInt(e.target.value) || 1)} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-500">الطول (px)</label>
-                  <input type="number" className="w-full p-3 rounded-xl border border-slate-200" value={boundingBox.h} onChange={(e) => handleSizeChange(selectedId, 'height', parseInt(e.target.value) || 1)} />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-500">تكرار العنصر</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" className="rounded-xl gap-2" onClick={() => handleDuplicate('right')}><ArrowLeft size={16} /> لليسار</Button>
-                  <Button variant="outline" className="rounded-xl gap-2" onClick={() => handleDuplicate('down')}><ArrowDown size={16} /> للأسفل</Button>
-                </div>
-              </div>
-              
-              {selectedElement.type === 'tower' && (
-                <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عدد الطوابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={selectedElement.floors} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, floors: parseInt(e.target.value)} : el))} /></div>
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">شقق/طابق</label><input type="number" className="w-full p-2 rounded-lg border border-slate-200" value={selectedElement.apartmentsPerFloor} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, apartmentsPerFloor: parseInt(e.target.value)} : el))} /></div>
-                </div>
-              )}
-
-              <Button variant="destructive" className="w-full gap-2 rounded-xl h-12 font-bold" onClick={() => { setElements(elements.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button>
-            </div>
-          ) : (
-            <div className="text-center py-20 text-slate-400"><p className="font-bold">حدد عنصراً من الخريطة لتعديله</p></div>
-          )}
-        </div>
+                      <line x1={centerX} y1={pts[0].y} x2={centerX} y2={pts[0].y - 30} className="stroke-blue-600 stroke-2" />
+                      <circle
+                        cx={centerX} cy={pts[0].y - 30} r={8}
+                        className="fill-blue-600 cursor-pointer"
+                        onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
+                        onTouchStart={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }}
+                      />
+                    </>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
       </div>
     </div>
   );
@@ -659,7 +611,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (match) {
       const num = parseInt(match[1]);
       const prefix = lastPart.substring(0, match.index);
-      newLastPart = `${prefix}${num + 2}`; // قفزة بمقدار 2 كما طلبت
+      newLastPart = `${prefix}${num + 2}`;
     }
     
     parts[parts.length - 1] = newLastPart;

@@ -38,6 +38,19 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    setIsDragging(true);
+    setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+  };
+
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
     return [
@@ -104,10 +117,20 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
   return (
     <div className={cn(
-      "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300",
+      "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
       isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
     )}>
-      <div className="w-full h-full" onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
+      <div 
+        className="w-full h-full" 
+        onWheel={handleWheel} 
+        onMouseDown={handleMouseDown} 
+        onMouseMove={handleMouseMove} 
+        onMouseUp={() => setIsDragging(false)} 
+        onMouseLeave={() => setIsDragging(false)}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={() => setIsDragging(false)}
+      >
         <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
