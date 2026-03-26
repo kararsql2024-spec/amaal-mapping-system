@@ -247,6 +247,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     }
   };
 
+  const getShortLabel = (label: string) => {
+    if (!label) return "";
+    const parts = label.split('-');
+    return parts[parts.length - 1];
+  };
+
   const renderAmenityIcon = (type: string | undefined, color: string) => {
     switch (type) {
       case 'shop': return <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />;
@@ -432,7 +438,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         fill={el.textColor || '#1e293b'}
                         className="font-black pointer-events-none select-none text-[12px]"
                       >
-                        {el.label}
+                        {getShortLabel(el.label)}
                       </text>
                     )}
 
@@ -612,13 +618,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
     const offset = direction === 'right' ? { x: w + 10, y: 0 } : { x: 0, y: h + 10 };
 
-    let newLabel = el.label;
-    const match = el.label.match(/(\d+)$/);
+    const parts = el.label.split('-');
+    const lastPart = parts[parts.length - 1];
+    let newLastPart = lastPart;
+    
+    const match = lastPart.match(/(\d+)$/);
     if (match) {
       const num = parseInt(match[1]);
-      const prefix = el.label.substring(0, match.index);
-      newLabel = `${prefix}${num + 2}`;
+      const prefix = lastPart.substring(0, match.index);
+      newLastPart = `${prefix}${num + 1}`;
     }
+    
+    parts[parts.length - 1] = newLastPart;
+    const newLabel = parts.join('-');
 
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
     checkAndExpandMap(newPoints);

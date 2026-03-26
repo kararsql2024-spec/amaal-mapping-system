@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, User, Phone, Info, Building2, Snowflake } from "lucide-react";
+import { Home, User, Phone, Info, Building2 } from "lucide-react";
 
 interface UnitDetailsModalProps {
   isOpen: boolean;

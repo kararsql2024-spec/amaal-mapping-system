@@ -74,6 +74,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
   };
 
+  const getShortLabel = (label: string) => {
+    if (!label) return "";
+    const parts = label.split('-');
+    return parts[parts.length - 1];
+  };
+
   const renderAmenityIcon = (type: string | undefined, color: string) => {
     switch (type) {
       case 'shop': return <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />;
@@ -202,7 +208,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                     fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')}
                     className="font-black pointer-events-none select-none text-[12px]"
                   >
-                    {el.label}
+                    {getShortLabel(el.label)}
                   </text>
                 )}
               </g>

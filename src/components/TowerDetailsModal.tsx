@@ -29,25 +29,21 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
   const aptsPerFloor = tower.apartmentsPerFloor || 1;
   const apts = Array.from({ length: aptsPerFloor }, (_, i) => i + 1);
 
-  // منطق إعادة الترتيب بنمط حرف N (من الأسفل للأعلى)
-  // الصف الأول (العلوي): 2, 4, 6...
-  // الصف الثاني (السفلي): 1, 3, 5...
   const reorderedApts = [];
   for (let i = 0; i < apts.length; i += 2) {
     if (i + 1 < apts.length) {
-      reorderedApts.push(apts[i + 1]); // الرقم الزوجي (للصف العلوي)
+      reorderedApts.push(apts[i + 1]);
     }
-    reorderedApts.push(apts[i]); // الرقم الفردي (للصف السفلي)
+    reorderedApts.push(apts[i]);
   }
 
   const getAptKey = (floor: number, aptNum: number) => `${tower.id}_F${floor}_A${aptNum}`;
   
-  const getAptLabel = (floor: number, aptNum: number) => {
-    let pCounter = 0;
-    const currentKey = getAptKey(floor, aptNum);
-    const currentData = housesData[currentKey];
+  const getFloorCode = (floor: number) => floor === 1 ? "FG" : `F${floor - 1}`;
 
-    if (currentData?.status === 'frozen_uncounted') return "مجمدة";
+  const getAptFullLabel = (floor: number, aptNum: number) => {
+    let pCounter = 0;
+    const floorCode = getFloorCode(floor);
 
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
@@ -59,11 +55,18 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
         }
         
         if (f === floor && a === aptNum) {
-          return `P${pCounter}`;
+          const aptCode = data?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
+          return `${tower.label}-${floorCode}-${aptCode}`;
         }
       }
     }
     return "";
+  };
+
+  const getAptShortLabel = (fullLabel: string) => {
+    if (!fullLabel) return "";
+    const parts = fullLabel.split('-');
+    return parts[parts.length - 1];
   };
 
   const getStatusColor = (status: string) => {
@@ -117,11 +120,11 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                 </DialogTitle>
               </DialogHeader>
 
-              {/* استخدام grid-rows-2 و grid-flow-col لتحقيق نمط N */}
               <div className="grid grid-rows-2 grid-flow-col gap-4" dir="ltr">
                 {reorderedApts.map((aptNum) => {
                   const key = getAptKey(selectedFloor, aptNum);
-                  const label = getAptLabel(selectedFloor, aptNum);
+                  const fullLabel = getAptFullLabel(selectedFloor, aptNum);
+                  const shortLabel = getAptShortLabel(fullLabel);
                   const data = housesData[key] || { status: 'available' };
                   const isFrozen = data.status?.startsWith('frozen');
                   
@@ -136,7 +139,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                     >
                       <div className="relative z-10">
                         <div className="flex justify-between items-start">
-                          <p className="text-3xl font-black">{label}</p>
+                          <p className="text-3xl font-black">{shortLabel}</p>
                           {isFrozen && <Snowflake size={18} className="opacity-50" />}
                         </div>
                         <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
@@ -163,7 +166,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
           setSelectedAptKey(null);
         }}
         unitId={selectedAptKey}
-        unitLabel={selectedAptKey ? getAptLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
+        unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
         initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
         isApartment
       />
