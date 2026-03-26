@@ -70,6 +70,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
 
+  const getShortLabel = (label: string, type: ElementType) => {
+    if (!label) return "";
+    if (type === 'house' || type === 'tower') {
+      const parts = label.split('-');
+      return parts[parts.length - 1];
+    }
+    return label;
+  };
+
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
     return [
@@ -145,12 +154,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     createElement(activeTool, newPoints);
   };
 
-  const createElement = (type: ElementType, pts: Point[], isStroke = false) => {
+  const createElement = (type: ElementType, pts: Point[], isStroke = false, customLabel?: string) => {
     checkAndExpandMap(pts);
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
       type,
-      label: type === 'house' ? `D1` : type === 'tower' ? `T1` : '',
+      label: customLabel || (type === 'house' ? `D1` : type === 'tower' ? `T1` : ''),
       points: pts,
       rotation: 0,
       orientation: 'horizontal',
@@ -250,7 +259,22 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const maxY = Math.max(...pts.map(p => p.y));
     const offset = direction === 'right' ? { x: (maxX - minX) + 10, y: 0 } : { x: 0, y: (maxY - minY) + 10 };
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
-    createElement(el.type, newPoints, el.isStroke);
+    
+    // منطق التكرار المتسلسل (+2)
+    let newLabel = el.label;
+    if (el.type === 'house' || el.type === 'tower') {
+      const parts = el.label.split('-');
+      const lastPart = parts[parts.length - 1];
+      const match = lastPart.match(/([a-zA-Z]+)(\d+)/);
+      if (match) {
+        const prefix = match[1];
+        const num = parseInt(match[2]);
+        parts[parts.length - 1] = `${prefix}${num + 2}`;
+        newLabel = parts.join('-');
+      }
+    }
+    
+    createElement(el.type, newPoints, el.isStroke, newLabel);
   };
 
   const pointsToPath = (points: Point[], closed = true) => {
@@ -379,7 +403,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
                     />
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
-                    {el.label && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{el.label}</text>}
+                    {el.label && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{getShortLabel(el.label, el.type)}</text>}
                     {isSelected && (
                       <>
                         {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
