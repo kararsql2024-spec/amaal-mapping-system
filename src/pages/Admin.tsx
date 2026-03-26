@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -25,8 +25,12 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [isCreating, setIsCreating] = useState(false);
   const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
+  const [showMarketingCenters, setShowMarketingCenters] = useState(false);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
   
+  const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
+  const [newCenter, setNewCenter] = useState({ name: '', password: '' });
+
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
     unitCol: 'B',
@@ -52,24 +56,30 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   useEffect(() => {
     if (!session) return;
     
-    const fetchSettings = async () => {
+    const fetchData = async () => {
       try {
-        const { data, error } = await supabase
+        const { data: settingsData } = await supabase
           .from('settings')
           .select('value')
           .eq('key', 'excel_mapping')
           .single();
 
-        if (error && error.code !== 'PGRST116') throw error;
-        if (data?.value) {
-          setExcelMapping(data.value);
+        if (settingsData?.value) {
+          setExcelMapping(settingsData.value);
         }
+
+        const { data: centersData } = await supabase
+          .from('marketing_centers')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (centersData) setMarketingCenters(centersData);
       } catch (error) {
-        console.error("Error fetching settings:", error);
+        console.error("Error fetching data:", error);
       }
     };
 
-    fetchSettings();
+    fetchData();
   }, [session]);
 
   if (!session) {
@@ -125,6 +135,38 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleAddCenter = async () => {
+    if (!newCenter.name || !newCenter.password) return;
+    try {
+      const { data, error } = await supabase
+        .from('marketing_centers')
+        .insert([newCenter])
+        .select();
+      
+      if (error) throw error;
+      setMarketingCenters([data[0], ...marketingCenters]);
+      setNewCenter({ name: '', password: '' });
+      showSuccess("تم إضافة المركز التسويقي بنجاح");
+    } catch (error) {
+      showError("فشل في إضافة المركز");
+    }
+  };
+
+  const handleDeleteCenter = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('marketing_centers')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      setMarketingCenters(marketingCenters.filter(c => c.id !== id));
+      showSuccess("تم حذف المركز");
+    } catch (error) {
+      showError("فشل في حذف المركز");
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -432,6 +474,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     setFormData({ name: project.name, width: project.mapWidth, height: project.mapHeight });
     setIsCreating(false);
     setShowSalesUpdate(false);
+    setShowMarketingCenters(false);
   };
 
   if (editingMapProject) {
@@ -463,8 +506,15 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           </div>
           <div className="flex gap-2">
             <Button 
+              variant={showMarketingCenters ? "default" : "outline"} 
+              onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }}
+              className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}
+            >
+              <Store size={18} /> المراكز التسويقية
+            </Button>
+            <Button 
               variant={showSalesUpdate ? "default" : "outline"} 
-              onClick={() => { setShowSalesUpdate(!showSalesUpdate); setIsCreating(false); setEditingProjectInfo(null); }}
+              onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }}
               className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}
             >
               <FileSpreadsheet size={18} /> تحديث المبيعات
@@ -478,7 +528,46 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
-            {showSalesUpdate ? (
+            {showMarketingCenters ? (
+              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
+                <div className="flex items-center gap-3 border-b pb-4">
+                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center"><Store className="text-indigo-600" /></div>
+                  <h2 className="text-xl font-black text-slate-800">إدارة المراكز التسويقية</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-600">اسم المركز</label>
+                    <Input placeholder="اسم المركز التسويقي..." value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-600">كلمة المرور</label>
+                    <Input type="password" placeholder="كلمة مرور المركز..." value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12" />
+                  </div>
+                  <Button onClick={handleAddCenter} className="md:col-span-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 font-bold gap-2">
+                    <Plus size={18} /> إضافة مركز جديد
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="font-bold text-slate-700">قائمة المراكز الحالية</h3>
+                  {marketingCenters.map(center => (
+                    <div key={center.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center"><Store className="text-slate-400" size={20} /></div>
+                        <div>
+                          <p className="font-bold text-slate-800">{center.name}</p>
+                          <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={10} /> {center.password}</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 hover:bg-rose-50 rounded-lg">
+                        <Trash2 size={18} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : showSalesUpdate ? (
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center justify-between border-b pb-4">
                   <div className="flex items-center gap-3">
