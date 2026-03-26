@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
@@ -69,6 +69,43 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     ];
   };
 
+  const checkAndExpandMap = (pts: Point[]) => {
+    const maxX = Math.max(...pts.map(p => p.x));
+    const maxY = Math.max(...pts.map(p => p.y));
+    if (maxX > dims.w - 50) setDims(prev => ({ ...prev, w: maxX + 200 }));
+    if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: maxY + 200 }));
+  };
+
+  // إضافة مستمع لوحة المفاتيح للتحريك
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+      const step = gridLock ? GRID_SIZE : 1;
+      let dx = 0;
+      let dy = 0;
+
+      if (e.key === 'ArrowUp') dy = -step;
+      else if (e.key === 'ArrowDown') dy = step;
+      else if (e.key === 'ArrowLeft') dx = -step;
+      else if (e.key === 'ArrowRight') dx = step;
+      else return;
+
+      e.preventDefault();
+
+      setElements(prev => prev.map(el => {
+        if (el.id !== selectedId) return el;
+        const pts = getElementPoints(el);
+        const newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        checkAndExpandMap(newPoints);
+        return { ...el, points: newPoints };
+      }));
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, gridLock, dims]);
+
   const getMousePos = (e: React.MouseEvent | WheelEvent) => {
     if (!svgRef.current || !contentRef.current) return { x: 0, y: 0 };
     const pt = svgRef.current.createSVGPoint();
@@ -83,13 +120,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     const newScale = Math.min(Math.max(scale * delta, 0.1), 10);
     setScale(newScale);
-  };
-
-  const checkAndExpandMap = (pts: Point[]) => {
-    const maxX = Math.max(...pts.map(p => p.x));
-    const maxY = Math.max(...pts.map(p => p.y));
-    if (maxX > dims.w - 50) setDims(prev => ({ ...prev, w: maxX + 200 }));
-    if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: maxY + 200 }));
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
