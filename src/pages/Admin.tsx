@@ -120,7 +120,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // 1. جلب البيانات الحالية من قاعدة البيانات لبناء خريطة التسميات
+        // 1. جلب كافة بيانات الوحدات الحالية لبناء خريطة التسميات
         const { data: currentHousesData, error: fetchError } = await supabase
           .from('houses_data')
           .select('*');
@@ -132,7 +132,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           housesDataMap[u.unit_key] = u.data;
         });
 
-        // 2. بناء خريطة: (اسم المشروع المطبّع + اسم الوحدة المطبّع) -> المفتاح التقني
+        // 2. بناء خريطة مطابقة ذكية: (ID المشروع + الاسم المطبّع للوحدة) -> المفتاح التقني
         const labelToKeyMap = new Map<string, string>();
         const projectMap = new Map<string, string>();
 
@@ -143,9 +143,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           project.elements.forEach(el => {
             if (el.type === 'house') {
               const normLabel = normalizeForMatch(el.label);
-              labelToKeyMap.set(`${normProjectName}_${normLabel}`, el.id);
+              labelToKeyMap.set(`${project.id}_${normLabel}`, el.id);
             } else if (el.type === 'tower') {
-              // محاكاة منطق تسمية الشقق في البرج
               let pCounter = 0;
               const floors = el.floors || 1;
               const aptsPerFloor = el.apartmentsPerFloor || 1;
@@ -164,14 +163,14 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                   const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                   const normLabel = normalizeForMatch(fullLabel);
                   
-                  labelToKeyMap.set(`${normProjectName}_${normLabel}`, techKey);
+                  labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
                 }
               }
             }
           });
         });
 
-        // 3. معالجة صفوف الإكسل
+        // 3. معالجة صفوف الإكسل وتجميع التحديثات
         const updatesMap = new Map<string, any>();
         const projectsInExcel = new Set<string>();
 
@@ -184,7 +183,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           if (projectId) {
             projectsInExcel.add(projectId);
             const normUnitLabel = normalizeForMatch(row[unitIdx]);
-            const techKey = labelToKeyMap.get(`${normCity}_${normUnitLabel}`);
+            const techKey = labelToKeyMap.get(`${projectId}_${normUnitLabel}`);
 
             if (techKey) {
               updatesMap.set(techKey, {
@@ -202,8 +201,9 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           }
         });
 
-        // 4. التعامل مع الوحدات التي أصبحت "متوفرة" (موجودة في النظام كمباعة ولكن غير موجودة في الإكسل الحالي لنفس المشروع)
+        // 4. التعامل مع الوحدات التي أصبحت "متوفرة" في المشاريع المذكورة في الإكسل
         currentHousesData?.forEach(unit => {
+          // إذا كان المشروع موجوداً في الإكسل، والوحدة كانت مباعة ولكنها غير موجودة في الإكسل الحالي
           if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
             if (!updatesMap.has(unit.unit_key)) {
               updatesMap.set(unit.unit_key, {
@@ -229,9 +229,9 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             .upsert(finalUpdates, { onConflict: 'unit_key' });
 
           if (upsertError) throw upsertError;
-          showSuccess(`تمت المزامنة: تحديث ${finalUpdates.length} وحدة بناءً على مسميات النظام`);
+          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح عبر كافة المشاريع المتطابقة`);
         } else {
-          showError("لم يتم العثور على مسميات متطابقة. تأكد من أن أسماء المشاريع والوحدات في الإكسل تطابق ما هو موجود على الخريطة.");
+          showError("لم يتم العثور على مسميات متطابقة في أي مشروع. تأكد من تطابق أسماء المدن وأرقام الوحدات.");
         }
 
       } catch (error) {
