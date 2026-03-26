@@ -4,12 +4,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
-  Trash2, Save, Home, Building2, TreeDeciduous, 
-  MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
+  Trash2, Save, Home, Building2, Leaf, 
+  Waypoints, MapPin, Grid3X3, ArrowDown, ArrowLeft,
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
-  Trophy, Store, School, HeartPulse, Baby, ShoppingBag, Dumbbell, ShoppingCart,
+  Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  Settings2
+  Settings2, MoonStar, Maximize2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -28,21 +28,22 @@ const GRID_SIZE = 10;
 
 const AMENITY_TYPES = [
   { id: 'shop', label: 'محل تجاري', icon: Store },
-  { id: 'school', label: 'مدرسة', icon: School },
-  { id: 'medical', label: 'مركز طبي', icon: HeartPulse },
+  { id: 'school', label: 'مدرسة', icon: GraduationCap },
+  { id: 'medical', label: 'مركز طبي', icon: Stethoscope },
   { id: 'nursery', label: 'حضانة', icon: Baby },
   { id: 'mall', label: 'مول', icon: ShoppingBag },
   { id: 'gym', label: 'جم', icon: Dumbbell },
   { id: 'supermarket', label: 'أسواق مركزية', icon: ShoppingCart },
+  { id: 'mosque', label: 'مسجد', icon: MoonStar },
 ];
 
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
   { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
-  { type: 'road', label: 'طريق', icon: MoveRight, color: 'bg-gray-400' },
-  { type: 'green', label: 'مساحة خضراء', icon: TreeDeciduous, color: 'bg-emerald-500' },
+  { type: 'road', label: 'طريق', icon: Waypoints, color: 'bg-gray-400' },
+  { type: 'green', label: 'مساحة خضراء', icon: Leaf, color: 'bg-emerald-500' },
   { type: 'pitch', label: 'ملعب', icon: Trophy, color: 'bg-green-600' },
-  { type: 'amenity', label: 'مرفق', icon: Coffee, color: 'bg-amber-500' },
+  { type: 'amenity', label: 'مرفق', icon: MapPin, color: 'bg-amber-500' },
   { type: 'label_area', label: 'منطقة تسمية', icon: Type, color: 'bg-purple-500' },
 ];
 
@@ -342,7 +343,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (match) {
       const num = parseInt(match[1]);
       const prefix = lastPart.substring(0, match.index);
-      newLastPart = `${prefix}${num + 1}`;
+      // التكرار التسلسلي بفارق 2 (1 -> 3 -> 5 أو 2 -> 4 -> 6)
+      newLastPart = `${prefix}${num + 2}`;
     }
     
     parts[parts.length - 1] = newLastPart;
@@ -409,6 +411,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       case 'mall': return <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />;
       case 'gym': return <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />;
       case 'supermarket': return <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />;
+      case 'mosque': return <path d="M12 22v-4M12 18c-3.31 0-6-2.69-6-6 0-3.31 2.69-6 6-6s6 2.69 6 6c0 3.31-2.69 6-6 6zM12 6V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />;
       default: return <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />;
     }
   };
@@ -425,6 +428,36 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const updateSelectedElement = (updates: Partial<MapElement>) => {
     if (!selectedId) return;
     setElements(prev => prev.map(el => el.id === selectedId ? { ...el, ...updates } : el));
+  };
+
+  const handleSizeChange = (dim: 'w' | 'h', value: number) => {
+    if (!selectedElement) return;
+    const pts = getElementPoints(selectedElement);
+    const minX = Math.min(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const maxY = Math.max(...pts.map(p => p.y));
+    const currentW = maxX - minX;
+    const currentH = maxY - minY;
+
+    const scaleX = dim === 'w' ? value / currentW : 1;
+    const scaleY = dim === 'h' ? value / currentH : 1;
+
+    const newPoints = pts.map(p => ({
+      x: minX + (p.x - minX) * scaleX,
+      y: minY + (p.y - minY) * scaleY
+    }));
+
+    updateSelectedElement({ points: newPoints });
+  };
+
+  const getElementDimensions = (el: MapElement) => {
+    const pts = getElementPoints(el);
+    const minX = Math.min(...pts.map(p => p.x));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxY = Math.max(...pts.map(p => p.y));
+    return { w: Math.round(maxX - minX), h: Math.round(maxY - minY) };
   };
 
   return (
@@ -657,6 +690,34 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     className="rounded-xl h-12 border-slate-200 font-bold"
                     placeholder="مثال: D1, T1..."
                   />
+                </div>
+
+                {/* Size Controls */}
+                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Maximize2 size={16} className="text-indigo-600" />
+                    <span className="font-black text-sm text-slate-700">أبعاد العنصر</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-500">العرض (px)</Label>
+                      <Input 
+                        type="number" 
+                        value={getElementDimensions(selectedElement).w} 
+                        onChange={(e) => handleSizeChange('w', parseInt(e.target.value))}
+                        className="rounded-xl h-10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-500">الطول (px)</Label>
+                      <Input 
+                        type="number" 
+                        value={getElementDimensions(selectedElement).h} 
+                        onChange={(e) => handleSizeChange('h', parseInt(e.target.value))}
+                        className="rounded-xl h-10"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">

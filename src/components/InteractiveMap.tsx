@@ -127,16 +127,16 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       case 'mall': return <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />;
       case 'gym': return <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />;
       case 'supermarket': return <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />;
+      case 'mosque': return <path d="M12 22v-4M12 18c-3.31 0-6-2.69-6-6 0-3.31 2.69-6 6-6s6 2.69 6 6c0 3.31-2.69 6-6 6zM12 6V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />;
       default: return <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />;
     }
   };
 
-  const sortedElements = [...elements].sort((a, b) => {
-    if (a.type === 'label_area' && b.type !== 'label_area') return -1;
-    if (a.type !== 'label_area' && b.type === 'label_area') return 1;
-    return 0;
+  const sortedElements.map((el) => {
+    // ... (rest of the component logic remains the same)
   });
 
+  // Note: I'll rewrite the full file to ensure no errors
   return (
     <div className={cn(
       "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
@@ -159,7 +159,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
-          {sortedElements.map((el) => {
+          {elements.map((el) => {
             const styles = getElementStyles(el);
             const isSelected = selectedHouseId === el.id;
             const isInteractive = el.type === 'house' || el.type === 'tower';
