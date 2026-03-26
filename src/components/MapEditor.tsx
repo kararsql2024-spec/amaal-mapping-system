@@ -28,6 +28,17 @@ interface MapEditorProps {
 
 const GRID_SIZE = 10;
 
+const AMENITY_TYPES = [
+  { id: 'shop', label: 'محل تجاري', icon: Store },
+  { id: 'school', label: 'مدرسة', icon: GraduationCap },
+  { id: 'medical', label: 'مركز طبي', icon: Stethoscope },
+  { id: 'nursery', label: 'حضانة', icon: Baby },
+  { id: 'mall', label: 'مول', icon: ShoppingBag },
+  { id: 'gym', label: 'جم', icon: Dumbbell },
+  { id: 'supermarket', label: 'أسواق مركزية', icon: ShoppingCart },
+  { id: 'mosque', label: 'مسجد', icon: MoonStar },
+];
+
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
   { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
@@ -177,7 +188,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (dragMode.type === 'brush') {
       const lastPt = tempPoints[tempPoints.length - 1];
       const dist = Math.sqrt(Math.pow(pos.x - lastPt.x, 2) + Math.pow(pos.y - lastPt.y, 2));
-      // تتبع الماوس مثل الفرشاة: إضافة نقطة فقط إذا تحرك الماوس مسافة كافية لضمان أضلاع مستقيمة طويلة
       if (dist > 30) setTempPoints(prev => [...prev, pos]);
       return;
     }
@@ -286,6 +296,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     setElements(prev => prev.map(el => el.id === selectedId ? { ...el, ...updates } : el));
   };
 
+  const handleSizeChange = (dim: 'w' | 'h', value: number) => {
+    if (!selectedElement) return;
+    const pts = getElementPoints(selectedElement);
+    const minX = Math.min(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const maxY = Math.max(...pts.map(p => p.y));
+    const scaleX = dim === 'w' ? value / (maxX - minX) : 1;
+    const scaleY = dim === 'h' ? value / (maxY - minY) : 1;
+    const newPoints = pts.map(p => ({ x: minX + (p.x - minX) * scaleX, y: minY + (p.y - minY) * scaleY }));
+    updateSelectedElement({ points: newPoints });
+  };
+
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-120px)]" dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
@@ -301,7 +324,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
-        {/* شريط الأدوات على اليسار */}
         <div className="w-20 flex flex-col gap-2 bg-white p-2 rounded-[2rem] border border-slate-200 shadow-xl overflow-y-auto no-scrollbar">
           <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", !activeTool && !isBrushMode ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
             <MousePointer2 size={20} />
@@ -384,7 +406,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           </svg>
         </div>
 
-        {/* لوحة الخصائص وإعدادات الفرشاة على اليمين */}
         <div className="w-80 flex flex-col gap-4">
           {isBrushMode && (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
@@ -418,6 +439,39 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">تسمية العنصر</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                  
+                  {selectedElement.type === 'tower' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">عدد الطوابق</Label><Input type="number" value={selectedElement.floors} onChange={(e) => updateSelectedElement({ floors: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                      <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">شقق/طابق</Label><Input type="number" value={selectedElement.apartmentsPerFloor} onChange={(e) => updateSelectedElement({ apartmentsPerFloor: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                    </div>
+                  )}
+
+                  {selectedElement.type === 'amenity' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع المرفق</Label>
+                      <Select value={selectedElement.amenityType} onValueChange={(val) => updateSelectedElement({ amenityType: val })}>
+                        <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {AMENITY_TYPES.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold">{t.label}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {!selectedElement.isStroke && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">العرض (px)</Label>
+                        <Input type="number" value={Math.round(Math.max(...getElementPoints(selectedElement).map(p => p.x)) - Math.min(...getElementPoints(selectedElement).map(p => p.x)))} onChange={(e) => handleSizeChange('w', parseInt(e.target.value))} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الطول (px)</Label>
+                        <Input type="number" value={Math.round(Math.max(...getElementPoints(selectedElement).map(p => p.y)) - Math.min(...getElementPoints(selectedElement).map(p => p.y)))} onChange={(e) => handleSizeChange('h', parseInt(e.target.value))} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
                   <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>
                 </div>
