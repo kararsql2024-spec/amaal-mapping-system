@@ -10,7 +10,7 @@ import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
-import { cn } from '@/utils/toast';
+import { cn } from '@/lib/utils';
 
 interface AdminProps {
   projects: Project[];
