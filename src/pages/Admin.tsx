@@ -76,18 +76,17 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     }
   };
 
-  // وظيفة تطبيع نصوص متقدمة جداً للمطابقة
   const normalizeForMatch = (text: any) => {
     if (text === null || text === undefined) return "";
     return text
       .toString()
       .toLowerCase()
       .trim()
-      .replace(/[\u064B-\u0652\u0640]/g, "") // إزالة التشكيل والمد (الكشيدة) تماماً
-      .replace(/[أإآ]/g, "ا") // توحيد الألف
-      .replace(/[ة]/g, "ه") // توحيد التاء المربوطة
-      .replace(/[ى]/g, "ي") // توحيد الياء
-      .replace(/[^a-z0-9\u0621-\u064A]/gi, "") // إزالة أي رموز أو مسافات أو فواصل (مقارنة خام)
+      .replace(/[\u064B-\u0652\u0640]/g, "") 
+      .replace(/[أإآ]/g, "ا") 
+      .replace(/[ة]/g, "ه") 
+      .replace(/[ى]/g, "ي") 
+      .replace(/[^a-z0-9\u0621-\u064A]/gi, "") 
       .replace(/\s+/g, "");
   };
 
@@ -115,108 +114,124 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
 
-        console.log("--- بدء معالجة ملف الإكسل ---");
-        console.log("إجمالي الصفوف المقروءة:", data.length);
-
         const cityIdx = colToIdx(excelMapping.cityCol);
         const unitIdx = colToIdx(excelMapping.unitCol);
         const nameIdx = colToIdx(excelMapping.nameCol);
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // إنشاء خريطة للمشاريع
-        const projectMap = new Map();
-        projects.forEach(p => {
-          const normalizedName = normalizeForMatch(p.name);
-          projectMap.set(normalizedName, p.id);
-          console.log(`مشروع مسجل: "${p.name}" -> مفتاح المطابقة: "${normalizedName}"`);
-        });
-        
-        const { data: currentUnits, error: fetchError } = await supabase
+        // 1. جلب البيانات الحالية من قاعدة البيانات لبناء خريطة التسميات
+        const { data: currentHousesData, error: fetchError } = await supabase
           .from('houses_data')
           .select('*');
 
         if (fetchError) throw fetchError;
 
-        const excelDataByProject = new Map<string, Map<string, any>>();
-        const projectsFoundInExcel = new Set<string>();
-
-        data.forEach((row, index) => {
-          if (index === 0) return; // تخطي العنوان
-          
-          const rawCity = row[cityIdx];
-          const normalizedCity = normalizeForMatch(rawCity);
-          const projectId = projectMap.get(normalizedCity);
-          
-          if (projectId) {
-            projectsFoundInExcel.add(projectId);
-            const rawUnit = row[unitIdx];
-            const normalizedUnit = normalizeForMatch(rawUnit);
-            
-            if (normalizedUnit) {
-              if (!excelDataByProject.has(projectId)) {
-                excelDataByProject.set(projectId, new Map());
-              }
-              
-              excelDataByProject.get(projectId)?.set(normalizedUnit, {
-                name: String(row[nameIdx] || ''),
-                phone: String(row[phoneIdx] || ''),
-                saleDate: row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '',
-                status: 'sold'
-              });
-            }
-          } else if (rawCity) {
-            // سجل للمساعدة في التشخيص إذا لم يجد المشروع
-            // console.log(`لم يتم العثور على مطابقة لمدينة الإكسل: "${rawCity}" (مفتاح: "${normalizedCity}")`);
-          }
+        const housesDataMap: Record<string, any> = {};
+        currentHousesData?.forEach(u => {
+          housesDataMap[u.unit_key] = u.data;
         });
 
-        console.log("المشاريع التي تم العثور عليها في الإكسل:", projectsFoundInExcel.size);
+        // 2. بناء خريطة: (اسم المشروع المطبّع + اسم الوحدة المطبّع) -> المفتاح التقني
+        const labelToKeyMap = new Map<string, string>();
+        const projectMap = new Map<string, string>();
 
-        const updates = [];
-        let matchCount = 0;
+        projects.forEach(project => {
+          const normProjectName = normalizeForMatch(project.name);
+          projectMap.set(normProjectName, project.id);
 
-        for (const unit of currentUnits) {
-          if (projectsFoundInExcel.has(unit.project_id)) {
-            const projectExcelData = excelDataByProject.get(unit.project_id);
-            const normalizedUnitKey = normalizeForMatch(unit.unit_key);
-            const unitExcelData = projectExcelData?.get(normalizedUnitKey);
+          project.elements.forEach(el => {
+            if (el.type === 'house') {
+              const normLabel = normalizeForMatch(el.label);
+              labelToKeyMap.set(`${normProjectName}_${normLabel}`, el.id);
+            } else if (el.type === 'tower') {
+              // محاكاة منطق تسمية الشقق في البرج
+              let pCounter = 0;
+              const floors = el.floors || 1;
+              const aptsPerFloor = el.apartmentsPerFloor || 1;
 
-            if (unitExcelData) {
-              matchCount++;
-              updates.push({
-                unit_key: unit.unit_key,
-                project_id: unit.project_id,
-                data: { ...unit.data, ...unitExcelData }
-              });
-            } else if (unit.data?.status === 'sold') {
-              // إذا كانت مباعة في النظام وغير موجودة في الإكسل لهذا المشروع، نعيدها متوفرة
-              updates.push({
-                unit_key: unit.unit_key,
-                project_id: unit.project_id,
-                data: { 
-                  ...unit.data, 
-                  status: 'available', 
-                  name: '', 
-                  phone: '', 
-                  saleDate: '' 
+              for (let f = 1; f <= floors; f++) {
+                const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                for (let a = 1; a <= aptsPerFloor; a++) {
+                  const techKey = `${el.id}_F${f}_A${a}`;
+                  const unitData = housesDataMap[techKey];
+                  
+                  if (unitData?.status !== 'frozen_uncounted') {
+                    pCounter++;
+                  }
+
+                  const aptCode = unitData?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
+                  const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
+                  const normLabel = normalizeForMatch(fullLabel);
+                  
+                  labelToKeyMap.set(`${normProjectName}_${normLabel}`, techKey);
+                }
+              }
+            }
+          });
+        });
+
+        // 3. معالجة صفوف الإكسل
+        const updatesMap = new Map<string, any>();
+        const projectsInExcel = new Set<string>();
+
+        data.forEach((row, index) => {
+          if (index === 0) return;
+          
+          const normCity = normalizeForMatch(row[cityIdx]);
+          const projectId = projectMap.get(normCity);
+          
+          if (projectId) {
+            projectsInExcel.add(projectId);
+            const normUnitLabel = normalizeForMatch(row[unitIdx]);
+            const techKey = labelToKeyMap.get(`${normCity}_${normUnitLabel}`);
+
+            if (techKey) {
+              updatesMap.set(techKey, {
+                unit_key: techKey,
+                project_id: projectId,
+                data: {
+                  ...(housesDataMap[techKey] || {}),
+                  name: String(row[nameIdx] || ''),
+                  phone: String(row[phoneIdx] || ''),
+                  saleDate: row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '',
+                  status: 'sold'
                 }
               });
             }
           }
-        }
+        });
 
-        console.log("عدد الوحدات المتطابقة التي سيتم تحديثها:", matchCount);
+        // 4. التعامل مع الوحدات التي أصبحت "متوفرة" (موجودة في النظام كمباعة ولكن غير موجودة في الإكسل الحالي لنفس المشروع)
+        currentHousesData?.forEach(unit => {
+          if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
+            if (!updatesMap.has(unit.unit_key)) {
+              updatesMap.set(unit.unit_key, {
+                unit_key: unit.unit_key,
+                project_id: unit.project_id,
+                data: {
+                  ...unit.data,
+                  status: 'available',
+                  name: '',
+                  phone: '',
+                  saleDate: ''
+                }
+              });
+            }
+          }
+        });
 
-        if (updates.length > 0) {
+        const finalUpdates = Array.from(updatesMap.values());
+
+        if (finalUpdates.length > 0) {
           const { error: upsertError } = await supabase
             .from('houses_data')
-            .upsert(updates, { onConflict: 'unit_key' });
+            .upsert(finalUpdates, { onConflict: 'unit_key' });
 
           if (upsertError) throw upsertError;
-          showSuccess(`تمت المزامنة: تحديث ${matchCount} وحدة بنجاح`);
+          showSuccess(`تمت المزامنة: تحديث ${finalUpdates.length} وحدة بناءً على مسميات النظام`);
         } else {
-          showError("لم يتم العثور على وحدات متطابقة. تأكد من أن أرقام الوحدات في الإكسل تطابق الأسماء على الخريطة (مثلاً D1 أو T1-F1-P1)");
+          showError("لم يتم العثور على مسميات متطابقة. تأكد من أن أسماء المشاريع والوحدات في الإكسل تطابق ما هو موجود على الخريطة.");
         }
 
       } catch (error) {
