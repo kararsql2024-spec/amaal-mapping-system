@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, TreeDeciduous, 
   MoveRight, Coffee, Grid3X3, ArrowDown, ArrowLeft,
-  ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand
+  ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
+  Trophy, Store, School, HeartPulse, Baby, ShoppingBag, Dumbbell, ShoppingCart
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface MapEditorProps {
   initialElements: MapElement[];
@@ -20,11 +22,22 @@ interface MapEditorProps {
 
 const GRID_SIZE = 10;
 
+const AMENITY_TYPES = [
+  { id: 'shop', label: 'محل تجاري', icon: Store },
+  { id: 'school', label: 'مدرسة', icon: School },
+  { id: 'medical', label: 'مركز طبي', icon: HeartPulse },
+  { id: 'nursery', label: 'حضانة', icon: Baby },
+  { id: 'mall', label: 'مول', icon: ShoppingBag },
+  { id: 'gym', label: 'جم', icon: Dumbbell },
+  { id: 'supermarket', label: 'أسواق مركزية', icon: ShoppingCart },
+];
+
 const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
   { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
   { type: 'road', label: 'طريق', icon: MoveRight, color: 'bg-gray-400' },
   { type: 'green', label: 'مساحة خضراء', icon: TreeDeciduous, color: 'bg-emerald-500' },
+  { type: 'pitch', label: 'ملعب', icon: Trophy, color: 'bg-green-600' },
   { type: 'amenity', label: 'مرفق', icon: Coffee, color: 'bg-amber-500' },
   { type: 'label_area', label: 'منطقة تسمية', icon: Type, color: 'bg-purple-500' },
 ];
@@ -59,7 +72,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const pt = svgRef.current.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
-    // تحويل إحداثيات الشاشة إلى إحداثيات المجموعة الداخلية (المتأثرة بالـ Zoom والـ Pan)
     const svgP = pt.matrixTransform(contentRef.current.getScreenCTM()?.inverse());
     return { x: svgP.x, y: svgP.y };
   };
@@ -72,18 +84,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    // نتحقق إذا كان الضغط على الخلفية أو الـ SVG نفسه وليس على عنصر موجود
     const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
     if (dragMode || !isBackground || !activeTool) return;
     
     const pos = getMousePos(e);
-    const w = 60, h = 60;
+    const w = activeTool === 'road' ? 200 : 60;
+    const h = activeTool === 'road' ? 40 : 60;
     
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
       type: activeTool,
       label: activeTool === 'house' ? `D1` : 
              activeTool === 'tower' ? `T1` : 
+             activeTool === 'pitch' ? 'ملعب' :
              activeTool === 'label_area' ? 'منطقة جديدة' : '',
       points: [
         { x: snap(pos.x - w/2), y: snap(pos.y - h/2) },
@@ -97,6 +110,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       x: pos.x, y: pos.y, width: w, height: h,
       floors: activeTool === 'tower' ? 5 : undefined,
       apartmentsPerFloor: activeTool === 'tower' ? 4 : undefined,
+      amenityType: activeTool === 'amenity' ? 'shop' : undefined,
     };
 
     setElements([...elements, newElement]);
@@ -198,9 +212,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     switch (el.type) {
       case 'house': return '#ffffff';
       case 'tower': return '#1e293b';
-      case 'road': return '#d1d5db';
-      case 'green': return '#d1fae5';
-      case 'amenity': return '#fffbeb';
+      case 'road': return '#475569';
+      case 'green': return '#22c55e';
+      case 'pitch': return '#16a34a';
+      case 'amenity': return '#f59e0b';
       default: return '#ffffff';
     }
   };
@@ -208,11 +223,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const getElementStroke = (el: MapElement) => {
     if (el.type === 'label_area') return el.color || '#a855f7';
     switch (el.type) {
-      case 'house': return '#60a5fa';
+      case 'house': return '#3b82f6';
       case 'tower': return '#0f172a';
-      case 'road': return '#9ca3af';
-      case 'green': return '#10b981';
-      case 'amenity': return '#f59e0b';
+      case 'road': return '#1e293b';
+      case 'green': return '#15803d';
+      case 'pitch': return '#ffffff';
+      case 'amenity': return '#d97706';
       default: return '#cbd5e1';
     }
   };
@@ -236,31 +252,31 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-200px)]" dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
           <button 
             onClick={() => setActiveTool(null)} 
-            className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", !activeTool ? "bg-indigo-600 text-white shadow-lg scale-105" : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
+            className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap", !activeTool ? "bg-indigo-600 text-white shadow-lg scale-105" : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
           >
             <Hand size={18} />
             <span className="hidden md:inline">تصفح</span>
           </button>
-          <div className="w-px h-8 bg-slate-200 mx-1" />
+          <div className="w-px h-8 bg-slate-200 mx-1 shrink-0" />
           {TOOLS.map((tool) => (
             <button 
               key={tool.type} 
               onClick={() => setActiveTool(activeTool === tool.type ? null : tool.type)} 
-              className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", activeTool === tool.type ? `${tool.color} text-white shadow-lg scale-105` : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
+              className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap", activeTool === tool.type ? `${tool.color} text-white shadow-lg scale-105` : "bg-slate-50 text-slate-600 hover:bg-slate-100")}
             >
               <tool.icon size={18} />
               <span className="hidden md:inline">{tool.label}</span>
             </button>
           ))}
-          <div className="w-px h-8 bg-slate-200 mx-2" />
-          <Button variant={gridLock ? "default" : "outline"} size="icon" onClick={() => setGridLock(!gridLock)} className={cn("rounded-xl", gridLock && "bg-indigo-600")}>
+          <div className="w-px h-8 bg-slate-200 mx-2 shrink-0" />
+          <Button variant={gridLock ? "default" : "outline"} size="icon" onClick={() => setGridLock(!gridLock)} className={cn("rounded-xl shrink-0", gridLock && "bg-indigo-600")}>
             <Grid3X3 size={18} />
           </Button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.min(s + 0.2, 5))}><ZoomIn size={18} /></Button>
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.1))}><ZoomOut size={18} /></Button>
@@ -289,7 +305,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
                 </pattern>
               </defs>
-              {/* خلفية تفاعلية تغطي مساحة المخطط بالكامل */}
               <rect id="map-background" width={mapWidth} height={mapHeight} fill="url(#grid-editor)" />
               
               {sortedElements.map((el) => {
@@ -301,7 +316,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 const minY = Math.min(...pts.map(p => p.y));
                 const minX = Math.min(...pts.map(p => p.x));
                 const maxX = Math.max(...pts.map(p => p.x));
+                const maxY = Math.max(...pts.map(p => p.y));
                 const topCenterX = (minX + maxX) / 2;
+                const w = maxX - minX;
+                const h = maxY - minY;
 
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
@@ -310,10 +328,37 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       fill={getElementColor(el)}
                       stroke={getElementStroke(el)}
                       fillOpacity={el.type === 'label_area' ? el.opacity : 1}
+                      strokeWidth={el.type === 'pitch' ? 2 : 1}
                       className={cn("transition-all stroke-2 cursor-move", isSelected && "stroke-blue-600 stroke-[3px] filter drop-shadow-lg")}
                       onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
                     />
                     
+                    {/* لمسات بصرية فنية */}
+                    {el.type === 'road' && (
+                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" pointerEvents="none" />
+                    )}
+                    
+                    {el.type === 'pitch' && (
+                      <g pointerEvents="none">
+                        <circle cx={centerX} cy={centerY} r={h/6} fill="none" stroke="white" strokeWidth="1" />
+                        <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
+                        <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                        <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                      </g>
+                    )}
+
+                    {el.type === 'tower' && (
+                      <g pointerEvents="none" opacity="0.3">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <line key={i} x1={minX + 5} y1={minY + (h/4)*(i+1)} x2={maxX - 5} y2={minY + (h/4)*(i+1)} stroke="white" strokeWidth="1" />
+                        ))}
+                      </g>
+                    )}
+
+                    {el.type === 'house' && (
+                      <path d={`M ${centerX - w/4} ${centerY} L ${centerX} ${centerY - h/4} L ${centerX + w/4} ${centerY} Z`} fill="none" stroke="#3b82f6" strokeWidth="1" pointerEvents="none" opacity="0.5" />
+                    )}
+
                     {el.label && (
                       <text 
                         x={el.type === 'label_area' ? topCenterX : centerX} 
@@ -374,6 +419,30 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 <label className="text-sm font-bold text-slate-500">تسمية الوحدة</label>
                 <input type="text" className="w-full p-3 rounded-xl border border-slate-200" value={selectedElement.label} onChange={(e) => setElements(elements.map(el => el.id === selectedId ? {...el, label: e.target.value} : el))} />
               </div>
+
+              {selectedElement.type === 'amenity' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-500">نوع المرفق</label>
+                  <Select 
+                    value={selectedElement.amenityType} 
+                    onValueChange={(val) => setElements(elements.map(el => el.id === selectedId ? {...el, amenityType: val, label: AMENITY_TYPES.find(t => t.id === val)?.label || ''} : el))}
+                  >
+                    <SelectTrigger className="rounded-xl h-12">
+                      <SelectValue placeholder="اختر نوع المرفق" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AMENITY_TYPES.map(type => (
+                        <SelectItem key={type.id} value={type.id} className="text-right">
+                          <div className="flex items-center gap-2 justify-end">
+                            <span>{type.label}</span>
+                            <type.icon size={16} />
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {selectedElement.type === 'label_area' && (
                 <div className="space-y-4 p-4 bg-purple-50 rounded-2xl border border-purple-100">

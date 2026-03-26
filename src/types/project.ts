@@ -1,4 +1,4 @@
-export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area';
+export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch';
 
 export interface Point {
   x: number;
@@ -11,14 +11,15 @@ export interface MapElement {
   label: string;
   points: Point[];
   rotation: number;
-  color?: string; // للتحكم في لون مناطق التسمية
-  opacity?: number; // للتحكم في شفافية مناطق التسمية
+  color?: string; 
+  opacity?: number; 
   floors?: number;
   apartmentsPerFloor?: number;
   x: number; 
   y: number;
   width: number;
   height: number;
+  amenityType?: string;
 }
 
 export interface Project {

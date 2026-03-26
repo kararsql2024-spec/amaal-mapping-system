@@ -57,9 +57,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.color || '#a855f7', opacity: el.opacity || 0.2 };
     
     const data = housesData[el.id];
-    if (el.type === 'road') return { fill: '#d1d5db', stroke: 'none', opacity: 1 };
-    if (el.type === 'green') return { fill: '#d1fae5', stroke: '#10b981', opacity: 1 };
+    if (el.type === 'road') return { fill: '#475569', stroke: '#1e293b', opacity: 1 };
+    if (el.type === 'green') return { fill: '#22c55e', stroke: '#15803d', opacity: 1 };
+    if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1 };
+    if (el.type === 'amenity') return { fill: '#f59e0b', stroke: '#d97706', opacity: 1 };
     
     if (el.type === 'house') {
       if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1 };
@@ -101,7 +103,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const minY = Math.min(...pts.map(p => p.y));
             const minX = Math.min(...pts.map(p => p.x));
             const maxX = Math.max(...pts.map(p => p.x));
+            const maxY = Math.max(...pts.map(p => p.y));
             const topCenterX = (minX + maxX) / 2;
+            const w = maxX - minX;
+            const h = maxY - minY;
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
@@ -110,9 +115,24 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   fill={styles.fill}
                   stroke={styles.stroke}
                   fillOpacity={styles.opacity}
-                  strokeWidth={el.type === 'road' ? 0 : 2}
+                  strokeWidth={el.type === 'pitch' ? 2 : (el.type === 'road' ? 0 : 2)}
                   className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
                 />
+
+                {/* لمسات بصرية فنية في العرض */}
+                {el.type === 'road' && (
+                  <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
+                )}
+                
+                {el.type === 'pitch' && (
+                  <g opacity="0.8">
+                    <circle cx={centerX} cy={centerY} r={h/6} fill="none" stroke="white" strokeWidth="1" />
+                    <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
+                    <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                    <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
+                  </g>
+                )}
+
                 {el.label && (
                   <text 
                     x={el.type === 'label_area' ? topCenterX : centerX} 
