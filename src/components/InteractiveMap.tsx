@@ -6,7 +6,8 @@ import { MapElement, Point, ElementType } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
   Home, Building2, Store, GraduationCap, Stethoscope, 
-  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, Leaf
+  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, Leaf,
+  Footprints, Car, MapPin
 } from "lucide-react";
 
 interface InteractiveMapProps {
@@ -22,7 +23,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ x: e.clientX - position.x, y: e.clientY - position.y });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
@@ -95,24 +96,26 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   };
 
   const getElementStyles = (el: MapElement) => {
-    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.color || '#a855f7', opacity: el.opacity || 0.2 };
+    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.color || '#a855f7', opacity: el.opacity || 0.2, strokeWidth: 2 };
     
     const data = housesData[el.id];
-    if (el.type === 'road') return { fill: '#475569', stroke: '#1e293b', opacity: 1 };
-    if (el.type === 'green') return { fill: '#22c55e', stroke: '#15803d', opacity: 1 };
-    if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1 };
-    if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1 };
-    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1 };
+    if (el.type === 'road') return { fill: '#475569', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'green') return { fill: '#22c55e', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'sidewalk') return { fill: '#cbd5e1', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'parking') return { fill: '#334155', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1, strokeWidth: 2 };
+    if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1, strokeWidth: 2 };
+    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1, strokeWidth: 2 };
     
     if (el.type === 'house') {
-      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1 };
-      if (!data || data.status === 'available') return { fill: '#10b981', stroke: '#059669', opacity: 1 };
-      if (data.status === 'sold') return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1 };
-      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1 };
-      if (data.status === 'pending') return { fill: '#3b82f6', stroke: '#2563eb', opacity: 1 };
+      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1, strokeWidth: 2 };
+      if (!data || data.status === 'available') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'sold') return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'pending') return { fill: '#3b82f6', stroke: '#2563eb', opacity: 1, strokeWidth: 2 };
     }
     
-    return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1 };
+    return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1, strokeWidth: 2 };
   };
 
   const getShortLabel = (label: string, type: ElementType) => {
@@ -193,7 +196,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                             el.type === 'tower' ? Building2 : 
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) :
                             el.type === 'green' ? Leaf :
-                            el.type === 'pitch' ? Trophy : null;
+                            el.type === 'pitch' ? Trophy : 
+                            el.type === 'sidewalk' ? Footprints :
+                            el.type === 'parking' ? Car : null;
 
             return (
               <g 
@@ -209,7 +214,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                     fill={styles.fill}
                     stroke={styles.stroke}
                     fillOpacity={styles.opacity}
-                    strokeWidth="2"
+                    strokeWidth={styles.strokeWidth}
                     className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
                   />
                 ) : (
@@ -218,12 +223,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                     fill={styles.fill}
                     stroke={styles.stroke}
                     fillOpacity={styles.opacity}
-                    strokeWidth={el.type === 'pitch' ? 2 : (el.type === 'road' ? 0 : 2)}
+                    strokeWidth={styles.strokeWidth}
                     className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} 
                   />
                 )}
 
-                {IconComponent && (
+                {IconComponent && !el.hideIcon && (
                   <foreignObject 
                     x={centerX - 12} 
                     y={centerY - 18} 

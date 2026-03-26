@@ -1,4 +1,4 @@
-export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch';
+export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'sidewalk' | 'parking';
 
 export interface Point {
   x: number;
@@ -13,8 +13,9 @@ export interface MapElement {
   rotation: number;
   orientation?: 'horizontal' | 'vertical';
   color?: string; 
-  textColor?: string; // الخاصية الجديدة
+  textColor?: string;
   opacity?: number; 
+  hideIcon?: boolean; // الخيار الجديد
   floors?: number;
   apartmentsPerFloor?: number;
   x: number; 
