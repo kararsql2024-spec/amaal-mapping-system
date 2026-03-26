@@ -10,6 +10,7 @@ import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
+import { cn } from '@/lib/utils';
 
 interface AdminProps {
   projects: Project[];
@@ -93,7 +94,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         });
 
         const updates = [];
-        const processedKeys = new Set();
 
         // 1. تحديث الوحدات الموجودة في الإكسل أو تحويلها لمتوفر إذا كانت مباعة وغير موجودة
         for (const unit of currentUnits) {
@@ -106,7 +106,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
               project_id: unit.project_id,
               data: { ...unit.data, ...excelData }
             });
-            processedKeys.add(unit.unit_key);
           } else if (unit.data?.status === 'sold') {
             // كان مباع وغير موجود في الإكسل -> تحويل لمتوفر
             updates.push({
@@ -116,9 +115,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             });
           }
         }
-
-        // 2. إضافة الوحدات الجديدة الموجودة في الإكسل وغير موجودة في قاعدة البيانات (اختياري حسب الحاجة)
-        // هنا سنكتفي بتحديث الوحدات المعرفة مسبقاً في النظام لضمان عدم العبث بالهيكلية
 
         if (updates.length > 0) {
           const { error: upsertError } = await supabase
