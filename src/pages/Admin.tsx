@@ -86,6 +86,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           <Auth
             supabaseClient={supabase}
             providers={[]}
+            view="sign_in"
+            showLinks={false}
             appearance={{
               theme: ThemeSupa,
               variables: {
