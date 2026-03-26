@@ -3,7 +3,11 @@
 import React, { useState, useRef } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
-import { ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize } from "lucide-react";
+import { 
+  ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
+  Home, Building2, Store, GraduationCap, Stethoscope, 
+  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, Leaf
+} from "lucide-react";
 
 interface InteractiveMapProps {
   elements: MapElement[];
@@ -120,60 +124,17 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     return label;
   };
 
-  const renderAmenityIcon = (type: string | undefined, color: string) => {
+  const getAmenityIcon = (type: string | undefined) => {
     switch (type) {
-      case 'shop': return (
-        <g transform="translate(-12, -12)">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M9 22V12h6v10" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M3 9h18" fill="none" stroke={color} strokeWidth="2" />
-        </g>
-      );
-      case 'school': return (
-        <g transform="translate(-12, -12)">
-          <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" fill="none" stroke={color} strokeWidth="2" />
-        </g>
-      );
-      case 'medical': return (
-        <g transform="translate(-12, -12)">
-          <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M12 7v10M7 12h10" fill="none" stroke={color} strokeWidth="2" />
-        </g>
-      );
-      case 'nursery': return (
-        <g transform="translate(-12, -12)">
-          <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />
-          <circle cx="12" cy="14" r="3" fill="none" stroke={color} strokeWidth="2" />
-        </g>
-      );
-      case 'mall': return (
-        <g transform="translate(-12, -12)">
-          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M3 6h18M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />
-        </g>
-      );
-      case 'gym': return (
-        <g transform="translate(-12, -12)">
-          <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />
-        </g>
-      );
-      case 'supermarket': return (
-        <g transform="translate(-12, -12)">
-          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />
-          <circle cx="10" cy="21" r="1" fill={color} />
-          <circle cx="20" cy="21" r="1" fill={color} />
-        </g>
-      );
-      case 'mosque': return (
-        <g transform="translate(-12, -12)">
-          <path d="M12 22v-8M12 14c-4 0-7-3-7-7 0-1 1-2 2-2s2 1 2 2c0 2 2 3 3 3s3-1 3-3c0-1 1-2 2-2s2 1 2 2c0 4-3 7-7 7z" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M12 7V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />
-          <rect x="18" y="10" width="4" height="12" fill="none" stroke={color} strokeWidth="2" />
-          <path d="M20 10V8l-1-1 1-1 1 1-1 1" fill="none" stroke={color} strokeWidth="1" />
-        </g>
-      );
-      default: return <circle cx="0" cy="0" r="10" fill="none" stroke={color} strokeWidth="2" />;
+      case 'shop': return Store;
+      case 'school': return GraduationCap;
+      case 'medical': return Stethoscope;
+      case 'nursery': return Baby;
+      case 'mall': return ShoppingBag;
+      case 'gym': return Dumbbell;
+      case 'supermarket': return ShoppingCart;
+      case 'mosque': return MoonStar;
+      default: return MapPin;
     }
   };
 
@@ -228,6 +189,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const w = maxX - minX;
             const h = maxY - minY;
 
+            const IconComponent = el.type === 'house' ? Home : 
+                            el.type === 'tower' ? Building2 : 
+                            el.type === 'amenity' ? getAmenityIcon(el.amenityType) :
+                            el.type === 'green' ? Leaf :
+                            el.type === 'pitch' ? Trophy : null;
+
             return (
               <g 
                 key={el.id} 
@@ -256,34 +223,22 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   />
                 )}
 
-                {el.type === 'house' && (
-                  <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
-                    <path d="M -18 8 L -18 -4 L 0 -18 L 18 -4 L 18 8 Z" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
-                    <rect x="-6" y="0" width="12" height="8" fill="none" stroke="white" strokeWidth="1" opacity="0.3" />
-                    <path d="M -18 -4 L 0 -18 L 18 -4" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
-                  </g>
-                )}
-
-                {el.type === 'tower' && (
-                  <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
-                    <rect x="-12" y="-25" width="24" height="45" rx="2" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
-                    <g opacity="0.3">
-                      <rect x="-8" y="-20" width="4" height="4" fill="white" />
-                      <rect x="4" y="-20" width="4" height="4" fill="white" />
-                      <rect x="-8" y="-12" width="4" height="4" fill="white" />
-                      <rect x="4" y="-12" width="4" height="4" fill="white" />
-                      <rect x="-8" y="-4" width="4" height="4" fill="white" />
-                      <rect x="4" y="-4" width="4" height="4" fill="white" />
-                      <rect x="-8" y="4" width="4" height="4" fill="white" />
-                      <rect x="4" y="4" width="4" height="4" fill="white" />
-                    </g>
-                  </g>
-                )}
-
-                {el.type === 'amenity' && (
-                  <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
-                    {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
-                  </g>
+                {IconComponent && (
+                  <foreignObject 
+                    x={centerX - 12} 
+                    y={centerY - 18} 
+                    width="24" 
+                    height="24" 
+                    pointerEvents="none"
+                  >
+                    <div className="flex items-center justify-center w-full h-full">
+                      <IconComponent 
+                        size={20} 
+                        color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
+                        strokeWidth={2.5}
+                      />
+                    </div>
+                  </foreignObject>
                 )}
 
                 {el.type === 'road' && (
@@ -293,20 +248,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 )}
                 
                 {el.type === 'pitch' && (
-                  <g opacity="0.8">
+                  <g opacity="0.4" pointerEvents="none">
                     <circle cx={centerX} cy={centerY} r={Math.min(w, h)/6} fill="none" stroke="white" strokeWidth="1" />
                     {el.orientation === 'vertical' ? (
-                      <>
-                        <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
-                        <rect x={centerX - w/4} y={minY} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
-                        <rect x={centerX - w/4} y={maxY - h/6} width={w/2} height={h/6} fill="none" stroke="white" strokeWidth="1" />
-                      </>
+                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="1" />
                     ) : (
-                      <>
-                        <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
-                        <rect x={minX} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
-                        <rect x={maxX - w/6} y={centerY - h/4} width={w/6} height={h/2} fill="none" stroke="white" strokeWidth="1" />
-                      </>
+                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="1" />
                     )}
                   </g>
                 )}
@@ -314,11 +261,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 {el.label && (
                   <text 
                     x={el.type === 'label_area' ? topCenterX : centerX} 
-                    y={el.type === 'label_area' ? minY - 10 : minY + 20} 
+                    y={el.type === 'label_area' ? minY - 10 : centerY + 15} 
                     textAnchor="middle" 
-                    dominantBaseline="auto"
+                    dominantBaseline="middle"
                     fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')}
-                    className="font-black pointer-events-none select-none text-[12px]"
+                    className="font-black pointer-events-none select-none text-[10px]"
                   >
                     {getShortLabel(el.label, el.type)}
                   </text>
