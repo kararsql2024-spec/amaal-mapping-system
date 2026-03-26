@@ -6,8 +6,7 @@ import { MapElement, Point, ElementType } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
   Home, Building2, Store, GraduationCap, Stethoscope, 
-  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, Leaf,
-  Footprints, Car, MapPin
+  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, MapPin
 } from "lucide-react";
 
 interface InteractiveMapProps {
@@ -23,7 +22,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: e.clientX - position.x, y: e.clientY - position.y });
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
@@ -100,9 +99,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     
     const data = housesData[el.id];
     if (el.type === 'road') return { fill: '#475569', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    if (el.type === 'green') return { fill: '#22c55e', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    if (el.type === 'sidewalk') return { fill: '#cbd5e1', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    if (el.type === 'parking') return { fill: '#334155', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'sidewalk') return { fill: 'url(#sidewalk-pattern)', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    if (el.type === 'parking') return { fill: 'url(#parking-pattern)', stroke: 'none', opacity: 1, strokeWidth: 0 };
     if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1, strokeWidth: 2 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1, strokeWidth: 2 };
     if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1, strokeWidth: 2 };
@@ -141,11 +140,20 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     }
   };
 
-  const sortedElements = [...elements].sort((a, b) => {
-    if (a.type === 'label_area' && b.type !== 'label_area') return -1;
-    if (a.type !== 'label_area' && b.type === 'label_area') return 1;
-    return 0;
-  });
+  // ترتيب الطبقات: label_area في الأسفل، ثم الطرق والمساحات، ثم المرافق، ثم المنازل والأبراج في الأعلى
+  const layerOrder: Record<string, number> = {
+    'label_area': 0,
+    'road': 1,
+    'green': 1,
+    'sidewalk': 1,
+    'parking': 1,
+    'pitch': 2,
+    'amenity': 2,
+    'house': 3,
+    'tower': 3
+  };
+
+  const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
 
   return (
     <div className={cn(
@@ -173,6 +181,21 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse">
               <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/>
             </pattern>
+            {/* نمط المساحة الخضراء */}
+            <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect width="10" height="10" fill="#22c55e" />
+              <path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" />
+            </pattern>
+            {/* نمط الرصيف */}
+            <pattern id="sidewalk-pattern" width="8" height="8" patternUnits="userSpaceOnUse">
+              <rect width="8" height="8" fill="#cbd5e1" />
+              <path d="M 8 0 L 8 8 M 0 8 L 8 8" fill="none" stroke="#94a3b8" strokeWidth="0.5" />
+            </pattern>
+            {/* نمط الكراج */}
+            <pattern id="parking-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+              <rect width="20" height="20" fill="#334155" />
+              <path d="M 2 0 L 2 20 M 18 0 L 18 20" fill="none" stroke="white" strokeWidth="1" opacity="0.3" />
+            </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
@@ -192,13 +215,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const w = maxX - minX;
             const h = maxY - minY;
 
+            // إزالة الأيقونات من الكراج والرصيف والمساحة الخضراء
             const IconComponent = el.type === 'house' ? Home : 
                             el.type === 'tower' ? Building2 : 
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) :
-                            el.type === 'green' ? Leaf :
-                            el.type === 'pitch' ? Trophy : 
-                            el.type === 'sidewalk' ? Footprints :
-                            el.type === 'parking' ? Car : null;
+                            el.type === 'pitch' ? Trophy : null;
 
             return (
               <g 

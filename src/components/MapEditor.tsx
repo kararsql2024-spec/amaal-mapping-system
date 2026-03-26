@@ -378,9 +378,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       case 'house': return '#ffffff';
       case 'tower': return '#1e293b';
       case 'road': return '#475569';
-      case 'green': return '#22c55e';
-      case 'sidewalk': return '#cbd5e1';
-      case 'parking': return '#334155';
+      case 'green': return 'url(#green-pattern)';
+      case 'sidewalk': return 'url(#sidewalk-pattern)';
+      case 'parking': return 'url(#parking-pattern)';
       case 'pitch': return '#16a34a';
       default: return '#ffffff';
     }
@@ -425,11 +425,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   const selectedElement = elements.find(el => el.id === selectedId);
   
-  const sortedElements = [...elements].sort((a, b) => {
-    if (a.type === 'label_area' && b.type !== 'label_area') return -1;
-    if (a.type !== 'label_area' && b.type === 'label_area') return 1;
-    return 0;
-  });
+  const layerOrder: Record<string, number> = {
+    'label_area': 0,
+    'road': 1,
+    'green': 1,
+    'sidewalk': 1,
+    'parking': 1,
+    'pitch': 2,
+    'amenity': 2,
+    'house': 3,
+    'tower': 3
+  };
+
+  const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
 
   const updateSelectedElement = (updates: Partial<MapElement>) => {
     if (!selectedId) return;
@@ -524,6 +532,18 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse">
                   <path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/>
                 </pattern>
+                <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <rect width="10" height="10" fill="#22c55e" />
+                  <path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" />
+                </pattern>
+                <pattern id="sidewalk-pattern" width="8" height="8" patternUnits="userSpaceOnUse">
+                  <rect width="8" height="8" fill="#cbd5e1" />
+                  <path d="M 8 0 L 8 8 M 0 8 L 8 8" fill="none" stroke="#94a3b8" strokeWidth="0.5" />
+                </pattern>
+                <pattern id="parking-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <rect width="20" height="20" fill="#334155" />
+                  <path d="M 2 0 L 2 20 M 18 0 L 18 20" fill="none" stroke="white" strokeWidth="1" opacity="0.3" />
+                </pattern>
               </defs>
               <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
               
@@ -544,10 +564,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 const IconComponent = el.type === 'house' ? Home : 
                                 el.type === 'tower' ? Building2 : 
                                 el.type === 'amenity' ? getAmenityIcon(el.amenityType) :
-                                el.type === 'green' ? Leaf :
-                                el.type === 'pitch' ? Trophy : 
-                                el.type === 'sidewalk' ? Footprints :
-                                el.type === 'parking' ? Car : null;
+                                el.type === 'pitch' ? Trophy : null;
 
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
