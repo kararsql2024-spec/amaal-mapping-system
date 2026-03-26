@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -24,22 +24,58 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
   
-  // Excel Mapping State with LocalStorage persistence
-  const [excelMapping, setExcelMapping] = useState(() => {
-    const saved = localStorage.getItem('excelMapping');
-    return saved ? JSON.parse(saved) : {
-      cityCol: 'A',
-      unitCol: 'B',
-      nameCol: 'C',
-      phoneCol: 'D',
-      dateCol: 'E'
-    };
+  // Excel Mapping State
+  const [excelMapping, setExcelMapping] = useState({
+    cityCol: 'A',
+    unitCol: 'B',
+    nameCol: 'C',
+    phoneCol: 'D',
+    dateCol: 'E'
   });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // Save mapping to localStorage whenever it changes
+  // جلب الإعدادات من Supabase عند تحميل الصفحة
   useEffect(() => {
-    localStorage.setItem('excelMapping', JSON.stringify(excelMapping));
-  }, [excelMapping]);
+    const fetchSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('key', 'excel_mapping')
+          .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        if (data?.value) {
+          setExcelMapping(data.value);
+        }
+      } catch (error) {
+        console.error("Error fetching settings:", error);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const { error } = await supabase
+        .from('settings')
+        .upsert({ 
+          key: 'excel_mapping', 
+          value: excelMapping,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      showSuccess("تم حفظ إعدادات الأعمدة في قاعدة البيانات");
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      showError("فشل في حفظ الإعدادات");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const colToIdx = (col: string) => {
     let res = 0;
@@ -323,9 +359,18 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           <div className="md:col-span-2 space-y-6">
             {showSalesUpdate ? (
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
-                <div className="flex items-center gap-3 border-b pb-4">
-                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div>
-                  <h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2>
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div>
+                    <h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2>
+                  </div>
+                  <Button 
+                    onClick={handleSaveSettings} 
+                    disabled={isSavingSettings}
+                    className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"
+                  >
+                    <Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ إعدادات الأعمدة"}
+                  </Button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
