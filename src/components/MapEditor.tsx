@@ -9,7 +9,7 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush
+  Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2, Square
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -55,14 +55,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType | null>(null);
   const [isBrushMode, setIsBrushMode] = useState(false);
+  const [brushType, setBrushType] = useState<'rect' | 'free'>('rect');
   const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush', startPos?: Point, index?: number } | null>(null);
   const [brushPreview, setBrushPreview] = useState<{ start: Point, end: Point } | null>(null);
+  const [tempPoints, setTempPoints] = useState<Point[]>([]);
   const [gridLock, setGridLock] = useState(true);
   const [dims, setDims] = useState({ w: mapWidth, h: mapHeight });
   
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
-  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   
   const svgRef = useRef<SVGSVGElement>(null);
   const contentRef = useRef<SVGGElement>(null);
@@ -89,13 +90,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-
       if (e.key === 'Delete' || e.key === 'Backspace') {
         setElements(prev => prev.filter(el => el.id !== selectedId));
         setSelectedId(null);
         return;
       }
-
       const step = gridLock ? GRID_SIZE : 1;
       let dx = 0; dy = 0;
       if (e.key === 'ArrowUp') dy = -step;
@@ -103,7 +102,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       else if (e.key === 'ArrowLeft') dx = -step;
       else if (e.key === 'ArrowRight') dx = step;
       else return;
-
       e.preventDefault();
       setElements(prev => prev.map(el => {
         if (el.id !== selectedId) return el;
@@ -135,18 +133,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const handleCanvasClick = (e: React.MouseEvent) => {
     const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
     if (dragMode || !isBackground || !activeTool || isBrushMode) return;
-    
     const pos = getMousePos(e);
     const w = activeTool === 'road' ? 200 : 80;
     const h = activeTool === 'road' ? 40 : 80;
-    
     const newPoints = [
       { x: snap(pos.x - w/2), y: snap(pos.y - h/2) },
       { x: snap(pos.x + w/2), y: snap(pos.y - h/2) },
       { x: snap(pos.x + w/2), y: snap(pos.y + h/2) },
       { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
     ];
-
     createElement(activeTool, newPoints);
   };
 
@@ -175,13 +170,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const handleMouseDown = (e: React.MouseEvent) => {
     const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
     const pos = getMousePos(e);
-
     if (isBrushMode && activeTool && isBackground) {
       setDragMode({ type: 'brush', startPos: pos });
-      setBrushPreview({ start: pos, end: pos });
+      if (brushType === 'rect') {
+        setBrushPreview({ start: pos, end: pos });
+      } else {
+        setTempPoints([pos]);
+      }
       return;
     }
-
     if (isBackground && !activeTool) {
       setDragMode({ type: 'pan', startPos: { x: e.clientX, y: e.clientY } });
     }
@@ -190,12 +187,16 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!dragMode) return;
     const pos = getMousePos(e);
-
     if (dragMode.type === 'brush' && dragMode.startPos) {
-      setBrushPreview({ start: dragMode.startPos, end: pos });
+      if (brushType === 'rect') {
+        setBrushPreview({ start: dragMode.startPos, end: pos });
+      } else {
+        const lastPt = tempPoints[tempPoints.length - 1];
+        const dist = Math.sqrt(Math.pow(pos.x - lastPt.x, 2) + Math.pow(pos.y - lastPt.y, 2));
+        if (dist > 5) setTempPoints(prev => [...prev, pos]);
+      }
       return;
     }
-
     if (dragMode.type === 'pan' && dragMode.startPos) {
       const dx = e.clientX - dragMode.startPos.x;
       const dy = e.clientY - dragMode.startPos.y;
@@ -203,14 +204,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       setDragMode({ ...dragMode, startPos: { x: e.clientX, y: e.clientY } });
       return;
     }
-
     if (!selectedId) return;
     setElements(prev => prev.map(el => {
       if (el.id !== selectedId) return el;
       const pts = getElementPoints(el);
       const dragIdx = dragMode.index;
       let newPoints = [...pts];
-
       if (dragMode.type === 'vertex' && dragIdx !== undefined) {
         newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
       } else if (dragMode.type === 'edge' && dragIdx !== undefined) {
@@ -240,29 +239,26 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleMouseUp = () => {
-    if (dragMode?.type === 'brush' && brushPreview && activeTool) {
-      const x1 = snap(brushPreview.start.x);
-      const y1 = snap(brushPreview.start.y);
-      const x2 = snap(brushPreview.end.x);
-      const y2 = snap(brushPreview.end.y);
-      
-      const minX = Math.min(x1, x2);
-      const maxX = Math.max(x1, x2);
-      const minY = Math.min(y1, y2);
-      const maxY = Math.max(y1, y2);
-
-      if (maxX - minX > 5 && maxY - minY > 5) {
-        const pts = [
-          { x: minX, y: minY },
-          { x: maxX, y: minY },
-          { x: maxX, y: maxY },
-          { x: minX, y: maxY }
-        ];
-        createElement(activeTool, pts);
+    if (dragMode?.type === 'brush' && activeTool) {
+      if (brushType === 'rect' && brushPreview) {
+        const x1 = snap(brushPreview.start.x);
+        const y1 = snap(brushPreview.start.y);
+        const x2 = snap(brushPreview.end.x);
+        const y2 = snap(brushPreview.end.y);
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+        if (maxX - minX > 5 && maxY - minY > 5) {
+          createElement(activeTool, [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }]);
+        }
+      } else if (brushType === 'free' && tempPoints.length > 2) {
+        createElement(activeTool, tempPoints);
       }
     }
     setDragMode(null);
     setBrushPreview(null);
+    setTempPoints([]);
   };
 
   const handleDuplicate = (direction: 'right' | 'down') => {
@@ -333,24 +329,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-120px)]" dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
-          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", !activeTool && !isBrushMode ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-600 hover:bg-slate-100")}><Hand size={18} /><span className="hidden md:inline">تصفح</span></button>
-          <div className="w-px h-8 bg-slate-200 mx-1 shrink-0" />
-          {TOOLS.map((tool) => (
-            <button key={tool.type} onClick={() => setActiveTool(activeTool === tool.type ? null : tool.type)} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", activeTool === tool.type ? `${tool.color} text-white shadow-lg` : "bg-slate-50 text-slate-600 hover:bg-slate-100")}><tool.icon size={18} /><span className="hidden md:inline">{tool.label}</span></button>
-          ))}
-          <div className="w-px h-8 bg-slate-200 mx-2 shrink-0" />
-          <button onClick={() => setIsBrushMode(!isBrushMode)} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all", isBrushMode ? "bg-slate-900 text-white shadow-lg" : "bg-slate-50 text-slate-600 hover:bg-slate-100")}><Paintbrush size={18} /><span className="hidden md:inline">فرشاة الرسم</span></button>
-          <Button variant={gridLock ? "default" : "outline"} size="icon" onClick={() => setGridLock(!gridLock)} className={cn("rounded-xl shrink-0", gridLock && "bg-indigo-600")}><Grid3X3 size={18} /></Button>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-4">
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.min(s + 0.2, 5))}><ZoomIn size={18} /></Button>
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.1))}><ZoomOut size={18} /></Button>
             <Button variant="ghost" size="icon" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={18} /></Button>
           </div>
-          <Button onClick={() => onSave(elements, dims.w, dims.h)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"><Save size={18} /> حفظ المخطط</Button>
+          <Button variant={gridLock ? "default" : "outline"} size="icon" onClick={() => setGridLock(!gridLock)} className={cn("rounded-xl", gridLock && "bg-indigo-600")}><Grid3X3 size={18} /></Button>
         </div>
+        <Button onClick={() => onSave(elements, dims.w, dims.h)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"><Save size={18} /> حفظ المخطط</Button>
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
@@ -396,7 +383,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 );
               })}
 
-              {brushPreview && activeTool && (
+              {brushPreview && activeTool && brushType === 'rect' && (
                 <rect
                   x={Math.min(snap(brushPreview.start.x), snap(brushPreview.end.x))}
                   y={Math.min(snap(brushPreview.start.y), snap(brushPreview.end.y))}
@@ -410,8 +397,45 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   pointerEvents="none"
                 />
               )}
+
+              {tempPoints.length > 1 && brushType === 'free' && (
+                <path
+                  d={pointsToPath(tempPoints)}
+                  fill={activeTool === 'road' ? '#475569' : activeTool === 'green' ? '#22c55e' : activeTool === 'sidewalk' ? '#cbd5e1' : '#334155'}
+                  fillOpacity="0.5"
+                  stroke="#3b82f6"
+                  strokeWidth="2"
+                  strokeDasharray="5,5"
+                  pointerEvents="none"
+                />
+              )}
             </g>
           </svg>
+        </div>
+
+        <div className="w-20 flex flex-col gap-2 bg-white p-2 rounded-[2rem] border border-slate-200 shadow-xl overflow-y-auto no-scrollbar">
+          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", !activeTool && !isBrushMode ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+            <MousePointer2 size={20} />
+            <span className="text-[10px] font-bold">تصفح</span>
+          </button>
+          <div className="h-px bg-slate-100 mx-2" />
+          {TOOLS.map((tool) => (
+            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", activeTool === tool.type && !isBrushMode ? `${tool.color} text-white shadow-lg` : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+              <tool.icon size={20} />
+              <span className="text-[10px] font-bold">{tool.label}</span>
+            </button>
+          ))}
+          <div className="h-px bg-slate-100 mx-2" />
+          <button onClick={() => setIsBrushMode(!isBrushMode)} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", isBrushMode ? "bg-slate-900 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+            <Paintbrush size={20} />
+            <span className="text-[10px] font-bold">فرشاة</span>
+          </button>
+          {isBrushMode && (
+            <div className="flex flex-col gap-2 mt-2 p-1 bg-slate-50 rounded-xl border border-slate-100">
+              <button onClick={() => setBrushType('rect')} className={cn("w-full aspect-square rounded-lg flex items-center justify-center transition-all", brushType === 'rect' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400")} title="رسم مستطيل"><Square size={18} /></button>
+              <button onClick={() => setBrushType('free')} className={cn("w-full aspect-square rounded-lg flex items-center justify-center transition-all", brushType === 'free' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400")} title="رسم حر"><Paintbrush size={18} /></button>
+            </div>
+          )}
         </div>
 
         {selectedElement && (
