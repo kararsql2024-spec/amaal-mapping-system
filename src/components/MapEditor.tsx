@@ -257,10 +257,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const maxX = Math.max(...pts.map(p => p.x));
     const minY = Math.min(...pts.map(p => p.y));
     const maxY = Math.max(...pts.map(p => p.y));
-    const offset = direction === 'right' ? { x: (maxX - minX) + 10, y: 0 } : { x: 0, y: (maxY - minY) + 10 };
+    
+    // المسافة الصفرية: الإزاحة تساوي العرض أو الطول تماماً
+    const offset = direction === 'right' ? { x: (maxX - minX), y: 0 } : { x: 0, y: (maxY - minY) };
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
     
-    // منطق التكرار المتسلسل (+2)
     let newLabel = el.label;
     if (el.type === 'house' || el.type === 'tower') {
       const parts = el.label.split('-');
