@@ -53,6 +53,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
+  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   
   const svgRef = useRef<SVGSVGElement>(null);
   const contentRef = useRef<SVGGElement>(null);
@@ -175,11 +176,22 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     }
   };
 
+  const getDistance = (t1: React.Touch, t2: React.Touch) => {
+    return Math.sqrt(Math.pow(t2.clientX - t1.clientX, 2) + Math.pow(t2.clientY - t1.clientY, 2));
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
     const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
-    if (isBackground && !activeTool && e.touches.length === 1) {
-      const touch = e.touches[0];
-      setDragMode({ type: 'pan', startPos: { x: touch.clientX, y: touch.clientY } });
+    if (isBackground && !activeTool) {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        setDragMode({ type: 'pan', startPos: { x: touch.clientX, y: touch.clientY } });
+        setLastTouchDistance(null);
+      } else if (e.touches.length === 2) {
+        setDragMode(null);
+        const dist = getDistance(e.touches[0], e.touches[1]);
+        setLastTouchDistance(dist);
+      }
     }
   };
 
@@ -239,59 +251,65 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!dragMode || e.touches.length !== 1) return;
-    const touch = e.touches[0];
-
-    if (dragMode.type === 'pan' && dragMode.startPos) {
+    if (e.touches.length === 1 && dragMode?.type === 'pan' && dragMode.startPos) {
+      const touch = e.touches[0];
       const dx = touch.clientX - dragMode.startPos.x;
       const dy = touch.clientY - dragMode.startPos.y;
       setViewPos(prev => ({ x: prev.x + dx, y: prev.y + dy }));
       setDragMode({ ...dragMode, startPos: { x: touch.clientX, y: touch.clientY } });
-      return;
+    } else if (e.touches.length === 2 && lastTouchDistance !== null) {
+      const dist = getDistance(e.touches[0], e.touches[1]);
+      const ratio = dist / lastTouchDistance;
+      setScale(prev => Math.min(Math.max(prev * ratio, 0.1), 10));
+      setLastTouchDistance(dist);
+    } else if (e.touches.length === 1 && selectedId && dragMode) {
+      // التعامل مع سحب العناصر باللمس
+      const pos = getMousePos(e);
+      setElements(prev => prev.map(el => {
+        if (el.id !== selectedId) return el;
+        const pts = getElementPoints(el);
+        const dragIdx = (dragMode as any).index;
+        let newPoints = [...pts];
+
+        if (dragMode.type === 'vertex' && dragIdx !== undefined) {
+          newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
+        } else if (dragMode.type === 'edge' && dragIdx !== undefined) {
+          const idx1 = dragIdx;
+          const idx2 = (dragIdx + 1) % pts.length;
+          const midX = (pts[idx1].x + pts[idx2].x) / 2;
+          const midY = (pts[idx1].y + pts[idx2].y) / 2;
+          const dx = snap(pos.x) - midX;
+          const dy = snap(pos.y) - midY;
+          newPoints[idx1] = { x: pts[idx1].x + dx, y: pts[idx1].y + dy };
+          newPoints[idx2] = { x: pts[idx2].x + dx, y: pts[idx2].y + dy };
+        } else if (dragMode.type === 'move') {
+          const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+          const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+          const dx = snap(pos.x) - centerX;
+          const dy = snap(pos.y) - centerY;
+          newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        }
+
+        if (dragMode.type !== 'rotate') {
+          checkAndExpandMap(newPoints);
+          return { ...el, points: newPoints };
+        }
+
+        if (dragMode.type === 'rotate') {
+          const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+          const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+          const angle = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI);
+          return { ...el, rotation: angle + 90 };
+        }
+
+        return el;
+      }));
     }
+  };
 
-    if (!selectedId) return;
-    const pos = getMousePos(e);
-
-    setElements(prev => prev.map(el => {
-      if (el.id !== selectedId) return el;
-      const pts = getElementPoints(el);
-      const dragIdx = (dragMode as any).index;
-      let newPoints = [...pts];
-
-      if (dragMode.type === 'vertex' && dragIdx !== undefined) {
-        newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
-      } else if (dragMode.type === 'edge' && dragIdx !== undefined) {
-        const idx1 = dragIdx;
-        const idx2 = (dragIdx + 1) % pts.length;
-        const midX = (pts[idx1].x + pts[idx2].x) / 2;
-        const midY = (pts[idx1].y + pts[idx2].y) / 2;
-        const dx = snap(pos.x) - midX;
-        const dy = snap(pos.y) - midY;
-        newPoints[idx1] = { x: pts[idx1].x + dx, y: pts[idx1].y + dy };
-        newPoints[idx2] = { x: pts[idx2].x + dx, y: pts[idx2].y + dy };
-      } else if (dragMode.type === 'move') {
-        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-        const dx = snap(pos.x) - centerX;
-        const dy = snap(pos.y) - centerY;
-        newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-      }
-
-      if (dragMode.type !== 'rotate') {
-        checkAndExpandMap(newPoints);
-        return { ...el, points: newPoints };
-      }
-
-      if (dragMode.type === 'rotate') {
-        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-        const angle = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI);
-        return { ...el, rotation: angle + 90 };
-      }
-
-      return el;
-    }));
+  const handleTouchEnd = () => {
+    setDragMode(null);
+    setLastTouchDistance(null);
   };
 
   const handleSizeChange = (id: string, dimension: 'width' | 'height', newVal: number) => {
@@ -435,7 +453,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           onMouseUp={() => setDragMode(null)}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
-          onTouchEnd={() => setDragMode(null)}
+          onTouchEnd={handleTouchEnd}
           onWheel={handleWheel}
         >
           <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>

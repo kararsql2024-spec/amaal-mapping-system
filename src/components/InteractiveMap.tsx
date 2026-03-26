@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
 import { ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize } from "lucide-react";
@@ -20,6 +20,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -38,17 +39,38 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
+  const getDistance = (t1: React.Touch, t2: React.Touch) => {
+    return Math.sqrt(Math.pow(t2.clientX - t1.clientX, 2) + Math.pow(t2.clientY - t1.clientY, 2));
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    setIsDragging(true);
-    setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setIsDragging(true);
+      setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+      setLastTouchDistance(null);
+    } else if (e.touches.length === 2) {
+      setIsDragging(false);
+      const dist = getDistance(e.touches[0], e.touches[1]);
+      setLastTouchDistance(dist);
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging || e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+    if (e.touches.length === 1 && isDragging) {
+      const touch = e.touches[0];
+      setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+    } else if (e.touches.length === 2 && lastTouchDistance !== null) {
+      const dist = getDistance(e.touches[0], e.touches[1]);
+      const ratio = dist / lastTouchDistance;
+      setScale(prev => Math.min(Math.max(prev * ratio, 0.5), 5));
+      setLastTouchDistance(dist);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    setLastTouchDistance(null);
   };
 
   const getElementPoints = (el: MapElement): Point[] => {
@@ -129,7 +151,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
         onMouseLeave={() => setIsDragging(false)}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
-        onTouchEnd={() => setIsDragging(false)}
+        onTouchEnd={handleTouchEnd}
       >
         <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full touch-none select-none transition-transform duration-75 ease-out" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
           <defs>
