@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,15 +24,22 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
   
-  // Excel Mapping State
-  const [excelMapping, setExcelMapping] = useState({
-    cityCol: 'A',
-    unitCol: 'B',
-    nameCol: 'C',
-    phoneCol: 'D',
-    dateCol: 'E'
+  // Excel Mapping State with LocalStorage persistence
+  const [excelMapping, setExcelMapping] = useState(() => {
+    const saved = localStorage.getItem('excelMapping');
+    return saved ? JSON.parse(saved) : {
+      cityCol: 'A',
+      unitCol: 'B',
+      nameCol: 'C',
+      phoneCol: 'D',
+      dateCol: 'E'
+    };
   });
-  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Save mapping to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('excelMapping', JSON.stringify(excelMapping));
+  }, [excelMapping]);
 
   const colToIdx = (col: string) => {
     let res = 0;
@@ -64,23 +71,19 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // 1. إنشاء خريطة للمشاريع الحالية (الاسم -> المعرف) لسهولة البحث
         const projectMap = new Map(projects.map(p => [p.name.trim(), p.id]));
         
-        // 2. جلب جميع بيانات الوحدات الحالية
         const { data: currentUnits, error: fetchError } = await supabase
           .from('houses_data')
           .select('*');
 
         if (fetchError) throw fetchError;
 
-        // 3. معالجة بيانات الإكسل وتجميع الوحدات حسب المشروع
-        // excelDataByProject: Map<projectId, Map<unitKey, data>>
         const excelDataByProject = new Map<string, Map<string, any>>();
         const citiesFoundInExcel = new Set<string>();
 
         data.forEach((row, index) => {
-          if (index === 0) return; // Skip header
+          if (index === 0) return; 
           const rowCityName = String(row[cityIdx] || '').trim();
           const projectId = projectMap.get(rowCityName);
           
@@ -104,22 +107,18 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         const updates = [];
 
-        // 4. تطبيق منطق التحديث
         for (const unit of currentUnits) {
-          // نتحقق فقط إذا كان مشروع هذه الوحدة موجوداً في ملف الإكسل المرفوع
           if (citiesFoundInExcel.has(unit.project_id)) {
             const projectExcelData = excelDataByProject.get(unit.project_id);
             const unitExcelData = projectExcelData?.get(unit.unit_key);
 
             if (unitExcelData) {
-              // الحالة أ: الوحدة موجودة في الإكسل لهذا المشروع -> تحويل لمباع وتحديث البيانات
               updates.push({
                 unit_key: unit.unit_key,
                 project_id: unit.project_id,
                 data: { ...unit.data, ...unitExcelData }
               });
             } else if (unit.data?.status === 'sold') {
-              // الحالة ب: الوحدة غير موجودة في الإكسل ولكنها "مباعة" في النظام لهذا المشروع -> تحويل لمتوفر
               updates.push({
                 unit_key: unit.unit_key,
                 project_id: unit.project_id,
@@ -157,6 +156,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
     reader.readAsBinaryString(file);
   };
+
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleCreateProject = async () => {
     if (!formData.name) return;
