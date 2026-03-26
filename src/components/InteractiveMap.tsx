@@ -122,15 +122,58 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
   const renderAmenityIcon = (type: string | undefined, color: string) => {
     switch (type) {
-      case 'shop': return <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />;
-      case 'school': return <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />;
-      case 'medical': return <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" fill="none" stroke={color} strokeWidth="2" />;
-      case 'nursery': return <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />;
-      case 'mall': return <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />;
-      case 'gym': return <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />;
-      case 'supermarket': return <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />;
-      case 'mosque': return <path d="M12 22v-4M12 18c-3.31 0-6-2.69-6-6 0-3.31 2.69-6 6-6s6 2.69 6 6c0 3.31-2.69 6-6 6zM12 6V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />;
-      default: return <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />;
+      case 'shop': return (
+        <g transform="translate(-12, -12)">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M9 22V12h6v10" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M3 9h18" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'school': return (
+        <g transform="translate(-12, -12)">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'medical': return (
+        <g transform="translate(-12, -12)">
+          <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M12 7v10M7 12h10" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'nursery': return (
+        <g transform="translate(-12, -12)">
+          <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />
+          <circle cx="12" cy="14" r="3" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'mall': return (
+        <g transform="translate(-12, -12)">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M3 6h18M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'gym': return (
+        <g transform="translate(-12, -12)">
+          <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'supermarket': return (
+        <g transform="translate(-12, -12)">
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />
+          <circle cx="10" cy="21" r="1" fill={color} />
+          <circle cx="20" cy="21" r="1" fill={color} />
+        </g>
+      );
+      case 'mosque': return (
+        <g transform="translate(-12, -12)">
+          <path d="M12 22v-8M12 14c-4 0-7-3-7-7 0-1 1-2 2-2s2 1 2 2c0 2 2 3 3 3s3-1 3-3c0-1 1-2 2-2s2 1 2 2c0 4-3 7-7 7z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M12 7V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />
+          <rect x="18" y="10" width="4" height="12" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M20 10V8l-1-1 1-1 1 1-1 1" fill="none" stroke={color} strokeWidth="1" />
+        </g>
+      );
+      default: return <circle cx="0" cy="0" r="10" fill="none" stroke={color} strokeWidth="2" />;
     }
   };
 
@@ -214,24 +257,31 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 )}
 
                 {el.type === 'house' && (
-                  <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
-                    <path d="M -15 5 L -15 -5 L 0 -18 L 15 -5 L 15 5 Z" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
-                    <rect x="-5" y="-2" width="10" height="7" fill="none" stroke="white" strokeWidth="1" opacity="0.5" />
+                  <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                    <path d="M -18 8 L -18 -4 L 0 -18 L 18 -4 L 18 8 Z" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
+                    <rect x="-6" y="0" width="12" height="8" fill="none" stroke="white" strokeWidth="1" opacity="0.3" />
+                    <path d="M -18 -4 L 0 -18 L 18 -4" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
                   </g>
                 )}
 
                 {el.type === 'tower' && (
-                  <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none" opacity="0.3">
-                    <rect x="-10" y="-20" width="20" height="35" fill="none" stroke="white" strokeWidth="2" />
-                    <line x1="-6" y1="-14" x2="6" y2="-14" stroke="white" strokeWidth="1" />
-                    <line x1="-6" y1="-6" x2="6" y2="-6" stroke="white" strokeWidth="1" />
-                    <line x1="-6" y1="2" x2="6" y2="2" stroke="white" strokeWidth="1" />
-                    <line x1="-6" y1="10" x2="6" y2="10" stroke="white" strokeWidth="1" />
+                  <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                    <rect x="-12" y="-25" width="24" height="45" rx="2" fill="none" stroke="white" strokeWidth="2" opacity="0.5" />
+                    <g opacity="0.3">
+                      <rect x="-8" y="-20" width="4" height="4" fill="white" />
+                      <rect x="4" y="-20" width="4" height="4" fill="white" />
+                      <rect x="-8" y="-12" width="4" height="4" fill="white" />
+                      <rect x="4" y="-12" width="4" height="4" fill="white" />
+                      <rect x="-8" y="-4" width="4" height="4" fill="white" />
+                      <rect x="4" y="-4" width="4" height="4" fill="white" />
+                      <rect x="-8" y="4" width="4" height="4" fill="white" />
+                      <rect x="4" y="4" width="4" height="4" fill="white" />
+                    </g>
                   </g>
                 )}
 
                 {el.type === 'amenity' && (
-                  <g transform={`translate(${centerX - 12}, ${centerY - 2})`} pointerEvents="none">
+                  <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
                     {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
                   </g>
                 )}

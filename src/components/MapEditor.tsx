@@ -343,7 +343,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (match) {
       const num = parseInt(match[1]);
       const prefix = lastPart.substring(0, match.index);
-      // التكرار التسلسلي بفارق 2 (1 -> 3 -> 5 أو 2 -> 4 -> 6)
       newLastPart = `${prefix}${num + 2}`;
     }
     
@@ -404,20 +403,62 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   const renderAmenityIcon = (type: string | undefined, color: string) => {
     switch (type) {
-      case 'shop': return <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />;
-      case 'school': return <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />;
-      case 'medical': return <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" fill="none" stroke={color} strokeWidth="2" />;
-      case 'nursery': return <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />;
-      case 'mall': return <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />;
-      case 'gym': return <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />;
-      case 'supermarket': return <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />;
-      case 'mosque': return <path d="M12 22v-4M12 18c-3.31 0-6-2.69-6-6 0-3.31 2.69-6 6-6s6 2.69 6 6c0 3.31-2.69 6-6 6zM12 6V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />;
-      default: return <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />;
+      case 'shop': return (
+        <g transform="translate(-12, -12)">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M9 22V12h6v10" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M3 9h18" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'school': return (
+        <g transform="translate(-12, -12)">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'medical': return (
+        <g transform="translate(-12, -12)">
+          <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M12 7v10M7 12h10" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'nursery': return (
+        <g transform="translate(-12, -12)">
+          <path d="M10 7h4M12 5v4M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" fill="none" stroke={color} strokeWidth="2" />
+          <circle cx="12" cy="14" r="3" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'mall': return (
+        <g transform="translate(-12, -12)">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M3 6h18M16 10a4 4 0 0 1-8 0" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'gym': return (
+        <g transform="translate(-12, -12)">
+          <path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M4 8H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2M6 5v14M18 5v14M6 12h12" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+      );
+      case 'supermarket': return (
+        <g transform="translate(-12, -12)">
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" fill="none" stroke={color} strokeWidth="2" />
+          <circle cx="10" cy="21" r="1" fill={color} />
+          <circle cx="20" cy="21" r="1" fill={color} />
+        </g>
+      );
+      case 'mosque': return (
+        <g transform="translate(-12, -12)">
+          <path d="M12 22v-8M12 14c-4 0-7-3-7-7 0-1 1-2 2-2s2 1 2 2c0 2 2 3 3 3s3-1 3-3c0-1 1-2 2-2s2 1 2 2c0 4-3 7-7 7z" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M12 7V2M12 2L10 4M12 2l2 2" fill="none" stroke={color} strokeWidth="2" />
+          <rect x="18" y="10" width="4" height="12" fill="none" stroke={color} strokeWidth="2" />
+          <path d="M20 10V8l-1-1 1-1 1 1-1 1" fill="none" stroke={color} strokeWidth="1" />
+        </g>
+      );
+      default: return <circle cx="0" cy="0" r="10" fill="none" stroke={color} strokeWidth="2" />;
     }
   };
 
   const selectedElement = elements.find(el => el.id === selectedId);
-  const selectedPts = selectedElement ? getElementPoints(selectedElement) : [];
   
   const sortedElements = [...elements].sort((a, b) => {
     if (a.type === 'label_area' && b.type !== 'label_area') return -1;
@@ -462,7 +503,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-120px)]" dir="rtl">
-      {/* Top Toolbar */}
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
           <button 
@@ -501,7 +541,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
-        {/* Main Canvas Area */}
         <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
           <svg 
             ref={svgRef} 
@@ -565,24 +604,31 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     )}
                     
                     {el.type === 'house' && (
-                      <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
-                        <path d="M -15 5 L -15 -5 L 0 -18 L 15 -5 L 15 5 Z" fill="none" stroke="#3b82f6" strokeWidth="2" />
-                        <rect x="-5" y="-2" width="10" height="7" fill="none" stroke="#3b82f6" strokeWidth="1" />
+                      <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                        <path d="M -18 8 L -18 -4 L 0 -18 L 18 -4 L 18 8 Z" fill="none" stroke="#3b82f6" strokeWidth="2" />
+                        <rect x="-6" y="0" width="12" height="8" fill="none" stroke="#3b82f6" strokeWidth="1" opacity="0.5" />
+                        <path d="M -18 -4 L 0 -18 L 18 -4" fill="none" stroke="#3b82f6" strokeWidth="2" />
                       </g>
                     )}
 
                     {el.type === 'tower' && (
-                      <g transform={`translate(${centerX}, ${centerY + 10})`} pointerEvents="none">
-                        <rect x="-10" y="-20" width="20" height="35" fill="none" stroke="white" strokeWidth="2" />
-                        <line x1="-6" y1="-14" x2="6" y2="-14" stroke="white" strokeWidth="1" opacity="0.5" />
-                        <line x1="-6" y1="-6" x2="6" y2="-6" stroke="white" strokeWidth="1" opacity="0.5" />
-                        <line x1="-6" y1="2" x2="6" y2="2" stroke="white" strokeWidth="1" opacity="0.5" />
-                        <line x1="-6" y1="10" x2="6" y2="10" stroke="white" strokeWidth="1" opacity="0.5" />
+                      <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
+                        <rect x="-12" y="-25" width="24" height="45" rx="2" fill="none" stroke="white" strokeWidth="2" />
+                        <g opacity="0.4">
+                          <rect x="-8" y="-20" width="4" height="4" fill="white" />
+                          <rect x="4" y="-20" width="4" height="4" fill="white" />
+                          <rect x="-8" y="-12" width="4" height="4" fill="white" />
+                          <rect x="4" y="-12" width="4" height="4" fill="white" />
+                          <rect x="-8" y="-4" width="4" height="4" fill="white" />
+                          <rect x="4" y="-4" width="4" height="4" fill="white" />
+                          <rect x="-8" y="4" width="4" height="4" fill="white" />
+                          <rect x="4" y="4" width="4" height="4" fill="white" />
+                        </g>
                       </g>
                     )}
 
                     {el.type === 'amenity' && (
-                      <g transform={`translate(${centerX - 12}, ${centerY - 2})`} pointerEvents="none">
+                      <g transform={`translate(${centerX}, ${centerY})`} pointerEvents="none">
                         {renderAmenityIcon(el.amenityType, el.textColor || '#1e293b')}
                       </g>
                     )}
@@ -664,7 +710,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
           </svg>
         </div>
 
-        {/* Properties Sidebar */}
         {selectedElement && (
           <div className="w-80 bg-white rounded-[2rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-left-4 duration-300">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -680,7 +725,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
-              {/* Basic Info */}
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">تسمية العنصر</Label>
@@ -692,7 +736,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   />
                 </div>
 
-                {/* Size Controls */}
                 <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="flex items-center gap-2 mb-2">
                     <Maximize2 size={16} className="text-indigo-600" />
@@ -738,7 +781,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 </div>
               </div>
 
-              {/* Tower Specific */}
               {selectedElement.type === 'tower' && (
                 <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="flex items-center gap-2 mb-2">
@@ -766,7 +808,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 </div>
               )}
 
-              {/* Amenity Specific */}
               {selectedElement.type === 'amenity' && (
                 <div className="space-y-4">
                   <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع المرفق</Label>
@@ -790,7 +831,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 </div>
               )}
 
-              {/* Orientation for Road/Pitch */}
               {(selectedElement.type === 'road' || selectedElement.type === 'pitch') && (
                 <div className="space-y-4">
                   <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الاتجاه</Label>
@@ -813,7 +853,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 </div>
               )}
 
-              {/* Styling */}
               <div className="space-y-6">
                 <div className="space-y-3">
                   <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الألوان</Label>
@@ -864,7 +903,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 )}
               </div>
 
-              {/* Actions */}
               <div className="pt-6 border-t border-slate-100">
                 <Button 
                   variant="destructive" 
