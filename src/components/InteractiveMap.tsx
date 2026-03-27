@@ -55,11 +55,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const data = housesData[el.id];
     if (el.type === 'road') return { fill: '#475569', stroke: '#475569', opacity: 1, strokeWidth: 10 };
     if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: '#22c55e', opacity: 1, strokeWidth: 10 };
-    if (el.type === 'sidewalk') return { fill: 'url(#sidewalk-pattern)', stroke: '#cbd5e1', opacity: 1, strokeWidth: 10 };
-    if (el.type === 'parking') return { fill: 'url(#parking-pattern)', stroke: '#334155', opacity: 1, strokeWidth: 10 };
     if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1, strokeWidth: 2 };
     if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1, strokeWidth: 2 };
     if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1, strokeWidth: 2 };
+    if (el.type === 'text') return { fill: 'none', stroke: 'none', opacity: 1, strokeWidth: 0 };
     
     if (el.type === 'house') {
       if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1, strokeWidth: 2 };
@@ -107,7 +106,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   };
 
   const sortedElements = [...elements].sort((a, b) => {
-    const layerOrder: Record<string, number> = { 'label_area': 0, 'road': 1, 'green': 1, 'sidewalk': 1, 'parking': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3 };
+    const layerOrder: Record<string, number> = { 'label_area': 0, 'road': 1, 'green': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
     return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
   });
 
@@ -121,8 +120,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
-            <pattern id="sidewalk-pattern" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#cbd5e1" /><path d="M 8 0 L 8 8 M 0 8 L 8 8" fill="none" stroke="#94a3b8" strokeWidth="0.5" /></pattern>
-            <pattern id="parking-pattern" width="20" height="20" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="#334155" /><path d="M 2 0 L 2 20 M 18 0 L 18 20" fill="none" stroke="white" strokeWidth="1" opacity="0.3" /></pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
@@ -144,7 +141,25 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                <path d={pointsToPath(pts, !el.isStroke)} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                {el.type !== 'text' ? (
+                  <path d={pointsToPath(pts, !el.isStroke)} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                ) : (
+                  <text
+                    x={centerX}
+                    y={centerY}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill={el.textColor || '#000000'}
+                    style={{
+                      fontSize: `${el.fontSize || 24}px`,
+                      fontFamily: el.fontFamily || 'Arial',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {el.label}
+                  </text>
+                )}
+                
                 {el.type === 'pitch' && renderPitchLines(pts)}
                 {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
                 
@@ -154,7 +169,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                 )}
 
-                {el.label && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
+                {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
               </g>
             );
           })}

@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal
+  SlidersHorizontal, Maximize, Minimize
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -28,6 +28,14 @@ interface MapEditorProps {
 
 const GRID_SIZE = 10;
 
+const FONT_FAMILIES = [
+  { id: 'Arial', label: 'Arial' },
+  { id: 'Tahoma', label: 'Tahoma' },
+  { id: 'Courier New', label: 'Courier New' },
+  { id: 'Georgia', label: 'Georgia' },
+  { id: 'Times New Roman', label: 'Times New Roman' },
+];
+
 const AMENITY_TYPES = [
   { id: 'shop', label: 'محل تجاري', icon: Store },
   { id: 'school', label: 'مدرسة', icon: GraduationCap },
@@ -44,10 +52,9 @@ const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = 
   { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
   { type: 'road', label: 'طريق', icon: Waypoints, color: 'bg-gray-400' },
   { type: 'green', label: 'مساحة خضراء', icon: Leaf, color: 'bg-emerald-500' },
-  { type: 'sidewalk', label: 'رصيف', icon: Footprints, color: 'bg-slate-300' },
-  { type: 'parking', label: 'كراج', icon: Car, color: 'bg-slate-600' },
   { type: 'pitch', label: 'ملعب', icon: Trophy, color: 'bg-green-600' },
   { type: 'amenity', label: 'مرفق', icon: MapPin, color: 'bg-amber-500' },
+  { type: 'text', label: 'نص', icon: Type, color: 'bg-rose-500' },
   { type: 'label_area', label: 'منطقة تسمية', icon: Type, color: 'bg-purple-500' },
 ];
 
@@ -61,6 +68,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [tempPoints, setTempPoints] = useState<Point[]>([]);
   const [gridLock, setGridLock] = useState(true);
   const [dims, setDims] = useState({ w: mapWidth, h: mapHeight });
+  const [isFullScreen, setIsFullScreen] = useState(false);
   
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
@@ -69,15 +77,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const contentRef = useRef<SVGGElement>(null);
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
-
-  const getShortLabel = (label: string, type: ElementType) => {
-    if (!label) return "";
-    if (type === 'house' || type === 'tower') {
-      const parts = label.split('-');
-      return parts[parts.length - 1];
-    }
-    return label;
-  };
 
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
@@ -99,18 +98,20 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        setElements(prev => prev.filter(el => el.id !== selectedId));
-        setSelectedId(null);
-        return;
-      }
+      
       const step = gridLock ? GRID_SIZE : 1;
       let dx = 0; let dy = 0;
+      
       if (e.key === 'ArrowUp') dy = -step;
       else if (e.key === 'ArrowDown') dy = step;
       else if (e.key === 'ArrowLeft') dx = -step;
       else if (e.key === 'ArrowRight') dx = step;
-      else return;
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        setElements(prev => prev.filter(el => el.id !== selectedId));
+        setSelectedId(null);
+        return;
+      } else return;
+
       e.preventDefault();
       setElements(prev => prev.map(el => {
         if (el.id !== selectedId) return el;
@@ -159,12 +160,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
       type,
-      label: customLabel || (type === 'house' ? `D1` : type === 'tower' ? `T1` : ''),
+      label: customLabel || (type === 'house' ? `D1` : type === 'tower' ? `T1` : type === 'text' ? 'نص جديد' : ''),
       points: pts,
       rotation: 0,
       orientation: 'horizontal',
       color: type === 'label_area' ? '#a855f7' : (type === 'amenity' ? '#f59e0b' : undefined),
-      textColor: '#1e293b',
+      textColor: type === 'text' ? '#000000' : '#1e293b',
+      fontSize: type === 'text' ? 24 : undefined,
+      fontFamily: type === 'text' ? 'Arial' : undefined,
       opacity: type === 'label_area' ? 0.2 : 1,
       hideIcon: false,
       x: pts[0].x, y: pts[0].y, width: 0, height: 0,
@@ -290,9 +293,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       case 'tower': return '#1e293b';
       case 'road': return '#475569';
       case 'green': return 'url(#green-pattern)';
-      case 'sidewalk': return 'url(#sidewalk-pattern)';
-      case 'parking': return 'url(#parking-pattern)';
       case 'pitch': return '#16a34a';
+      case 'text': return 'none';
       default: return '#ffffff';
     }
   };
@@ -304,15 +306,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       case 'tower': return '#0f172a';
       case 'road': return '#475569';
       case 'green': return '#22c55e';
-      case 'sidewalk': return '#cbd5e1';
-      case 'parking': return '#334155';
       case 'pitch': return '#ffffff';
+      case 'text': return isSelected(el.id) ? '#3b82f6' : 'none';
       default: return '#cbd5e1';
     }
   };
 
+  const isSelected = (id: string) => selectedId === id;
   const selectedElement = elements.find(el => el.id === selectedId);
-  const layerOrder: Record<string, number> = { 'label_area': 0, 'road': 1, 'green': 1, 'sidewalk': 1, 'parking': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3 };
+  const layerOrder: Record<string, number> = { 'label_area': 0, 'road': 1, 'green': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
   const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
 
   const updateSelectedElement = (updates: Partial<MapElement>) => {
@@ -333,7 +335,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     updateSelectedElement({ points: newPoints });
   };
 
-  // رسم خطوط الملعب
   const renderPitchLines = (pts: Point[]) => {
     const minX = Math.min(...pts.map(p => p.x));
     const maxX = Math.max(...pts.map(p => p.x));
@@ -355,7 +356,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-120px)]" dir="rtl">
+    <div className={cn("flex flex-col gap-4 transition-all duration-300", isFullScreen ? "fixed inset-0 z-50 bg-slate-50 p-6" : "h-[calc(100vh-120px)]")} dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-4">
           <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -364,6 +365,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             <Button variant="ghost" size="icon" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={18} /></Button>
           </div>
           <Button variant={gridLock ? "default" : "outline"} size="icon" onClick={() => setGridLock(!gridLock)} className={cn("rounded-xl", gridLock && "bg-indigo-600")}><Grid3X3 size={18} /></Button>
+          <Button variant="outline" size="icon" onClick={() => setIsFullScreen(!isFullScreen)} className="rounded-xl">
+            {isFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          </Button>
         </div>
         <Button onClick={() => onSave(elements, dims.w, dims.h)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"><Save size={18} /> حفظ المخطط</Button>
       </div>
@@ -394,8 +398,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               <defs>
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/></pattern>
                 <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
-                <pattern id="sidewalk-pattern" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#cbd5e1" /><path d="M 8 0 L 8 8 M 0 8 L 8 8" fill="none" stroke="#94a3b8" strokeWidth="0.5" /></pattern>
-                <pattern id="parking-pattern" width="20" height="20" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="#334155" /><path d="M 2 0 L 2 20 M 18 0 L 18 20" fill="none" stroke="white" strokeWidth="1" opacity="0.3" /></pattern>
               </defs>
               <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
               
@@ -403,7 +405,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 const pts = getElementPoints(el);
                 const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
                 const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-                const isSelected = selectedId === el.id;
+                const isSelectedEl = isSelected(el.id);
                 const minY = Math.min(...pts.map(p => p.y));
                 const minX = Math.min(...pts.map(p => p.x));
                 const maxX = Math.max(...pts.map(p => p.x));
@@ -412,17 +414,38 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                    <path 
-                      d={pointsToPath(pts, !el.isStroke)} 
-                      fill={el.isStroke ? "none" : getElementColor(el)} 
-                      stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
-                      fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
-                      strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green', 'sidewalk', 'parking'].includes(el.type) ? 10 : (isSelected ? 3 : 2))} 
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 filter drop-shadow-lg")} 
-                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
-                    />
+                    {el.type !== 'text' ? (
+                      <path 
+                        d={pointsToPath(pts, !el.isStroke)} 
+                        fill={el.isStroke ? "none" : getElementColor(el)} 
+                        stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
+                        fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
+                        strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green'].includes(el.type) ? 10 : (isSelectedEl ? 3 : 2))} 
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                        className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
+                      />
+                    ) : (
+                      <text
+                        x={centerX}
+                        y={centerY}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill={el.textColor || '#000000'}
+                        style={{
+                          fontSize: `${el.fontSize || 24}px`,
+                          fontFamily: el.fontFamily || 'Arial',
+                          fontWeight: 'bold',
+                          cursor: 'move',
+                          userSelect: 'none'
+                        }}
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                      >
+                        {el.label}
+                      </text>
+                    )}
+                    
                     {el.type === 'pitch' && renderPitchLines(pts)}
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
                     
@@ -432,8 +455,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                     )}
 
-                    {el.label && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{getShortLabel(el.label, el.type)}</text>}
-                    {isSelected && (
+                    {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
+                    
+                    {isSelectedEl && (
                       <>
                         {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
                         <circle cx={centerX} cy={pts[0].y - 30} r={8} className="fill-blue-600 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
@@ -473,7 +497,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   <Select value={activeTool || ''} onValueChange={(val) => setActiveTool(val as ElementType)}>
                     <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
                     <SelectContent className="rounded-xl">
-                      {TOOLS.filter(t => ['road', 'green', 'sidewalk', 'parking'].includes(t.type)).map(t => (
+                      {TOOLS.filter(t => ['road', 'green'].includes(t.type)).map(t => (
                         <SelectItem key={t.type} value={t.type} className="font-bold">{t.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -491,8 +515,33 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
-                  <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">تسمية العنصر</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
+                  {selectedElement.type === 'text' && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع الخط</Label>
+                        <Select value={selectedElement.fontFamily || 'Arial'} onValueChange={(val) => updateSelectedElement({ fontFamily: val })}>
+                          <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر الخط" /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {FONT_FAMILIES.map(f => (<SelectItem key={f.id} value={f.id} className="font-bold">{f.label}</SelectItem>))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الخط</Label>
+                        <Input type="number" value={selectedElement.fontSize || 24} onChange={(e) => updateSelectedElement({ fontSize: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون النص</Label>
+                        <div className="flex gap-2">
+                          <Input type="color" value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   {selectedElement.type === 'road' && (
                     <div className="space-y-2">
                       <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">اتجاه خطوط السير</Label>
@@ -525,7 +574,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     </div>
                   )}
 
-                  {!selectedElement.isStroke && (
+                  {!selectedElement.isStroke && selectedElement.type !== 'text' && (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">العرض (px)</Label>
@@ -538,7 +587,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
+                  {selectedElement.type !== 'text' && (
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
+                  )}
+                  
                   <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>
                 </div>
                 <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
