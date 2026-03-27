@@ -67,7 +67,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush', startPos?: Point, index?: number } | null>(null);
   const [tempPoints, setTempPoints] = useState<Point[]>([]);
   const [gridLock, setGridLock] = useState(true);
-  const [dims, setDims] = useState({ w: mapWidth, h: mapHeight });
+  const [dims, setDims] = useState({ w: Math.round(mapWidth), h: Math.round(mapHeight) });
   const [isFullScreen, setIsFullScreen] = useState(false);
   
   const [scale, setScale] = useState(1);
@@ -91,8 +91,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const checkAndExpandMap = (pts: Point[]) => {
     const maxX = Math.max(...pts.map(p => p.x));
     const maxY = Math.max(...pts.map(p => p.y));
-    if (maxX > dims.w - 50) setDims(prev => ({ ...prev, w: maxX + 200 }));
-    if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: maxY + 200 }));
+    if (maxX > dims.w - 50) setDims(prev => ({ ...prev, w: Math.round(maxX + 200) }));
+    if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: Math.round(maxY + 200) }));
   };
 
   useEffect(() => {

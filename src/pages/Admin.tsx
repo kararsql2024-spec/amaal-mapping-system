@@ -364,8 +364,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
       name: formData.name,
       description: '',
       elements: [],
-      map_width: formData.width,
-      map_height: formData.height,
+      map_width: Math.round(formData.width),
+      map_height: Math.round(formData.height),
     };
 
     try {
@@ -377,8 +377,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
       setProjects([{
         ...newProject,
-        mapWidth: formData.width,
-        mapHeight: formData.height,
+        mapWidth: Math.round(formData.width),
+        mapHeight: Math.round(formData.height),
         createdAt: new Date().toISOString(),
         elements: []
       }, ...projects]);
@@ -400,8 +400,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         .from('projects')
         .update({ 
           name: formData.name, 
-          map_width: formData.width, 
-          map_height: formData.height 
+          map_width: Math.round(formData.width), 
+          map_height: Math.round(formData.height) 
         })
         .eq('id', editingProjectInfo.id);
 
@@ -410,8 +410,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
       setProjects(projects.map(p => p.id === editingProjectInfo.id ? { 
         ...p, 
         name: formData.name, 
-        mapWidth: formData.width, 
-        mapHeight: formData.height 
+        mapWidth: Math.round(formData.width), 
+        mapHeight: Math.round(formData.height) 
       } : p));
       
       setEditingProjectInfo(null);
@@ -447,8 +447,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           .from('projects')
           .update({ 
             elements,
-            map_width: newWidth,
-            map_height: newHeight
+            map_width: Math.round(newWidth),
+            map_height: Math.round(newHeight)
           })
           .eq('id', editingMapProject.id);
 
@@ -457,8 +457,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         setProjects(projects.map(p => p.id === editingMapProject.id ? { 
           ...p, 
           elements,
-          mapWidth: newWidth,
-          mapHeight: newHeight
+          mapWidth: Math.round(newWidth),
+          mapHeight: Math.round(newHeight)
         } : p));
         setEditingMapProject(null);
         showSuccess('تم حفظ المخطط بنجاح');
