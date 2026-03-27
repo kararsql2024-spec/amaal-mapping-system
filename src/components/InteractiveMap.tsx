@@ -105,10 +105,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     );
   };
 
-  const sortedElements = [...elements].sort((a, b) => {
-    const layerOrder: Record<string, number> = { 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
-    return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
-  });
+  const sortedElements = [...elements]
+    .filter(el => el.type !== 'reference_image')
+    .sort((a, b) => {
+      const layerOrder: Record<string, number> = { 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
+      return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
+    });
 
   return (
     <div className={cn(

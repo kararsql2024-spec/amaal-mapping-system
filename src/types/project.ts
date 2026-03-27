@@ -1,4 +1,4 @@
-export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'text';
+export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'text' | 'reference_image';
 
 export interface Point {
   x: number;
@@ -27,6 +27,7 @@ export interface MapElement {
   isStroke?: boolean;
   fontSize?: number;
   fontFamily?: string;
+  locked?: boolean;
 }
 
 export interface Project {

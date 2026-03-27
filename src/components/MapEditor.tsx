@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -115,10 +115,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       e.preventDefault();
       setElements(prev => prev.map(el => {
         if (el.id !== selectedId) return el;
+        if (el.locked) return el;
         const pts = getElementPoints(el);
         const newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
         checkAndExpandMap(newPoints);
-        return { ...el, points: newPoints };
+        return { ...el, points: newPoints, x: newPoints[0].x, y: newPoints[0].y };
       }));
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -175,7 +176,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       apartmentsPerFloor: type === 'tower' ? 4 : undefined,
       amenityType: type === 'amenity' ? 'shop' : undefined,
       strokeWidth: isStroke ? brushSize : undefined,
-      isStroke: isStroke
+      isStroke: isStroke,
+      locked: false
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
@@ -213,6 +215,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     if (!selectedId) return;
     setElements(prev => prev.map(el => {
       if (el.id !== selectedId) return el;
+      if (el.locked) return el;
       const pts = getElementPoints(el);
       const dragIdx = dragMode.index;
       let newPoints = [...pts];
@@ -240,7 +243,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         return { ...el, rotation: angle + 90 };
       }
       checkAndExpandMap(newPoints);
-      return { ...el, points: newPoints };
+      return { ...el, points: newPoints, x: newPoints[0].x, y: newPoints[0].y };
     }));
   };
 
@@ -314,7 +317,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   const isSelected = (id: string) => selectedId === id;
   const selectedElement = elements.find(el => el.id === selectedId);
-  const layerOrder: Record<string, number> = { 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
+  const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
   const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
 
   const updateSelectedElement = (updates: Partial<MapElement>) => {
@@ -332,7 +335,36 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const scaleX = dim === 'w' ? value / (maxX - minX) : 1;
     const scaleY = dim === 'h' ? value / (maxY - minY) : 1;
     const newPoints = pts.map(p => ({ x: minX + (p.x - minX) * scaleX, y: minY + (p.y - minY) * scaleY }));
-    updateSelectedElement({ points: newPoints });
+    updateSelectedElement({ points: newPoints, width: value, height: dim === 'h' ? value : selectedElement.height });
+  };
+
+  const handleAddReferenceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const url = evt.target?.result as string;
+      const newPoints = [
+        { x: 0, y: 0 },
+        { x: 800, y: 0 },
+        { x: 800, y: 600 },
+        { x: 0, y: 600 },
+      ];
+      const newElement: MapElement = {
+        id: 'ref-image-' + Math.random().toString(36).substr(2, 9),
+        type: 'reference_image',
+        label: 'صورة مرجعية',
+        points: newPoints,
+        rotation: 0,
+        x: 0, y: 0, width: 800, height: 600,
+        color: url,
+        opacity: 0.5,
+        locked: false
+      };
+      setElements(prev => [newElement, ...prev]);
+      setSelectedId(newElement.id);
+    };
+    reader.readAsDataURL(file);
   };
 
   const renderPitchLines = (pts: Point[]) => {
@@ -390,6 +422,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             <Paintbrush size={20} />
             <span className="text-[10px] font-bold">فرشاة</span>
           </button>
+          <div className="h-px bg-slate-100 mx-2" />
+          <label className="w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all bg-slate-50 text-slate-400 hover:bg-slate-100 cursor-pointer">
+            <ImageIcon size={20} />
+            <span className="text-[10px] font-bold">صورة</span>
+            <input type="file" accept="image/*" className="hidden" onChange={handleAddReferenceImage} />
+          </label>
         </div>
 
         <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
@@ -411,6 +449,26 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 const maxX = Math.max(...pts.map(p => p.x));
                 const maxY = Math.max(...pts.map(p => p.y));
                 const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : null;
+
+                if (el.type === 'reference_image') {
+                  return (
+                    <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                      <image 
+                        href={el.color} 
+                        x={minX} y={minY} 
+                        width={maxX - minX} height={maxY - minY} 
+                        opacity={el.opacity}
+                        className={cn("transition-all", !el.locked && "cursor-move", isSelectedEl && "outline outline-2 outline-blue-600")}
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); if (!el.locked) setDragMode({ type: 'move' }); }}
+                      />
+                      {isSelectedEl && !el.locked && (
+                        <>
+                          {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
+                        </>
+                      )}
+                    </g>
+                  );
+                }
 
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
@@ -515,6 +573,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      {selectedElement.locked ? <Lock size={16} className="text-rose-500" /> : <Unlock size={16} className="text-emerald-500" />}
+                      <Label className="font-bold text-sm text-slate-700">قفل العنصر</Label>
+                    </div>
+                    <Switch checked={selectedElement.locked} onCheckedChange={(val) => updateSelectedElement({ locked: val })} />
+                  </div>
+
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
                   {selectedElement.type === 'text' && (
@@ -540,6 +606,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         </div>
                       </div>
                     </>
+                  )}
+
+                  {selectedElement.type === 'reference_image' && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الشفافية</Label><span className="text-xs font-bold text-indigo-600">{Math.round((selectedElement.opacity || 0.5) * 100)}%</span></div>
+                      <Slider value={[(selectedElement.opacity || 0.5) * 100]} min={0} max={100} step={1} onValueChange={(val) => updateSelectedElement({ opacity: val[0] / 100 })} className="py-4" />
+                    </div>
                   )}
 
                   {selectedElement.type === 'road' && (
@@ -587,7 +660,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     </div>
                   )}
 
-                  {selectedElement.type !== 'text' && (
+                  {selectedElement.type !== 'text' && selectedElement.type !== 'reference_image' && (
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
                   )}
                   
