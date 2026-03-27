@@ -16,7 +16,6 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 
 interface MapEditorProps {
   initialElements: MapElement[];
@@ -59,6 +58,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
 
+  // تحريك العناصر بالأسهم
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
@@ -129,7 +129,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       hideIcon: type === 'text' || type === 'circle',
       x: pts[0].x, y: pts[0].y, width: 0, height: 0,
       isStroke: isStroke,
-      strokeWidth: isStroke ? brushSize : undefined
+      strokeWidth: isStroke ? brushSize : undefined,
+      floors: type === 'tower' ? 5 : undefined,
+      apartmentsPerFloor: type === 'tower' ? 4 : undefined,
+      amenityType: type === 'amenity' ? 'store' : undefined
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
@@ -212,6 +215,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     return closed ? path + " Z" : path;
   };
 
+  // رسم الملعب بشكل واقعي
   const renderPitch = (pts: Point[]) => {
     const minX = Math.min(...pts.map(p => p.x)), maxX = Math.max(...pts.map(p => p.x));
     const minY = Math.min(...pts.map(p => p.y)), maxY = Math.max(...pts.map(p => p.y));
@@ -365,6 +369,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         <SelectItem value="vertical">عمودي</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                )}
+
+                {selectedElement.type === 'tower' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400">عدد الطوابق</Label>
+                      <Input type="number" value={selectedElement.floors} onChange={(e) => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, floors: parseInt(e.target.value) } : el))} className="rounded-xl" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400">شقق/طابق</Label>
+                      <Input type="number" value={selectedElement.apartmentsPerFloor} onChange={(e) => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, apartmentsPerFloor: parseInt(e.target.value) } : el))} className="rounded-xl" />
+                    </div>
                   </div>
                 )}
 
