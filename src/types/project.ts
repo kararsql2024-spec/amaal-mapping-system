@@ -1,4 +1,4 @@
-export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'text';
+export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'sidewalk' | 'parking';
 
 export interface Point {
   x: number;
@@ -14,7 +14,6 @@ export interface MapElement {
   orientation?: 'horizontal' | 'vertical';
   color?: string; 
   textColor?: string;
-  fontSize?: number;
   opacity?: number; 
   hideIcon?: boolean;
   floors?: number;
@@ -24,8 +23,8 @@ export interface MapElement {
   width: number;
   height: number;
   amenityType?: string;
-  strokeWidth?: number;
-  isStroke?: boolean;
+  strokeWidth?: number; // حجم الفرشاة أو سمك الخط
+  isStroke?: boolean;   // هل العنصر مرسوم بالفرشاة (خط سميك) أم مضلع مغلق
 }
 
 export interface Project {
