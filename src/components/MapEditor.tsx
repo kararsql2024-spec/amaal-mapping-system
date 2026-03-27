@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -30,6 +30,7 @@ const GRID_SIZE = 10;
 
 const FONT_FAMILIES = [
   { id: 'Arial', label: 'Arial' },
+  { id: 'Calibri', label: 'Calibri' },
   { id: 'Tahoma', label: 'Tahoma' },
   { id: 'Courier New', label: 'Courier New' },
   { id: 'Georgia', label: 'Georgia' },
@@ -167,7 +168,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       orientation: 'horizontal',
       color: type === 'label_area' ? '#a855f7' : (type === 'amenity' ? '#f59e0b' : undefined),
       textColor: type === 'text' ? '#000000' : '#1e293b',
-      fontSize: type === 'text' ? 24 : undefined,
+      fontSize: type === 'text' ? 24 : (type === 'house' || type === 'tower' ? 10 : undefined),
       fontFamily: type === 'text' ? 'Arial' : undefined,
       opacity: type === 'label_area' ? 0.2 : 1,
       hideIcon: false,
@@ -177,7 +178,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       amenityType: type === 'amenity' ? 'shop' : undefined,
       strokeWidth: isStroke ? brushSize : undefined,
       isStroke: isStroke,
-      locked: false
+      locked: false,
+      showInMain: false,
+      isBold: type === 'text'
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
@@ -359,7 +362,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         x: 0, y: 0, width: 800, height: 600,
         color: url,
         opacity: 0.5,
-        locked: false
+        locked: false,
+        showInMain: false
       };
       setElements(prev => [newElement, ...prev]);
       setSelectedId(newElement.id);
@@ -494,7 +498,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         style={{
                           fontSize: `${el.fontSize || 24}px`,
                           fontFamily: el.fontFamily || 'Arial',
-                          fontWeight: 'bold',
+                          fontWeight: el.isBold ? 'bold' : 'normal',
                           cursor: 'move',
                           userSelect: 'none'
                         }}
@@ -513,7 +517,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                     )}
 
-                    {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
+                    {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} style={{ fontSize: `${el.fontSize || 10}px`, fontWeight: 'black' }} className="pointer-events-none select-none">{el.label.split('-').pop()}</text>}
                     
                     {isSelectedEl && (
                       <>
@@ -583,6 +587,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الخط</Label>
+                    <Input type="number" value={selectedElement.fontSize || (selectedElement.type === 'text' ? 24 : 10)} onChange={(e) => updateSelectedElement({ fontSize: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" />
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      {selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}
+                      <Label className="font-bold text-sm text-slate-700">إخفاء اللوغو/الأيقونة</Label>
+                    </div>
+                    <Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} />
+                  </div>
+
                   {selectedElement.type === 'text' && (
                     <>
                       <div className="space-y-2">
@@ -594,9 +611,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الخط</Label>
-                        <Input type="number" value={selectedElement.fontSize || 24} onChange={(e) => updateSelectedElement({ fontSize: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-2"><Bold size={16} className="text-slate-700" /><Label className="font-bold text-sm text-slate-700">خط عريض</Label></div>
+                        <Switch checked={selectedElement.isBold} onCheckedChange={(val) => updateSelectedElement({ isBold: val })} />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون النص</Label>
@@ -608,10 +625,32 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     </>
                   )}
 
+                  {selectedElement.type === 'label_area' && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون المنطقة</Label>
+                        <div className="flex gap-2">
+                          <Input type="color" value={selectedElement.color || '#a855f7'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input value={selectedElement.color || '#a855f7'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الشفافية</Label><span className="text-xs font-bold text-indigo-600">{Math.round((selectedElement.opacity || 0.2) * 100)}%</span></div>
+                        <Slider value={[(selectedElement.opacity || 0.2) * 100]} min={0} max={100} step={1} onValueChange={(val) => updateSelectedElement({ opacity: val[0] / 100 })} className="py-4" />
+                      </div>
+                    </div>
+                  )}
+
                   {selectedElement.type === 'reference_image' && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الشفافية</Label><span className="text-xs font-bold text-indigo-600">{Math.round((selectedElement.opacity || 0.5) * 100)}%</span></div>
-                      <Slider value={[(selectedElement.opacity || 0.5) * 100]} min={0} max={100} step={1} onValueChange={(val) => updateSelectedElement({ opacity: val[0] / 100 })} className="py-4" />
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-2"><ImageIcon size={16} className="text-indigo-600" /><Label className="font-bold text-sm text-slate-700">إظهار في الواجهة الرئيسية</Label></div>
+                        <Switch checked={selectedElement.showInMain} onCheckedChange={(val) => updateSelectedElement({ showInMain: val })} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الشفافية</Label><span className="text-xs font-bold text-indigo-600">{Math.round((selectedElement.opacity || 0.5) * 100)}%</span></div>
+                        <Slider value={[(selectedElement.opacity || 0.5) * 100]} min={0} max={100} step={1} onValueChange={(val) => updateSelectedElement({ opacity: val[0] / 100 })} className="py-4" />
+                      </div>
                     </div>
                   )}
 
@@ -658,10 +697,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         <Input type="number" value={Math.round(Math.max(...getElementPoints(selectedElement).map(p => p.y)) - Math.min(...getElementPoints(selectedElement).map(p => p.y)))} onChange={(e) => handleSizeChange('h', parseInt(e.target.value))} className="rounded-xl h-12 border-slate-200 font-bold" />
                       </div>
                     </div>
-                  )}
-
-                  {selectedElement.type !== 'text' && selectedElement.type !== 'reference_image' && (
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
                   )}
                   
                   <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>

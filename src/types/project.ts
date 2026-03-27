@@ -28,6 +28,8 @@ export interface MapElement {
   fontSize?: number;
   fontFamily?: string;
   locked?: boolean;
+  showInMain?: boolean;
+  isBold?: boolean;
 }
 
 export interface Project {

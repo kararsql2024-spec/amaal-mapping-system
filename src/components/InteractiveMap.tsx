@@ -106,9 +106,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   };
 
   const sortedElements = [...elements]
-    .filter(el => el.type !== 'reference_image')
+    .filter(el => el.type !== 'reference_image' || el.showInMain)
     .sort((a, b) => {
-      const layerOrder: Record<string, number> = { 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
+      const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
       return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
     });
 
@@ -137,6 +137,19 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const maxX = Math.max(...pts.map(p => p.x));
             const maxY = Math.max(...pts.map(p => p.y));
 
+            if (el.type === 'reference_image') {
+              return (
+                <image 
+                  key={el.id}
+                  href={el.color} 
+                  x={minX} y={minY} 
+                  width={maxX - minX} height={maxY - minY} 
+                  opacity={el.opacity}
+                  transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
+                />
+              );
+            }
+
             const IconComponent = el.type === 'house' ? Home : 
                             el.type === 'tower' ? Building2 : 
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) : null;
@@ -155,7 +168,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                     style={{
                       fontSize: `${el.fontSize || 24}px`,
                       fontFamily: el.fontFamily || 'Arial',
-                      fontWeight: 'bold'
+                      fontWeight: el.isBold ? 'bold' : 'normal'
                     }}
                   >
                     {el.label}
@@ -171,7 +184,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                 )}
 
-                {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
+                {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} style={{ fontSize: `${el.fontSize || 10}px`, fontWeight: 'black' }} className="pointer-events-none select-none">{el.label.split('-').pop()}</text>}
               </g>
             );
           })}
