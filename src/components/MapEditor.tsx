@@ -372,99 +372,232 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         <Button onClick={() => onSave(elements, dims.w, dims.h)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"><Save size={18} /> حفظ المخطط</Button>
       </div>
 
-      <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
-        <svg ref={svgRef} className={cn("w-full h-full", isBrushMode ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel}>
-          <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
-            <defs>
-              <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/></pattern>
-              <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
-            </defs>
-            <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
-            
-            {sortedElements.map((el) => {
-              const pts = getElementPoints(el);
-              const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-              const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-              const isSelectedEl = isSelected(el.id);
-              const minY = Math.min(...pts.map(p => p.y));
-              const minX = Math.min(...pts.map(p => p.x));
-              const maxX = Math.max(...pts.map(p => p.x));
-              const maxY = Math.max(...pts.map(p => p.y));
-              const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : null;
+      <div className="flex flex-1 gap-4 overflow-hidden">
+        <div className="w-20 flex flex-col gap-2 bg-white p-2 rounded-[2rem] border border-slate-200 shadow-xl overflow-y-auto no-scrollbar">
+          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", !activeTool && !isBrushMode ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+            <MousePointer2 size={20} />
+            <span className="text-[10px] font-bold">تصفح</span>
+          </button>
+          <div className="h-px bg-slate-100 mx-2" />
+          {TOOLS.map((tool) => (
+            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); }} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", activeTool === tool.type && !isBrushMode ? `${tool.color} text-white shadow-lg` : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+              <tool.icon size={20} />
+              <span className="text-[10px] font-bold">{tool.label}</span>
+            </button>
+          ))}
+          <div className="h-px bg-slate-100 mx-2" />
+          <button onClick={() => setIsBrushMode(!isBrushMode)} className={cn("w-full aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all", isBrushMode ? "bg-slate-900 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100")}>
+            <Paintbrush size={20} />
+            <span className="text-[10px] font-bold">فرشاة</span>
+          </button>
+        </div>
 
-              return (
-                <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
-                  {el.type !== 'text' ? (
-                    <path 
-                      d={pointsToPath(pts, !el.isStroke)} 
-                      fill={el.isStroke ? "none" : getElementColor(el)} 
-                      stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
-                      fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
-                      strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green'].includes(el.type) ? 10 : (isSelectedEl ? 3 : 2))} 
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
-                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
-                    />
-                  ) : (
-                    <text
-                      x={centerX}
-                      y={centerY}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      fill={el.textColor || '#000000'}
-                      style={{
-                        fontSize: `${el.fontSize || 24}px`,
-                        fontFamily: el.fontFamily || 'Arial',
-                        fontWeight: 'bold',
-                        cursor: 'move',
-                        userSelect: 'none'
-                      }}
-                      onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
-                    >
-                      {el.label}
-                    </text>
-                  )}
-                  
-                  {el.type === 'pitch' && renderPitchLines(pts)}
-                  {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
-                  
-                  {el.type === 'road' && !el.isStroke && (
-                    el.orientation === 'vertical' ? 
-                    <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
-                    <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
-                  )}
+        <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
+          <svg ref={svgRef} className={cn("w-full h-full", isBrushMode ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel}>
+            <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
+              <defs>
+                <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/></pattern>
+                <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
+              </defs>
+              <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
+              
+              {sortedElements.map((el) => {
+                const pts = getElementPoints(el);
+                const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+                const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+                const isSelectedEl = isSelected(el.id);
+                const minY = Math.min(...pts.map(p => p.y));
+                const minX = Math.min(...pts.map(p => p.x));
+                const maxX = Math.max(...pts.map(p => p.x));
+                const maxY = Math.max(...pts.map(p => p.y));
+                const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : null;
 
-                  {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
+                return (
+                  <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                    {el.type !== 'text' ? (
+                      <path 
+                        d={pointsToPath(pts, !el.isStroke)} 
+                        fill={el.isStroke ? "none" : getElementColor(el)} 
+                        stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
+                        fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
+                        strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green'].includes(el.type) ? 10 : (isSelectedEl ? 3 : 2))} 
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                        className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
+                      />
+                    ) : (
+                      <text
+                        x={centerX}
+                        y={centerY}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill={el.textColor || '#000000'}
+                        style={{
+                          fontSize: `${el.fontSize || 24}px`,
+                          fontFamily: el.fontFamily || 'Arial',
+                          fontWeight: 'bold',
+                          cursor: 'move',
+                          userSelect: 'none'
+                        }}
+                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                      >
+                        {el.label}
+                      </text>
+                    )}
+                    
+                    {el.type === 'pitch' && renderPitchLines(pts)}
+                    {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
+                    
+                    {el.type === 'road' && !el.isStroke && (
+                      el.orientation === 'vertical' ? 
+                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
+                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
+                    )}
+
+                    {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{el.label.split('-').pop()}</text>}
+                    
+                    {isSelectedEl && (
+                      <>
+                        {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
+                        <circle cx={centerX} cy={pts[0].y - 30} r={8} className="fill-blue-600 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
+                      </>
+                    )}
+                  </g>
+                );
+              })}
+
+              {tempPoints.length > 1 && isBrushMode && (
+                <path
+                  d={pointsToPath(tempPoints, false)}
+                  fill="none"
+                  stroke={activeTool ? getElementColor({ type: activeTool } as any) : "#3b82f6"}
+                  strokeWidth={brushSize}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  opacity="0.5"
+                  pointerEvents="none"
+                />
+              )}
+            </g>
+          </svg>
+        </div>
+
+        <div className="w-80 flex flex-col gap-4">
+          {isBrushMode && (
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-100"><SlidersHorizontal className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">إعدادات الفرشاة</h3></div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الفرشاة</Label><span className="text-xs font-bold text-indigo-600">{brushSize}px</span></div>
+                  <Slider value={[brushSize]} min={10} max={200} step={5} onValueChange={(val) => setBrushSize(val[0])} className="py-4" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع العنصر</Label>
+                  <Select value={activeTool || ''} onValueChange={(val) => setActiveTool(val as ElementType)}>
+                    <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {TOOLS.filter(t => ['road', 'green'].includes(t.type)).map(t => (
+                        <SelectItem key={t.type} value={t.type} className="font-bold">{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedElement && (
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص العنصر</h3></div>
+                <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="rounded-full hover:bg-rose-50 hover:text-rose-500"><X size={18} /></Button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
+                <div className="space-y-4">
+                  <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
-                  {isSelectedEl && (
+                  {selectedElement.type === 'text' && (
                     <>
-                      {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
-                      <circle cx={centerX} cy={pts[0].y - 30} r={8} className="fill-blue-600 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع الخط</Label>
+                        <Select value={selectedElement.fontFamily || 'Arial'} onValueChange={(val) => updateSelectedElement({ fontFamily: val })}>
+                          <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر الخط" /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {FONT_FAMILIES.map(f => (<SelectItem key={f.id} value={f.id} className="font-bold">{f.label}</SelectItem>))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الخط</Label>
+                        <Input type="number" value={selectedElement.fontSize || 24} onChange={(e) => updateSelectedElement({ fontSize: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون النص</Label>
+                        <div className="flex gap-2">
+                          <Input type="color" value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                        </div>
+                      </div>
                     </>
                   )}
-                </g>
-              );
-            })}
 
-            {tempPoints.length > 1 && isBrushMode && (
-              <path
-                d={pointsToPath(tempPoints, false)}
-                fill="none"
-                stroke={activeTool ? getElementColor({ type: activeTool } as any) : "#3b82f6"}
-                strokeWidth={brushSize}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                opacity="0.5"
-                pointerEvents="none"
-              />
-            )}
-          </g>
-        </svg>
-      </div>
+                  {selectedElement.type === 'road' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">اتجاه خطوط السير</Label>
+                      <Select value={selectedElement.orientation || 'horizontal'} onValueChange={(val) => updateSelectedElement({ orientation: val as 'horizontal' | 'vertical' })}>
+                        <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر الاتجاه" /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="horizontal" className="font-bold">أفقي</SelectItem>
+                          <SelectItem value="vertical" className="font-bold">عمودي</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
-      <div className="w-80 flex flex-col gap-4">
-        {/* ... (rest of the component remains exactly the same) */}
+                  {selectedElement.type === 'tower' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">عدد الطوابق</Label><Input type="number" value={selectedElement.floors} onChange={(e) => updateSelectedElement({ floors: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                      <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">شقق/طابق</Label><Input type="number" value={selectedElement.apartmentsPerFloor} onChange={(e) => updateSelectedElement({ apartmentsPerFloor: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                    </div>
+                  )}
+
+                  {selectedElement.type === 'amenity' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع المرفق</Label>
+                      <Select value={selectedElement.amenityType} onValueChange={(val) => updateSelectedElement({ amenityType: val })}>
+                        <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {AMENITY_TYPES.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold">{t.label}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {!selectedElement.isStroke && selectedElement.type !== 'text' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">العرض (px)</Label>
+                        <Input type="number" value={Math.round(Math.max(...getElementPoints(selectedElement).map(p => p.x)) - Math.min(...getElementPoints(selectedElement).map(p => p.x)))} onChange={(e) => handleSizeChange('w', parseInt(e.target.value))} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الطول (px)</Label>
+                        <Input type="number" value={Math.round(Math.max(...getElementPoints(selectedElement).map(p => p.y)) - Math.min(...getElementPoints(selectedElement).map(p => p.y)))} onChange={(e) => handleSizeChange('h', parseInt(e.target.value))} className="rounded-xl h-12 border-slate-200 font-bold" />
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedElement.type !== 'text' && (
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.hideIcon ? <EyeOff size={16} className="text-slate-400" /> : <Eye size={16} className="text-indigo-600" />}<Label className="font-bold text-sm text-slate-700">إخفاء الأيقونة</Label></div><Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} /></div>
+                  )}
+                  
+                  <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>
+                </div>
+                <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
