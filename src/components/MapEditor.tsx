@@ -9,7 +9,7 @@ import {
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2, Square,
+  Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -105,7 +105,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         return;
       }
       const step = gridLock ? GRID_SIZE : 1;
-      let dx = 0; dy = 0;
+      let dx = 0; let dy = 0;
       if (e.key === 'ArrowUp') dy = -step;
       else if (e.key === 'ArrowDown') dy = step;
       else if (e.key === 'ArrowLeft') dx = -step;
@@ -258,7 +258,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const minY = Math.min(...pts.map(p => p.y));
     const maxY = Math.max(...pts.map(p => p.y));
     
-    // المسافة الصفرية: الإزاحة تساوي العرض أو الطول تماماً
     const offset = direction === 'right' ? { x: (maxX - minX), y: 0 } : { x: 0, y: (maxY - minY) };
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
     
@@ -334,6 +333,27 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     updateSelectedElement({ points: newPoints });
   };
 
+  // رسم خطوط الملعب
+  const renderPitchLines = (pts: Point[]) => {
+    const minX = Math.min(...pts.map(p => p.x));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxY = Math.max(...pts.map(p => p.y));
+    const midX = (minX + maxX) / 2;
+    const midY = (minY + maxY) / 2;
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    return (
+      <g pointerEvents="none">
+        <line x1={midX} y1={minY} x2={midX} y2={maxY} stroke="white" strokeWidth="2" />
+        <circle cx={midX} cy={midY} r={Math.min(width, height) / 6} fill="none" stroke="white" strokeWidth="2" />
+        <rect x={minX} y={midY - height/4} width={width/6} height={height/2} fill="none" stroke="white" strokeWidth="2" />
+        <rect x={maxX - width/6} y={midY - height/4} width={width/6} height={height/2} fill="none" stroke="white" strokeWidth="2" />
+      </g>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-120px)]" dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
@@ -403,7 +423,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                       className={cn("transition-all cursor-move", isSelected && "stroke-blue-600 filter drop-shadow-lg")} 
                       onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
                     />
+                    {el.type === 'pitch' && renderPitchLines(pts)}
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
+                    
+                    {el.type === 'road' && !el.isStroke && (
+                      el.orientation === 'vertical' ? 
+                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
+                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
+                    )}
+
                     {el.label && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} className="font-black pointer-events-none select-none text-[10px]">{getShortLabel(el.label, el.type)}</text>}
                     {isSelected && (
                       <>
@@ -465,6 +493,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 <div className="space-y-4">
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">تسمية العنصر</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
+                  {selectedElement.type === 'road' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">اتجاه خطوط السير</Label>
+                      <Select value={selectedElement.orientation || 'horizontal'} onValueChange={(val) => updateSelectedElement({ orientation: val as 'horizontal' | 'vertical' })}>
+                        <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر الاتجاه" /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="horizontal" className="font-bold">أفقي</SelectItem>
+                          <SelectItem value="vertical" className="font-bold">عمودي</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
                   {selectedElement.type === 'tower' && (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">عدد الطوابق</Label><Input type="number" value={selectedElement.floors} onChange={(e) => updateSelectedElement({ floors: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
