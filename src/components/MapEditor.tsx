@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -286,7 +286,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       }
     }
     
-    createElement(el.type, newPoints, el.isStroke, newLabel);
+    const newId = Math.random().toString(36).substr(2, 9);
+    const newElement: MapElement = {
+      ...el,
+      id: newId,
+      points: newPoints,
+      label: newLabel,
+      x: newPoints[0].x,
+      y: newPoints[0].y,
+      locked: false
+    };
+    
+    setElements(prev => [...prev, newElement]);
+    setSelectedId(newId);
   };
 
   const pointsToPath = (points: Point[], closed = true) => {
@@ -366,7 +378,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         color: url,
         opacity: 0.5,
         locked: false,
-        showInMain: false
+        showInMain: false,
+        isBold: false
       };
       setElements(prev => [newElement, ...prev]);
       setSelectedId(newElement.id);
@@ -605,6 +618,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
 
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">زاوية الدوران (درجة)</Label>
+                    <div className="relative">
+                      <RotateCw className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                      <Input 
+                        type="number" 
+                        value={Math.round(selectedElement.rotation || 0)} 
+                        onChange={(e) => updateSelectedElement({ rotation: parseInt(e.target.value) })} 
+                        className="pr-10 rounded-xl h-12 border-slate-200 font-bold" 
+                      />
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الخط</Label>
                     <Input type="number" value={selectedElement.fontSize || (selectedElement.type === 'text' ? 24 : 10)} onChange={(e) => updateSelectedElement({ fontSize: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" />
