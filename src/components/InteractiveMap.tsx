@@ -125,26 +125,26 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
             
             <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
-              <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="white" strokeWidth="1" opacity="0.2" />
+              <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
             </pattern>
             <pattern id="texture-brick" width="30" height="15" patternUnits="userSpaceOnUse">
-              <rect width="30" height="15" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
-              <path d="M15 0 L15 15" stroke="white" strokeWidth="0.5" opacity="0.2" />
+              <rect width="30" height="15" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
+              <path d="M15 0 L15 15" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
             </pattern>
             <pattern id="texture-dots" width="10" height="10" patternUnits="userSpaceOnUse">
-              <circle cx="5" cy="5" r="1" fill="white" opacity="0.2" />
+              <circle cx="5" cy="5" r="1" fill="currentColor" opacity="0.2" />
             </pattern>
             <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M0 0 L10 10" stroke="white" strokeWidth="1" opacity="0.2" />
+              <path d="M0 0 L10 10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
             </pattern>
             <pattern id="texture-grid" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
             </pattern>
             <pattern id="texture-zigzag" width="20" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="white" strokeWidth="1" opacity="0.2" />
+              <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" />
             </pattern>
             <pattern id="texture-crosshatch" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+              <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
             </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
@@ -182,13 +182,20 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                <defs>
+                  <clipPath id={`clip-${el.id}`}>
+                    <path d={pathD} />
+                  </clipPath>
+                </defs>
+                
                 {el.type !== 'text' ? (
                   <>
                     <path d={pathD} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
                     {el.hasTexture && (
-                      <g style={{ color: el.textureColor || 'white' }}>
-                        <path 
-                          d={pathD} 
+                      <g clipPath={`url(#clip-${el.id})`} style={{ color: el.textureColor || 'white' }}>
+                        <rect 
+                          x={minX - 500} y={minY - 500} 
+                          width={(maxX - minX) + 1000} height={(maxY - minY) + 1000} 
                           fill={`url(#texture-${el.textureType || 'glass'})`} 
                           pointerEvents="none" 
                           transform={`scale(${el.textureSize || 1})`}
