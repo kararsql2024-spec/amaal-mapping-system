@@ -5,10 +5,10 @@ import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, Leaf, 
-  Waypoints, MapPin, Grid3X3, ArrowDown, ArrowLeft,
+  Waypoints, MapPin, Grid3X3, ArrowDown, ArrowLeft, ArrowUp, ArrowRight,
   ZoomIn, ZoomOut, RotateCcw, Type, Palette, Hand,
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
-  Copy, ArrowRight, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
+  Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold
 } from 'lucide-react';
@@ -143,8 +143,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
-    if (dragMode || !isBackground || !activeTool || isBrushMode) return;
+    if (dragMode || !activeTool || isBrushMode) return;
     const pos = getMousePos(e);
     const w = activeTool === 'road' ? 200 : 80;
     const h = activeTool === 'road' ? 40 : 80;
@@ -187,14 +186,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    const isBackground = e.target === svgRef.current || (e.target as SVGElement).id === 'map-background';
     const pos = getMousePos(e);
-    if (isBrushMode && activeTool && isBackground) {
+    if (isBrushMode && activeTool) {
       setDragMode({ type: 'brush' });
       setTempPoints([pos]);
       return;
     }
-    if (isBackground && !activeTool) {
+    if (!activeTool) {
       setDragMode({ type: 'pan', startPos: { x: e.clientX, y: e.clientY } });
     }
   };
@@ -258,7 +256,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     setTempPoints([]);
   };
 
-  const handleDuplicate = (direction: 'right' | 'down') => {
+  const handleDuplicate = (direction: 'right' | 'left' | 'up' | 'down') => {
     const el = elements.find(e => e.id === selectedId);
     if (!el) return;
     const pts = getElementPoints(el);
@@ -267,7 +265,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
     const minY = Math.min(...pts.map(p => p.y));
     const maxY = Math.max(...pts.map(p => p.y));
     
-    const offset = direction === 'right' ? { x: (maxX - minX), y: 0 } : { x: 0, y: (maxY - minY) };
+    let offset = { x: 0, y: 0 };
+    if (direction === 'right') offset = { x: (maxX - minX), y: 0 };
+    else if (direction === 'left') offset = { x: -(maxX - minX), y: 0 };
+    else if (direction === 'down') offset = { x: 0, y: (maxY - minY) };
+    else if (direction === 'up') offset = { x: 0, y: -(maxY - minY) };
+
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
     
     let newLabel = el.label;
@@ -463,7 +466,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         width={maxX - minX} height={maxY - minY} 
                         opacity={el.opacity}
                         className={cn("transition-all", !el.locked && "cursor-move", isSelectedEl && "outline outline-2 outline-blue-600")}
-                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); if (!el.locked) setDragMode({ type: 'move' }); }}
+                        onMouseDown={(e) => { 
+                          if (el.locked) return;
+                          e.stopPropagation(); 
+                          setSelectedId(el.id); 
+                          if (!el.locked) setDragMode({ type: 'move' }); 
+                        }}
                       />
                       {isSelectedEl && !el.locked && (
                         <>
@@ -486,7 +494,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         strokeLinejoin="round"
                         strokeLinecap="round"
                         className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
-                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }} 
+                        onMouseDown={(e) => { 
+                          if (el.locked) return;
+                          e.stopPropagation(); 
+                          setSelectedId(el.id); 
+                          setDragMode({ type: 'move' }); 
+                        }} 
                       />
                     ) : (
                       <text
@@ -502,7 +515,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                           cursor: 'move',
                           userSelect: 'none'
                         }}
-                        onMouseDown={(e) => { e.stopPropagation(); setSelectedId(el.id); setDragMode({ type: 'move' }); }}
+                        onMouseDown={(e) => { 
+                          if (el.locked) return;
+                          e.stopPropagation(); 
+                          setSelectedId(el.id); 
+                          setDragMode({ type: 'move' }); 
+                        }}
                       >
                         {el.label}
                       </text>
@@ -699,7 +717,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     </div>
                   )}
                   
-                  <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار يسار</Button><Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><Copy size={16} /> تكرار أسفل</Button></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" onClick={() => handleDuplicate('right')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><ArrowLeft size={16} /> تكرار يسار</Button>
+                    <Button variant="outline" onClick={() => handleDuplicate('left')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><ArrowRight size={16} /> تكرار يمين</Button>
+                    <Button variant="outline" onClick={() => handleDuplicate('up')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><ArrowUp size={16} /> تكرار أعلى</Button>
+                    <Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><ArrowDown size={16} /> تكرار أسفل</Button>
+                  </div>
                 </div>
                 <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
               </div>
