@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -35,6 +35,13 @@ const FONT_FAMILIES = [
   { id: 'Courier New', label: 'Courier New' },
   { id: 'Georgia', label: 'Georgia' },
   { id: 'Times New Roman', label: 'Times New Roman' },
+];
+
+const TEXTURE_TYPES = [
+  { id: 'glass', label: 'زجاج حديث' },
+  { id: 'brick', label: 'طوب كلاسيكي' },
+  { id: 'dots', label: 'خرسانة منقطة' },
+  { id: 'stripes', label: 'خطوط تصميم' },
 ];
 
 const AMENITY_TYPES = [
@@ -165,8 +172,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       points: pts,
       rotation: 0,
       orientation: 'horizontal',
-      color: type === 'label_area' ? '#a855f7' : (type === 'amenity' ? '#f59e0b' : undefined),
-      textColor: type === 'text' ? '#000000' : '#1e293b',
+      color: type === 'label_area' ? '#a855f7' : (type === 'amenity' ? '#f59e0b' : (type === 'tower' ? '#1e293b' : undefined)),
+      textColor: type === 'text' ? '#000000' : (type === 'tower' ? '#ffffff' : '#1e293b'),
       fontSize: type === 'text' ? 24 : (type === 'house' || type === 'tower' ? 10 : undefined),
       fontFamily: type === 'text' ? 'Arial' : undefined,
       opacity: type === 'label_area' ? 0.2 : 1,
@@ -179,7 +186,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       isStroke: isStroke,
       locked: false,
       showInMain: false,
-      isBold: type === 'text'
+      isBold: type === 'text',
+      hasBorder: type === 'tower',
+      borderColor: type === 'tower' ? '#0f172a' : undefined,
+      hasTexture: false,
+      textureType: 'glass'
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
@@ -308,10 +319,8 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const getElementColor = (el: MapElement) => {
-    if (el.type === 'label_area' || el.type === 'amenity') return el.color || (el.type === 'amenity' ? '#f59e0b' : '#a855f7');
+    if (el.type === 'label_area' || el.type === 'amenity' || el.type === 'tower' || el.type === 'house') return el.color || (el.type === 'amenity' ? '#f59e0b' : (el.type === 'tower' ? '#1e293b' : (el.type === 'house' ? '#ffffff' : '#a855f7')));
     switch (el.type) {
-      case 'house': return '#ffffff';
-      case 'tower': return '#1e293b';
       case 'road': return '#475569';
       case 'green': return 'url(#green-pattern)';
       case 'pitch': return '#16a34a';
@@ -321,6 +330,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   };
 
   const getElementStroke = (el: MapElement) => {
+    if (el.hasBorder) return el.borderColor || '#000000';
     if (el.type === 'label_area' || el.type === 'amenity') return el.color || (el.type === 'amenity' ? '#d97706' : '#a855f7');
     switch (el.type) {
       case 'house': return '#3b82f6';
@@ -456,6 +466,20 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
               <defs>
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/></pattern>
                 <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
+                
+                <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="white" strokeWidth="1" opacity="0.2" />
+                </pattern>
+                <pattern id="texture-brick" width="30" height="15" patternUnits="userSpaceOnUse">
+                  <rect width="30" height="15" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+                  <path d="M15 0 L15 15" stroke="white" strokeWidth="0.5" opacity="0.2" />
+                </pattern>
+                <pattern id="texture-dots" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <circle cx="5" cy="5" r="1" fill="white" opacity="0.2" />
+                </pattern>
+                <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <path d="M0 0 L10 10" stroke="white" strokeWidth="1" opacity="0.2" />
+                </pattern>
               </defs>
               <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
               
@@ -495,25 +519,30 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   );
                 }
 
+                const pathD = pointsToPath(pts, !el.isStroke);
+
                 return (
                   <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
                     {el.type !== 'text' ? (
-                      <path 
-                        d={pointsToPath(pts, !el.isStroke)} 
-                        fill={el.isStroke ? "none" : getElementColor(el)} 
-                        stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
-                        fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
-                        strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green'].includes(el.type) ? 10 : (isSelectedEl ? 3 : 2))} 
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                        className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
-                        onMouseDown={(e) => { 
-                          if (el.locked) return;
-                          e.stopPropagation(); 
-                          setSelectedId(el.id); 
-                          setDragMode({ type: 'move' }); 
-                        }} 
-                      />
+                      <>
+                        <path 
+                          d={pathD} 
+                          fill={el.isStroke ? "none" : getElementColor(el)} 
+                          stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
+                          fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
+                          strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green'].includes(el.type) ? 10 : (isSelectedEl ? 3 : (el.hasBorder ? 4 : 2)))} 
+                          strokeLinejoin="round"
+                          strokeLinecap="round"
+                          className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
+                          onMouseDown={(e) => { 
+                            if (el.locked) return;
+                            e.stopPropagation(); 
+                            setSelectedId(el.id); 
+                            setDragMode({ type: 'move' }); 
+                          }} 
+                        />
+                        {el.hasTexture && <path d={pathD} fill={`url(#texture-${el.textureType || 'glass'})`} pointerEvents="none" />}
+                      </>
                     ) : (
                       <text
                         x={centerX}
@@ -644,6 +673,66 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     <Switch checked={selectedElement.hideIcon} onCheckedChange={(val) => updateSelectedElement({ hideIcon: val })} />
                   </div>
 
+                  {(selectedElement.type === 'tower' || selectedElement.type === 'house' || selectedElement.type === 'label_area' || selectedElement.type === 'amenity') && (
+                    <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="flex items-center gap-2 mb-2"><Palette size={16} className="text-indigo-600" /><Label className="font-bold text-sm">الألوان والمظهر</Label></div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون العنصر</Label>
+                        <div className="flex gap-2">
+                          <Input type="color" value={selectedElement.color || '#1e293b'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input value={selectedElement.color || '#1e293b'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون النص / الأيقونة</Label>
+                        <div className="flex gap-2">
+                          <Input type="color" value={selectedElement.textColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input value={selectedElement.textColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2"><Layers size={16} className="text-indigo-600" /><Label className="font-bold text-sm">الحدود والـ Texture</Label></div>
+                    </div>
+                    
+                    <div className="space-y-4 pt-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-slate-600">تفعيل الحدود</Label>
+                        <Switch checked={selectedElement.hasBorder} onCheckedChange={(val) => updateSelectedElement({ hasBorder: val })} />
+                      </div>
+                      {selectedElement.hasBorder && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                          <Label className="text-[10px] font-black text-slate-400 uppercase">لون الحدود</Label>
+                          <div className="flex gap-2">
+                            <Input type="color" value={selectedElement.borderColor || '#000000'} onChange={(e) => updateSelectedElement({ borderColor: e.target.value })} className="w-10 h-10 p-1 rounded-lg" />
+                            <Input value={selectedElement.borderColor || '#000000'} onChange={(e) => updateSelectedElement({ borderColor: e.target.value })} className="flex-1 h-10 rounded-lg text-xs font-bold" />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="h-px bg-slate-200 my-2" />
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-slate-600">تفعيل الـ Texture</Label>
+                        <Switch checked={selectedElement.hasTexture} onCheckedChange={(val) => updateSelectedElement({ hasTexture: val })} />
+                      </div>
+                      {selectedElement.hasTexture && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                          <Label className="text-[10px] font-black text-slate-400 uppercase">نوع المظهر</Label>
+                          <Select value={selectedElement.textureType || 'glass'} onValueChange={(val) => updateSelectedElement({ textureType: val })}>
+                            <SelectTrigger className="rounded-lg h-10 border-slate-200 font-bold text-xs"><SelectValue placeholder="اختر المظهر" /></SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              {TEXTURE_TYPES.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold text-xs">{t.label}</SelectItem>))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {selectedElement.type === 'text' && (
                     <>
                       <div className="space-y-2">
@@ -670,18 +759,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                   )}
 
                   {selectedElement.type === 'label_area' && (
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون المنطقة</Label>
-                        <div className="flex gap-2">
-                          <Input type="color" value={selectedElement.color || '#a855f7'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
-                          <Input value={selectedElement.color || '#a855f7'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الشفافية</Label><span className="text-xs font-bold text-indigo-600">{Math.round((selectedElement.opacity || 0.2) * 100)}%</span></div>
-                        <Slider value={[(selectedElement.opacity || 0.2) * 100]} min={0} max={100} step={1} onValueChange={(val) => updateSelectedElement({ opacity: val[0] / 100 })} className="py-4" />
-                      </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الشفافية</Label><span className="text-xs font-bold text-indigo-600">{Math.round((selectedElement.opacity || 0.2) * 100)}%</span></div>
+                      <Slider value={[(selectedElement.opacity || 0.2) * 100]} min={0} max={100} step={1} onValueChange={(val) => updateSelectedElement({ opacity: val[0] / 100 })} className="py-4" />
                     </div>
                   )}
 

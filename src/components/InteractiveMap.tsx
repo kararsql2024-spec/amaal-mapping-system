@@ -50,25 +50,26 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   };
 
   const getElementStyles = (el: MapElement) => {
-    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.color || '#a855f7', opacity: el.opacity || 0.2, strokeWidth: 2 };
+    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : (el.color || '#a855f7'), opacity: el.opacity || 0.2, strokeWidth: el.hasBorder ? 3 : 2 };
     
     const data = housesData[el.id];
-    if (el.type === 'road') return { fill: '#475569', stroke: '#475569', opacity: 1, strokeWidth: 10 };
-    if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: '#22c55e', opacity: 1, strokeWidth: 10 };
-    if (el.type === 'pitch') return { fill: '#16a34a', stroke: '#ffffff', opacity: 1, strokeWidth: 2 };
-    if (el.type === 'tower') return { fill: '#1e293b', stroke: '#0f172a', opacity: 1, strokeWidth: 2 };
-    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.color || '#d97706', opacity: 1, strokeWidth: 2 };
+    if (el.type === 'road') return { fill: '#475569', stroke: el.hasBorder ? (el.borderColor || '#475569') : '#475569', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
+    if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: el.hasBorder ? (el.borderColor || '#22c55e') : '#22c55e', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
+    if (el.type === 'pitch') return { fill: '#16a34a', stroke: el.hasBorder ? (el.borderColor || '#ffffff') : '#ffffff', opacity: 1, strokeWidth: 2 };
+    if (el.type === 'tower') return { fill: el.color || '#1e293b', stroke: el.hasBorder ? (el.borderColor || '#0f172a') : '#0f172a', opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
+    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.hasBorder ? (el.borderColor || '#d97706') : (el.color || '#d97706'), opacity: 1, strokeWidth: 2 };
     if (el.type === 'text') return { fill: 'none', stroke: 'none', opacity: 1, strokeWidth: 0 };
     
     if (el.type === 'house') {
-      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: '#94a3b8', opacity: 1, strokeWidth: 2 };
-      if (!data || data.status === 'available') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 };
-      if (data.status === 'sold') return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 };
-      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 };
-      if (data.status === 'pending') return { fill: '#3b82f6', stroke: '#2563eb', opacity: 1, strokeWidth: 2 };
+      const baseStroke = el.hasBorder ? (el.borderColor || '#94a3b8') : '#94a3b8';
+      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: baseStroke, opacity: 1, strokeWidth: 2 };
+      if (!data || data.status === 'available') return { fill: el.color || '#10b981', stroke: el.hasBorder ? (el.borderColor || '#059669') : '#059669', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'sold') return { fill: '#f43f5e', stroke: el.hasBorder ? (el.borderColor || '#e11d48') : '#e11d48', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: el.hasBorder ? (el.borderColor || '#f59e0b') : '#f59e0b', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'pending') return { fill: '#3b82f6', stroke: el.hasBorder ? (el.borderColor || '#2563eb') : '#2563eb', opacity: 1, strokeWidth: 2 };
     }
     
-    return { fill: '#ffffff', stroke: '#cbd5e1', opacity: 1, strokeWidth: 2 };
+    return { fill: el.color || '#ffffff', stroke: el.hasBorder ? (el.borderColor || '#cbd5e1') : '#cbd5e1', opacity: 1, strokeWidth: 2 };
   };
 
   const getAmenityIcon = (type: string | undefined) => {
@@ -122,6 +123,20 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
+            
+            <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="white" strokeWidth="1" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-brick" width="30" height="15" patternUnits="userSpaceOnUse">
+              <rect width="30" height="15" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+              <path d="M15 0 L15 15" stroke="white" strokeWidth="0.5" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-dots" width="10" height="10" patternUnits="userSpaceOnUse">
+              <circle cx="5" cy="5" r="1" fill="white" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M0 0 L10 10" stroke="white" strokeWidth="1" opacity="0.2" />
+            </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
@@ -154,10 +169,15 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                             el.type === 'tower' ? Building2 : 
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) : null;
 
+            const pathD = pointsToPath(pts, !el.isStroke);
+
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
                 {el.type !== 'text' ? (
-                  <path d={pointsToPath(pts, !el.isStroke)} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                  <>
+                    <path d={pathD} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                    {el.hasTexture && <path d={pathD} fill={`url(#texture-${el.textureType || 'glass'})`} pointerEvents="none" />}
+                  </>
                 ) : (
                   <text
                     x={centerX}

@@ -30,6 +30,10 @@ export interface MapElement {
   locked?: boolean;
   showInMain?: boolean;
   isBold?: boolean;
+  hasBorder?: boolean;
+  borderColor?: string;
+  hasTexture?: boolean;
+  textureType?: string;
 }
 
 export interface Project {
