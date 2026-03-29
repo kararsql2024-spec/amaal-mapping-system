@@ -34,6 +34,8 @@ export interface MapElement {
   borderColor?: string;
   hasTexture?: boolean;
   textureType?: string;
+  textureColor?: string;
+  textureSize?: number;
 }
 
 export interface Project {

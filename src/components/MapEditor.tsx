@@ -42,6 +42,9 @@ const TEXTURE_TYPES = [
   { id: 'brick', label: 'طوب كلاسيكي' },
   { id: 'dots', label: 'خرسانة منقطة' },
   { id: 'stripes', label: 'خطوط تصميم' },
+  { id: 'grid', label: 'شبكة مربعات' },
+  { id: 'zigzag', label: 'متعرج' },
+  { id: 'crosshatch', label: 'تظليل متقاطع' },
 ];
 
 const AMENITY_TYPES = [
@@ -190,7 +193,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
       hasBorder: type === 'tower',
       borderColor: type === 'tower' ? '#0f172a' : undefined,
       hasTexture: false,
-      textureType: 'glass'
+      textureType: 'glass',
+      textureColor: 'white',
+      textureSize: 1
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
@@ -239,7 +244,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
         const midX = (pts[idx1].x + pts[idx2].x) / 2;
         const midY = (pts[idx1].y + pts[idx2].y) / 2;
         const dx = snap(pos.x) - midX;
-        const dy = snap(pos.y) - midY;
+        const dy = snap(pos.y) - dy;
         newPoints[idx1] = { x: pts[idx1].x + dx, y: pts[idx1].y + dy };
         newPoints[idx2] = { x: pts[idx2].x + dx, y: pts[idx2].y + dy };
       } else if (dragMode.type === 'move') {
@@ -480,6 +485,15 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                 <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
                   <path d="M0 0 L10 10" stroke="white" strokeWidth="1" opacity="0.2" />
                 </pattern>
+                <pattern id="texture-grid" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+                </pattern>
+                <pattern id="texture-zigzag" width="20" height="10" patternUnits="userSpaceOnUse">
+                  <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="white" strokeWidth="1" opacity="0.2" />
+                </pattern>
+                <pattern id="texture-crosshatch" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+                </pattern>
               </defs>
               <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
               
@@ -504,10 +518,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         opacity={el.opacity}
                         className={cn("transition-all", !el.locked && "cursor-move", isSelectedEl && "outline outline-2 outline-blue-600")}
                         onMouseDown={(e) => { 
+                          setSelectedId(el.id); 
                           if (el.locked) return;
                           e.stopPropagation(); 
-                          setSelectedId(el.id); 
-                          if (!el.locked) setDragMode({ type: 'move' }); 
+                          setDragMode({ type: 'move' }); 
                         }}
                       />
                       {isSelectedEl && !el.locked && (
@@ -535,13 +549,23 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                           strokeLinecap="round"
                           className={cn("transition-all cursor-move", isSelectedEl && "stroke-blue-600 filter drop-shadow-lg")} 
                           onMouseDown={(e) => { 
+                            setSelectedId(el.id); 
                             if (el.locked) return;
                             e.stopPropagation(); 
-                            setSelectedId(el.id); 
                             setDragMode({ type: 'move' }); 
                           }} 
                         />
-                        {el.hasTexture && <path d={pathD} fill={`url(#texture-${el.textureType || 'glass'})`} pointerEvents="none" />}
+                        {el.hasTexture && (
+                          <g style={{ color: el.textureColor || 'white' }}>
+                            <path 
+                              d={pathD} 
+                              fill={`url(#texture-${el.textureType || 'glass'})`} 
+                              pointerEvents="none" 
+                              transform={`scale(${el.textureSize || 1})`}
+                              transform-origin={`${centerX} ${centerY}`}
+                            />
+                          </g>
+                        )}
                       </>
                     ) : (
                       <text
@@ -558,9 +582,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                           userSelect: 'none'
                         }}
                         onMouseDown={(e) => { 
+                          setSelectedId(el.id); 
                           if (el.locked) return;
                           e.stopPropagation(); 
-                          setSelectedId(el.id); 
                           setDragMode({ type: 'move' }); 
                         }}
                       >
@@ -569,7 +593,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     )}
                     
                     {el.type === 'pitch' && renderPitchLines(pts)}
-                    {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
+                    {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
                     
                     {el.type === 'road' && !el.isStroke && (
                       el.orientation === 'vertical' ? 
@@ -720,14 +744,27 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                         <Switch checked={selectedElement.hasTexture} onCheckedChange={(val) => updateSelectedElement({ hasTexture: val })} />
                       </div>
                       {selectedElement.hasTexture && (
-                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                          <Label className="text-[10px] font-black text-slate-400 uppercase">نوع المظهر</Label>
-                          <Select value={selectedElement.textureType || 'glass'} onValueChange={(val) => updateSelectedElement({ textureType: val })}>
-                            <SelectTrigger className="rounded-lg h-10 border-slate-200 font-bold text-xs"><SelectValue placeholder="اختر المظهر" /></SelectTrigger>
-                            <SelectContent className="rounded-xl">
-                              {TEXTURE_TYPES.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold text-xs">{t.label}</SelectItem>))}
-                            </SelectContent>
-                          </Select>
+                        <div className="space-y-4 animate-in fade-in slide-in-from-top-1">
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black text-slate-400 uppercase">نوع المظهر</Label>
+                            <Select value={selectedElement.textureType || 'glass'} onValueChange={(val) => updateSelectedElement({ textureType: val })}>
+                              <SelectTrigger className="rounded-lg h-10 border-slate-200 font-bold text-xs"><SelectValue placeholder="اختر المظهر" /></SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                {TEXTURE_TYPES.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold text-xs">{t.label}</SelectItem>))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black text-slate-400 uppercase">لون المظهر</Label>
+                            <div className="flex gap-2">
+                              <Input type="color" value={selectedElement.textureColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textureColor: e.target.value })} className="w-10 h-10 p-1 rounded-lg" />
+                              <Input value={selectedElement.textureColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textureColor: e.target.value })} className="flex-1 h-10 rounded-lg text-xs font-bold" />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center"><Label className="text-[10px] font-black text-slate-400 uppercase">حجم المظهر</Label><span className="text-[10px] font-bold text-indigo-600">{selectedElement.textureSize || 1}x</span></div>
+                            <Slider value={[selectedElement.textureSize || 1]} min={0.1} max={5} step={0.1} onValueChange={(val) => updateSelectedElement({ textureSize: val[0] })} className="py-2" />
+                          </div>
                         </div>
                       )}
                     </div>

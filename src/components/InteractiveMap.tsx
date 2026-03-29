@@ -137,6 +137,15 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
               <path d="M0 0 L10 10" stroke="white" strokeWidth="1" opacity="0.2" />
             </pattern>
+            <pattern id="texture-grid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-zigzag" width="20" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="white" strokeWidth="1" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-crosshatch" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="white" strokeWidth="0.5" opacity="0.2" />
+            </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid-view)" />
           
@@ -176,7 +185,17 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 {el.type !== 'text' ? (
                   <>
                     <path d={pathD} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
-                    {el.hasTexture && <path d={pathD} fill={`url(#texture-${el.textureType || 'glass'})`} pointerEvents="none" />}
+                    {el.hasTexture && (
+                      <g style={{ color: el.textureColor || 'white' }}>
+                        <path 
+                          d={pathD} 
+                          fill={`url(#texture-${el.textureType || 'glass'})`} 
+                          pointerEvents="none" 
+                          transform={`scale(${el.textureSize || 1})`}
+                          transform-origin={`${centerX} ${centerY}`}
+                        />
+                      </g>
+                    )}
                   </>
                 ) : (
                   <text
