@@ -234,11 +234,27 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        const { data: currentHousesData, error: fetchError } = await supabase
-          .from('houses_data')
-          .select('*');
+        // Fetch ALL houses data using pagination to bypass the 1000 row limit
+        let currentHousesData: any[] = [];
+        let from = 0;
+        const step = 1000;
+        let hasMore = true;
 
-        if (fetchError) throw fetchError;
+        while (hasMore) {
+          const { data: chunk, error: fetchError } = await supabase
+            .from('houses_data')
+            .select('*')
+            .range(from, from + step - 1);
+
+          if (fetchError) throw fetchError;
+          if (!chunk || chunk.length === 0) {
+            hasMore = false;
+          } else {
+            currentHousesData = [...currentHousesData, ...chunk];
+            from += step;
+            if (chunk.length < step) hasMore = false;
+          }
+        }
 
         const housesDataMap: Record<string, any> = {};
         currentHousesData?.forEach(u => {
@@ -333,11 +349,16 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const finalUpdates = Array.from(updatesMap.values());
 
         if (finalUpdates.length > 0) {
-          const { error: upsertError } = await supabase
-            .from('houses_data')
-            .upsert(finalUpdates, { onConflict: 'unit_key' });
+          // Chunk the upsert operation to handle large datasets without hitting payload limits
+          const chunkSize = 500;
+          for (let i = 0; i < finalUpdates.length; i += chunkSize) {
+            const chunk = finalUpdates.slice(i, i + chunkSize);
+            const { error: upsertError } = await supabase
+              .from('houses_data')
+              .upsert(chunk, { onConflict: 'unit_key' });
 
-          if (upsertError) throw upsertError;
+            if (upsertError) throw upsertError;
+          }
           showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح عبر كافة المشاريع المتطابقة`);
         } else {
           showError("لم يتم العثور على مسميات متطابقة في أي مشروع. تأكد من تطابق أسماء المدن وأرقام الوحدات.");
