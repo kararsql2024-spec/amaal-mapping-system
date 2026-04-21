@@ -56,20 +56,36 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     if (savedCenter) setIsLoggedIn(true);
   }, []);
 
+  // جلب البيانات والإشعارات عند تغيير المشروع
   useEffect(() => {
     if (selectedProjectId) {
-      const fetchNotifications = async () => {
-        const { data } = await supabase
+      const fetchData = async () => {
+        // جلب الإشعارات
+        const { data: notifs } = await supabase
           .from('notifications')
           .select('*')
           .eq('project_id', selectedProjectId)
           .order('created_at', { ascending: false })
           .limit(50);
-        if (data) setNotifications(data);
+        if (notifs) setNotifications(notifs);
+
+        // جلب بيانات الوحدات لهذا المشروع تحديداً لضمان الدقة
+        const { data: units } = await supabase
+          .from('houses_data')
+          .select('*')
+          .eq('project_id', selectedProjectId);
+        
+        if (units) {
+          const formattedUnits: Record<string, any> = {};
+          units.forEach(u => {
+            formattedUnits[u.unit_key] = u.data;
+          });
+          setHousesData(prev => ({ ...prev, ...formattedUnits }));
+        }
       };
-      fetchNotifications();
+      fetchData();
     }
-  }, [selectedProjectId]);
+  }, [selectedProjectId, setHousesData]);
 
   const handleLogin = () => {
     const center = marketingCenters.find(c => c.id === loginData.centerId);
