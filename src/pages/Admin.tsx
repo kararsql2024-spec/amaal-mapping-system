@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -14,6 +14,17 @@ import { cn } from '@/lib/utils';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface AdminProps {
   projects: Project[];
@@ -44,6 +55,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -157,6 +169,29 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
     }
   };
 
+  const handleResetAllData = async () => {
+    setIsResetting(true);
+    try {
+      // حذف كافة البيانات من جدول houses_data
+      const { error } = await supabase
+        .from('houses_data')
+        .delete()
+        .neq('unit_key', 'FORCE_DELETE_ALL'); // شرط وهمي لحذف الكل
+
+      if (error) throw error;
+
+      // تحديث الحالة المحلية
+      setHousesData({});
+      addLog("تم تصفير كافة بيانات الوحدات بنجاح.");
+      showSuccess("تم تصفير كافة البيانات بنجاح");
+    } catch (error) {
+      console.error("Error resetting data:", error);
+      showError("فشل في تصفير البيانات");
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const handleAddCenter = async () => {
     if (!newCenter.name || !newCenter.password) return;
     try {
@@ -220,7 +255,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
       .replace(/[أإآ]/g, "ا") 
       .replace(/[ة]/g, "ه") 
       .replace(/[ى]/g, "ي") 
-      .replace(/[pd]/g, "u") // توحيد P و D إلى U للمطابقة
+      .replace(/[pd]/g, "u")
       .replace(/[^a-z0-9\u0621-\u064A]/gi, "") 
       .replace(/\s+/g, "");
   };
@@ -262,7 +297,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // جلب كافة البيانات الحالية
         let currentHousesData: any[] = [];
         let from = 0;
         const step = 1000;
@@ -311,23 +345,14 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                 const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                 for (let a = 1; a <= aptsPerFloor; a++) {
                   const techKey = `${el.id}_F${f}_A${a}`;
-                  // الترقيم يجب أن يكون ثابتاً تماماً بغض النظر عن الحالة
                   pCounter++;
-                  
                   const aptCode = `P${pCounter}`;
                   const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                   const normLabel = normalizeForMatch(fullLabel);
-                  
                   labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
                   keyToLabelMap.set(techKey, fullLabel);
-
-                  // إضافة مطابقة مختصرة (بدون كود الطابق) لأن الإكسل قد يحتوي على Z3-B2-D32
-                  const shortLabel = `${el.label}-${aptCode}`;
-                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(shortLabel)}`, techKey);
-                  
-                  // دعم حرف D بدلاً من P
-                  const altShortLabel = `${el.label}-D${pCounter}`;
-                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(altShortLabel)}`, techKey);
+                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(`${el.label}-${aptCode}`)}`, techKey);
+                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(`${el.label}-D${pCounter}`)}`, techKey);
                 }
               }
             }
@@ -343,7 +368,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           if (index === 0) return;
           const rawCity = row[cityIdx];
           const rawUnit = row[unitIdx];
-          
           if (!rawCity || !rawUnit) return;
 
           const normCity = normalizeForMatch(rawCity);
@@ -357,7 +381,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             if (techKey) {
               const oldData = housesDataMap[techKey] || { status: 'available' };
               const newName = String(row[nameIdx] || '');
-              
               let saleDate = '';
               if (row[dateIdx]) {
                 if (typeof row[dateIdx] === 'number') {
@@ -368,15 +391,10 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
               }
 
               const unitLabel = keyToLabelMap.get(techKey);
-
               if (oldData.status !== 'sold') {
-                let msg = "";
-                const displayDate = saleDate || now;
-                if (oldData.status === 'reserved') {
-                  msg = `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${displayDate}`;
-                } else {
-                  msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${displayDate}`;
-                }
+                let msg = oldData.status === 'reserved' 
+                  ? `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${saleDate || now}`
+                  : `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
                 notifications.push({ project_id: projectId, message: msg });
                 addLog(`تطابق: ${rawUnit} -> ${unitLabel} (تم التحديث لمباع)`);
               }
@@ -389,8 +407,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             } else {
               addLog(`تنبيه: لم يتم العثور على الوحدة "${rawUnit}" في مشروع "${rawCity}"`);
             }
-          } else {
-            if (index === 1) addLog(`تنبيه: لم يتم العثور على المشروع "${rawCity}" في النظام`);
           }
         });
 
@@ -398,13 +414,8 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
             if (!updatesMap.has(unit.unit_key)) {
               const unitLabel = keyToLabelMap.get(unit.unit_key);
-              notifications.push({ 
-                project_id: unit.project_id, 
-                message: `تم توفر الوحدة السكنية ${unitLabel} بتاريخ ${now}` 
-              });
-
+              notifications.push({ project_id: unit.project_id, message: `تم توفر الوحدة السكنية ${unitLabel} بتاريخ ${now}` });
               addLog(`تحديث: الوحدة ${unitLabel} أصبحت متوفرة الآن`);
-
               updatesMap.set(unit.unit_key, {
                 unit_key: unit.unit_key,
                 project_id: unit.project_id,
@@ -416,36 +427,25 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
-          addLog(`جاري رفع ${finalUpdates.length} تحديث إلى قاعدة البيانات...`);
+          addLog(`جاري رفع ${finalUpdates.length} تحديث...`);
           const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
-            const { error: upsertError } = await supabase
-              .from('houses_data')
-              .upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
+            const { error: upsertError } = await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
             if (upsertError) throw upsertError;
           }
-          
-          if (notifications.length > 0) {
-            await supabase.from('notifications').insert(notifications);
-          }
-
-          // تحديث الحالة المحلية فوراً لضمان الانعكاس على الخريطة
+          if (notifications.length > 0) await supabase.from('notifications').insert(notifications);
           setHousesData(prev => {
             const next = { ...prev };
-            finalUpdates.forEach(u => {
-              next[u.unit_key] = u.data;
-            });
+            finalUpdates.forEach(u => { next[u.unit_key] = u.data; });
             return next;
           });
-
           const updateTime = new Date().toISOString();
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
-          
           addLog("تمت العملية بنجاح!");
           showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
         } else {
-          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة للتحديث.");
+          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة.");
           showError("لم يتم العثور على مسميات متطابقة");
         }
       } catch (error) {
@@ -566,7 +566,24 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                 <div className="flex items-center justify-between border-b pb-4">
                   <div className="flex items-center gap-3"><div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div><h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2></div>
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={handleClearNotifications} className="rounded-xl gap-2 border-rose-200 text-rose-500 hover:bg-rose-50"><Eraser size={18} /> تصفير الإشعارات</Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" className="rounded-xl gap-2 border-rose-200 text-rose-500 hover:bg-rose-50"><RefreshCcw size={18} /> تصفير كافة البيانات</Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent dir="rtl">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-right">هل أنت متأكد تماماً؟</AlertDialogTitle>
+                          <AlertDialogDescription className="text-right">
+                            سيؤدي هذا الإجراء إلى حذف كافة بيانات المبيعات والأسماء والتواريخ من قاعدة البيانات لجميع المشاريع. لا يمكن التراجع عن هذا الإجراء.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="flex-row-reverse gap-2">
+                          <AlertDialogAction onClick={handleResetAllData} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، قم بالتصفير</AlertDialogAction>
+                          <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <Button variant="outline" onClick={handleClearNotifications} className="rounded-xl gap-2 border-amber-200 text-amber-600 hover:bg-amber-50"><Eraser size={18} /> تصفير الإشعارات</Button>
                     <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"><Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ إعدادات الأعمدة"}</Button>
                   </div>
                 </div>
