@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -415,7 +415,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               updatesMap.set(foundTechKey, {
                 unit_key: foundTechKey,
                 project_id: projectId,
-                data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: 'sold' }
+                data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: 'sold', lastSyncStatus: 'success' }
               });
             }
           }
@@ -552,6 +552,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     );
   };
 
+  const getDiagnosticMessage = (item: any) => {
+    if (item.data.status === 'sold') return "تمت المطابقة والتحديث بنجاح";
+    if (item.data.status === 'reserved' || item.data.status === 'pending') return "الوحدة محجوزة يدوياً في النظام";
+    if (item.data.status?.startsWith('frozen')) return "الوحدة مجمدة من قبل الإدارة";
+    
+    return "لم يتم العثور على مسمى مطابق تماماً في ملف الإكسل المرفوع لهذا المشروع";
+  };
+
   if (editingMapProject) {
     return (
       <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
@@ -610,18 +618,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <TableHeader className="bg-slate-50">
                       <TableRow>
                         <TableHead className="text-right font-black">مسمى الوحدة (Label)</TableHead>
-                        <TableHead className="text-right font-black">المفتاح التقني (ID)</TableHead>
                         <TableHead className="text-right font-black">الحالة</TableHead>
                         <TableHead className="text-right font-black">العميل</TableHead>
-                        <TableHead className="text-right font-black">رقم الهاتف</TableHead>
-                        <TableHead className="text-right font-black">تاريخ البيع</TableHead>
+                        <TableHead className="text-right font-black">تشخيص المطابقة (لماذا لم تتحدث؟)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {getInspectorData().length > 0 ? getInspectorData().map((item) => (
                         <TableRow key={item.id} className="hover:bg-slate-50/50">
                           <TableCell className="font-bold text-indigo-600">{item.label}</TableCell>
-                          <TableCell className="font-mono text-[10px] text-slate-400">{item.id}</TableCell>
                           <TableCell>
                             <span className={cn(
                               "px-3 py-1 rounded-full text-[10px] font-black uppercase",
@@ -638,12 +643,19 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             </span>
                           </TableCell>
                           <TableCell className="font-bold text-slate-700">{item.data.name || '-'}</TableCell>
-                          <TableCell className="text-slate-500">{item.data.phone || '-'}</TableCell>
-                          <TableCell className="text-slate-400 text-xs">{item.data.saleDate || '-'}</TableCell>
+                          <TableCell>
+                            <div className={cn(
+                              "flex items-center gap-2 text-xs font-bold p-2 rounded-lg",
+                              item.data.status === 'sold' ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"
+                            )}>
+                              {item.data.status === 'sold' ? <CheckCircle2 size={14} /> : <HelpCircle size={14} />}
+                              {getDiagnosticMessage(item)}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       )) : (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-20 text-slate-400 font-bold">
+                          <TableCell colSpan={4} className="text-center py-20 text-slate-400 font-bold">
                             {inspectorProjectId ? "لا توجد نتائج مطابقة للبحث" : "يرجى اختيار مشروع لعرض البيانات"}
                           </TableCell>
                         </TableRow>
