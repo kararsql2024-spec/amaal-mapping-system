@@ -5,7 +5,7 @@ import InteractiveMap from '@/components/InteractiveMap';
 import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, Store, Lock, LogOut, Bell, Clock, Info } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface IndexProps {
   projects: Project[];
@@ -38,6 +39,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
@@ -197,28 +199,47 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               </div>
             </div>
 
-            <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 flex flex-col h-[400px]">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Bell className="text-blue-600" size={20} /> الإشعارات</h3>
-                <span className="bg-blue-50 text-blue-600 text-xs font-black px-3 py-1 rounded-full">{notifications.length}</span>
-              </div>
-              <ScrollArea className="flex-1 pr-4">
-                <div className="space-y-4">
-                  {notifications.length > 0 ? notifications.map((notif) => (
-                    <div key={notif.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 animate-in fade-in slide-in-from-right-2">
-                      <p className="text-sm font-bold text-slate-700 leading-relaxed">{notif.message}</p>
-                      <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase">
-                        <Clock size={12} /> {new Date(notif.created_at).toLocaleString('ar-EG')}
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="flex flex-col items-center justify-center h-40 text-slate-400 space-y-2">
-                      <Info size={40} className="opacity-20" />
-                      <p className="font-bold">لا توجد إشعارات حالياً</p>
-                    </div>
-                  )}
+            <div className={cn(
+              "bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 flex flex-col transition-all duration-500 ease-in-out overflow-hidden",
+              isNotificationsOpen ? "h-[400px]" : "h-[88px]"
+            )}>
+              <div 
+                className="flex items-center justify-between mb-6 cursor-pointer select-none"
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              >
+                <div className="flex items-center gap-3">
+                  <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <Bell className="text-blue-600" size={20} /> الإشعارات
+                  </h3>
+                  <span className="bg-blue-50 text-blue-600 text-xs font-black px-3 py-1 rounded-full">{notifications.length}</span>
                 </div>
-              </ScrollArea>
+                <div className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                  {isNotificationsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </div>
+              </div>
+              
+              <div className={cn(
+                "flex-1 transition-opacity duration-300",
+                isNotificationsOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+              )}>
+                <ScrollArea className="h-full pr-4">
+                  <div className="space-y-4">
+                    {notifications.length > 0 ? notifications.map((notif) => (
+                      <div key={notif.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 animate-in fade-in slide-in-from-right-2">
+                        <p className="text-sm font-bold text-slate-700 leading-relaxed">{notif.message}</p>
+                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase">
+                          <Clock size={12} /> {new Date(notif.created_at).toLocaleString('ar-EG')}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="flex flex-col items-center justify-center h-40 text-slate-400 space-y-2">
+                        <Info size={40} className="opacity-20" />
+                        <p className="font-bold">لا توجد إشعارات حالياً</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
           </div>
         </main>
