@@ -10,7 +10,7 @@ import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
-import { cn } from '@/lib/utils';
+import { cn } from '@/utils/cn';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 
@@ -316,12 +316,21 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             if (techKey) {
               const oldData = housesDataMap[techKey] || { status: 'available' };
               const newName = String(row[nameIdx] || '');
-              const saleDate = row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '';
+              
+              // معالجة التاريخ بشكل أكثر مرونة (سواء كان رقماً أو نصاً)
+              let saleDate = '';
+              if (row[dateIdx]) {
+                if (typeof row[dateIdx] === 'number') {
+                  saleDate = new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0];
+                } else {
+                  saleDate = String(row[dateIdx]);
+                }
+              }
+
               const unitLabel = keyToLabelMap.get(techKey);
 
               if (oldData.status !== 'sold') {
                 let msg = "";
-                // استخدام تاريخ البيع من الإكسل في نص الإشعار
                 const displayDate = saleDate || now;
                 if (oldData.status === 'reserved') {
                   msg = `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${displayDate}`;
@@ -362,7 +371,10 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         if (finalUpdates.length > 0) {
           const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
-            await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
+            const { error: upsertError } = await supabase
+              .from('houses_data')
+              .upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
+            if (upsertError) throw upsertError;
           }
           
           if (notifications.length > 0) {
@@ -373,13 +385,13 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
           
-          showSuccess(`تم تحديث ${finalUpdates.length} وحدة وتوليد ${notifications.length} إشعار`);
+          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح. يرجى تحديث الصفحة لرؤية التغييرات.`);
         } else {
-          showError("لم يتم العثور على مسميات متطابقة");
+          showError("لم يتم العثور على مسميات متطابقة بين الإكسل والمخطط");
         }
       } catch (error) {
         console.error(error);
-        showError("حدث خطأ أثناء المعالجة");
+        showError("حدث خطأ أثناء معالجة البيانات");
       } finally {
         setIsProcessing(false);
         if (e.target) e.target.value = '';
