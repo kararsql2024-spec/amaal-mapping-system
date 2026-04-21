@@ -47,9 +47,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
-        // الترقيم يجب أن يكون ثابتاً تماماً
         pCounter++;
-        
         if (f === floor && a === aptNum) {
           const data = housesData[getAptKey(f, a)];
           const aptCode = data?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
@@ -72,6 +70,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
       case 'sold': return 'bg-rose-500 text-white border-rose-600';
       case 'pending': return 'bg-blue-500 text-white border-blue-600';
       case 'reserved': return 'bg-amber-400 text-white border-amber-500';
+      case 'investment': return 'bg-yellow-400 text-white border-yellow-500';
       default: return 'bg-emerald-500 text-white border-emerald-600';
     }
   };
@@ -142,6 +141,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                         <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
                           {data.status === 'frozen_uncounted' ? 'مجمدة (خارج المجموع)' : 
                            data.status === 'frozen_counted' ? 'مجمدة (داخل المجموع)' : 
+                           data.status === 'investment' ? 'استثمار' :
                            data.status}
                         </p>
                       </div>

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -65,6 +65,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     phoneCol: 'D',
     dateCol: 'E'
   });
+  const [investmentNames, setInvestmentNames] = useState<string[]>([]);
+  const [newInvestmentName, setNewInvestmentName] = useState('');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -96,6 +98,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           
           const update = settingsData.find(s => s.key === 'last_excel_update');
           if (update) setLastUpdate(update.value);
+
+          const investments = settingsData.find(s => s.key === 'investment_names');
+          if (investments) setInvestmentNames(investments.value || []);
         }
 
         const { data: centersData } = await supabase
@@ -236,18 +241,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     try {
-      const { error } = await supabase
-        .from('settings')
-        .upsert({ 
-          key: 'excel_mapping', 
-          value: excelMapping,
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-      showSuccess("تم حفظ إعدادات الأعمدة في قاعدة البيانات");
+      await supabase.from('settings').upsert({ key: 'excel_mapping', value: excelMapping });
+      await supabase.from('settings').upsert({ key: 'investment_names', value: investmentNames });
+      showSuccess("تم حفظ الإعدادات بنجاح");
     } catch (error) {
-      console.error("Error saving settings:", error);
       showError("فشل في حفظ الإعدادات");
     } finally {
       setIsSavingSettings(false);
@@ -302,6 +299,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const nameIdx = colToIdx(excelMapping.nameCol);
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
+
+        const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
         let currentHousesData: any[] = [];
         let from = 0;
@@ -395,6 +394,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             if (foundTechKey) {
               const oldData = housesDataMap[foundTechKey] || { status: 'available' };
               const newName = String(row[nameIdx] || '');
+              const normNewName = normalizeForMatch(newName);
+              const isInvestment = normInvestmentNames.includes(normNewName);
+              
               let saleDate = '';
               if (row[dateIdx]) {
                 if (typeof row[dateIdx] === 'number') {
@@ -404,18 +406,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 }
               }
 
-              if (oldData.status !== 'sold') {
-                let msg = oldData.status === 'reserved' 
-                  ? `تم بيع الوحدة المحجوزة ${foundLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${saleDate || now}`
+              const newStatus = isInvestment ? 'investment' : 'sold';
+
+              if (oldData.status !== newStatus) {
+                let msg = isInvestment 
+                  ? `تم تحويل الوحدة ${foundLabel} إلى حالة استثمار باسم ${newName}`
                   : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
                 notifications.push({ project_id: projectId, message: msg });
-                addLog(`تطابق تام: ${rawUnit} -> ${foundLabel}`);
+                addLog(`${isInvestment ? 'استثمار' : 'تطابق تام'}: ${rawUnit} -> ${foundLabel}`);
               }
 
               updatesMap.set(foundTechKey, {
                 unit_key: foundTechKey,
                 project_id: projectId,
-                data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: 'sold', lastSyncStatus: 'success' }
+                data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: newStatus, lastSyncStatus: 'success' }
               });
             }
           }
@@ -554,6 +558,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const getDiagnosticMessage = (item: any) => {
     if (item.data.status === 'sold') return "تمت المطابقة والتحديث بنجاح";
+    if (item.data.status === 'investment') return "تمت المطابقة وتصنيفها كاستثمار";
     if (item.data.status === 'reserved' || item.data.status === 'pending') return "الوحدة محجوزة يدوياً في النظام";
     if (item.data.status?.startsWith('frozen')) return "الوحدة مجمدة من قبل الإدارة";
     
@@ -631,12 +636,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             <span className={cn(
                               "px-3 py-1 rounded-full text-[10px] font-black uppercase",
                               item.data.status === 'sold' ? "bg-rose-100 text-rose-600" :
+                              item.data.status === 'investment' ? "bg-yellow-100 text-yellow-700" :
                               item.data.status === 'reserved' ? "bg-amber-100 text-amber-600" :
                               item.data.status === 'pending' ? "bg-blue-100 text-blue-600" :
                               item.data.status?.startsWith('frozen') ? "bg-slate-100 text-slate-600" :
                               "bg-emerald-100 text-emerald-600"
                             )}>
                               {item.data.status === 'sold' ? 'مباع' : 
+                               item.data.status === 'investment' ? 'استثمار' :
                                item.data.status === 'reserved' ? 'محجوز' :
                                item.data.status === 'pending' ? 'حجز أولي' :
                                item.data.status?.startsWith('frozen') ? 'مجمد' : 'متوفر'}
@@ -646,9 +653,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           <TableCell>
                             <div className={cn(
                               "flex items-center gap-2 text-xs font-bold p-2 rounded-lg",
-                              item.data.status === 'sold' ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"
+                              (item.data.status === 'sold' || item.data.status === 'investment') ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"
                             )}>
-                              {item.data.status === 'sold' ? <CheckCircle2 size={14} /> : <HelpCircle size={14} />}
+                              {(item.data.status === 'sold' || item.data.status === 'investment') ? <CheckCircle2 size={14} /> : <HelpCircle size={14} />}
                               {getDiagnosticMessage(item)}
                             </div>
                           </TableCell>
@@ -705,7 +712,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       </AlertDialogContent>
                     </AlertDialog>
                     <Button variant="outline" onClick={handleClearNotifications} className="rounded-xl gap-2 border-amber-200 text-amber-600 hover:bg-amber-50"><Eraser size={18} /> تصفير الإشعارات</Button>
-                    <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"><Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ إعدادات الأعمدة"}</Button>
+                    <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"><Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ الإعدادات"}</Button>
                   </div>
                 </div>
 
@@ -731,6 +738,32 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div><p className="font-bold text-slate-700">اختر ملف الإكسل للمزامنة</p><p className="text-xs text-slate-500 mt-1">سيتم تحديث الحالات والبيانات تلقائياً وتوليد الإشعارات</p></div>
                   <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="hidden" id="excel-upload" disabled={isProcessing} />
                   <Button asChild disabled={isProcessing} className="bg-slate-900 hover:bg-slate-800 rounded-xl px-8 h-12 font-bold"><label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-2">{isProcessing ? "جاري المعالجة..." : "رفع الملف وبدء التحديث"}</label></Button>
+                </div>
+
+                <div className="bg-yellow-50 p-8 rounded-[2rem] border-2 border-yellow-100 space-y-6">
+                  <div className="flex items-center gap-3 border-b border-yellow-100 pb-4">
+                    <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center"><Coins className="text-yellow-600" /></div>
+                    <h2 className="text-xl font-black text-slate-800">قائمة الاستثمارات</h2>
+                  </div>
+                  <p className="text-sm text-slate-600 font-bold">الأسماء المضافة هنا سيتم تحويل حالة وحداتهم تلقائياً إلى "استثمار" (باللون الأصفر) عند رفع ملف الإكسل.</p>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="أدخل اسم المستثمر..." 
+                      value={newInvestmentName} 
+                      onChange={(e) => setNewInvestmentName(e.target.value)} 
+                      className="rounded-xl h-12 border-yellow-200"
+                      onKeyPress={(e) => e.key === 'Enter' && (setInvestmentNames([...investmentNames, newInvestmentName]), setNewInvestmentName(''))}
+                    />
+                    <Button onClick={() => { if(newInvestmentName) { setInvestmentNames([...investmentNames, newInvestmentName]); setNewInvestmentName(''); } }} className="bg-yellow-600 hover:bg-yellow-700 rounded-xl h-12 px-6 font-bold">إضافة</Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {investmentNames.map((name, idx) => (
+                      <div key={idx} className="bg-white border border-yellow-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm">
+                        <span className="font-bold text-slate-700">{name}</span>
+                        <button onClick={() => setInvestmentNames(investmentNames.filter((_, i) => i !== idx))} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {processLogs.length > 0 && (

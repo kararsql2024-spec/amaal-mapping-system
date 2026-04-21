@@ -56,11 +56,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     if (savedCenter) setIsLoggedIn(true);
   }, []);
 
-  // جلب البيانات والإشعارات عند تغيير المشروع
   useEffect(() => {
     if (selectedProjectId) {
       const fetchData = async () => {
-        // جلب الإشعارات
         const { data: notifs } = await supabase
           .from('notifications')
           .select('*')
@@ -69,7 +67,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           .limit(50);
         if (notifs) setNotifications(notifs);
 
-        // جلب بيانات الوحدات لهذا المشروع تحديداً لضمان الدقة
         const { data: units } = await supabase
           .from('houses_data')
           .select('*')
@@ -123,13 +120,14 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const calculateStats = () => {
-    if (!activeProject) return { total: 0, sold: 0 };
-    let total = 0; let sold = 0;
+    if (!activeProject) return { total: 0, sold: 0, investment: 0 };
+    let total = 0; let sold = 0; let investment = 0;
     activeProject.elements.forEach(el => {
       if (el.type === 'house') {
         const data = housesData[el.id];
         if (data?.status !== 'frozen_uncounted') total++;
         if (data?.status === 'sold') sold++;
+        if (data?.status === 'investment') investment++;
       } else if (el.type === 'tower') {
         const floors = el.floors || 0;
         const aptsPerFloor = el.apartmentsPerFloor || 0;
@@ -139,11 +137,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             const data = housesData[key];
             if (data?.status !== 'frozen_uncounted') total++;
             if (data?.status === 'sold') sold++;
+            if (data?.status === 'investment') investment++;
           }
         }
       }
     });
-    return { total, sold };
+    return { total, sold, investment };
   };
 
   const stats = calculateStats();
@@ -213,7 +212,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               <div className="space-y-4">
                 <StatItem label="إجمالي الوحدات" value={stats.total.toString()} color="bg-blue-500" />
                 <StatItem label="الوحدات المباعة" value={stats.sold.toString()} color="bg-rose-500" />
-                <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold).toString()} color="bg-emerald-500" />
+                <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-yellow-500" />
+                <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold - stats.investment).toString()} color="bg-emerald-500" />
               </div>
             </div>
 

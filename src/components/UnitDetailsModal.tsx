@@ -66,7 +66,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   const isAvailable = formData.status === 'available';
   const isFrozen = formData.status.startsWith('frozen');
-  const showSaleFields = formData.status === 'sold' || formData.status === 'reserved' || formData.status === 'pending';
+  const showSaleFields = formData.status === 'sold' || formData.status === 'reserved' || formData.status === 'pending' || formData.status === 'investment';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -93,6 +93,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <SelectItem value="pending">حجز أولي</SelectItem>
                 <SelectItem value="reserved">محجوز</SelectItem>
                 <SelectItem value="sold">مباع</SelectItem>
+                <SelectItem value="investment">استثمار</SelectItem>
                 <SelectItem value="frozen_counted">تجميد (محسوب في المجموع)</SelectItem>
                 <SelectItem value="frozen_uncounted">تجميد (غير محسوب في المجموع)</SelectItem>
               </SelectContent>
