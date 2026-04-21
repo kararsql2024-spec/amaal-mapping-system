@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -25,20 +25,32 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface AdminProps {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  housesData: Record<string, any>;
 }
 
-const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
+const Admin = ({ projects, setProjects, setHousesData, housesData }: AdminProps) => {
   const [session, setSession] = useState<any>(null);
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [showMarketingCenters, setShowMarketingCenters] = useState(false);
+  const [showDatabaseInspector, setShowDatabaseInspector] = useState(false);
+  const [inspectorProjectId, setInspectorProjectId] = useState<string | null>(null);
+  const [inspectorSearch, setInspectorSearch] = useState('');
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
@@ -251,7 +263,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
       .replace(/[أإآ]/g, "ا") 
       .replace(/[ة]/g, "ه") 
       .replace(/[ى]/g, "ي") 
-      .replace(/\s+/g, ""); // إزالة المسافات فقط مع الحفاظ على الحالة والشرطات
+      .replace(/\s+/g, ""); 
   };
 
   const colToIdx = (col: string) => {
@@ -346,7 +358,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             let foundTechKey: string | null = null;
             let foundLabel: string | null = null;
 
-            // مطابقة تامة (Exact Match) فقط
             for (const el of elements) {
               if (el.type === 'house') {
                 if (normExcelUnit === normalizeForMatch(el.label)) {
@@ -496,6 +507,49 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
     setIsCreating(false);
     setShowSalesUpdate(false);
     setShowMarketingCenters(false);
+    setShowDatabaseInspector(false);
+  };
+
+  const getInspectorData = () => {
+    if (!inspectorProjectId) return [];
+    const project = projects.find(p => p.id === inspectorProjectId);
+    if (!project) return [];
+
+    const list: any[] = [];
+    project.elements.forEach(el => {
+      if (el.type === 'house') {
+        list.push({
+          id: el.id,
+          label: el.label,
+          type: 'منزل',
+          data: housesData[el.id] || { status: 'available' }
+        });
+      } else if (el.type === 'tower') {
+        let pCounter = 0;
+        const floors = el.floors || 1;
+        const aptsPerFloor = el.apartmentsPerFloor || 1;
+        for (let f = 1; f <= floors; f++) {
+          const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            pCounter++;
+            const techKey = `${el.id}_F${f}_A${a}`;
+            const aptCode = `P${pCounter}`;
+            const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
+            list.push({
+              id: techKey,
+              label: fullLabel,
+              type: 'شقة',
+              data: housesData[techKey] || { status: 'available' }
+            });
+          }
+        }
+      }
+    });
+
+    return list.filter(item => 
+      item.label.toLowerCase().includes(inspectorSearch.toLowerCase()) ||
+      (item.data.name && item.data.name.toLowerCase().includes(inspectorSearch.toLowerCase()))
+    );
   };
 
   if (editingMapProject) {
@@ -521,16 +575,84 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             <div><h1 className="text-2xl font-black text-slate-800">لوحة الإدارة</h1><p className="text-slate-500 font-medium">إدارة المشاريع والمخططات</p></div>
           </div>
           <div className="flex gap-2">
-            <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> المراكز التسويقية</Button>
-            <Button variant={showSalesUpdate ? "default" : "outline"} onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}><FileSpreadsheet size={18} /> تحديث المبيعات</Button>
+            <Button variant={showDatabaseInspector ? "default" : "outline"} onClick={() => { setShowDatabaseInspector(!showDatabaseInspector); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showDatabaseInspector && "bg-blue-600 hover:bg-blue-700")}><Database size={18} /> مفتش البيانات</Button>
+            <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowDatabaseInspector(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> المراكز التسويقية</Button>
+            <Button variant={showSalesUpdate ? "default" : "outline"} onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowDatabaseInspector(false); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}><FileSpreadsheet size={18} /> تحديث المبيعات</Button>
             <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
           </div>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 space-y-6">
-            {showMarketingCenters ? (
+          <div className="md:col-span-3 space-y-6">
+            {showDatabaseInspector ? (
+              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><Database className="text-blue-600" /></div><h2 className="text-xl font-black text-slate-800">مفتش قاعدة البيانات</h2></div>
+                  <div className="flex gap-4 items-center">
+                    <div className="relative w-64">
+                      <Search className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                      <Input placeholder="بحث برقم الوحدة أو الاسم..." value={inspectorSearch} onChange={(e) => setInspectorSearch(e.target.value)} className="pr-10 rounded-xl h-10" />
+                    </div>
+                    <select 
+                      className="h-10 rounded-xl border border-slate-200 px-4 font-bold text-sm"
+                      value={inspectorProjectId || ''}
+                      onChange={(e) => setInspectorProjectId(e.target.value)}
+                    >
+                      <option value="">اختر المشروع...</option>
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-slate-50">
+                      <TableRow>
+                        <TableHead className="text-right font-black">مسمى الوحدة (Label)</TableHead>
+                        <TableHead className="text-right font-black">المفتاح التقني (ID)</TableHead>
+                        <TableHead className="text-right font-black">الحالة</TableHead>
+                        <TableHead className="text-right font-black">العميل</TableHead>
+                        <TableHead className="text-right font-black">رقم الهاتف</TableHead>
+                        <TableHead className="text-right font-black">تاريخ البيع</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {getInspectorData().length > 0 ? getInspectorData().map((item) => (
+                        <TableRow key={item.id} className="hover:bg-slate-50/50">
+                          <TableCell className="font-bold text-indigo-600">{item.label}</TableCell>
+                          <TableCell className="font-mono text-[10px] text-slate-400">{item.id}</TableCell>
+                          <TableCell>
+                            <span className={cn(
+                              "px-3 py-1 rounded-full text-[10px] font-black uppercase",
+                              item.data.status === 'sold' ? "bg-rose-100 text-rose-600" :
+                              item.data.status === 'reserved' ? "bg-amber-100 text-amber-600" :
+                              item.data.status === 'pending' ? "bg-blue-100 text-blue-600" :
+                              item.data.status?.startsWith('frozen') ? "bg-slate-100 text-slate-600" :
+                              "bg-emerald-100 text-emerald-600"
+                            )}>
+                              {item.data.status === 'sold' ? 'مباع' : 
+                               item.data.status === 'reserved' ? 'محجوز' :
+                               item.data.status === 'pending' ? 'حجز أولي' :
+                               item.data.status?.startsWith('frozen') ? 'مجمد' : 'متوفر'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="font-bold text-slate-700">{item.data.name || '-'}</TableCell>
+                          <TableCell className="text-slate-500">{item.data.phone || '-'}</TableCell>
+                          <TableCell className="text-slate-400 text-xs">{item.data.saleDate || '-'}</TableCell>
+                        </TableRow>
+                      )) : (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-20 text-slate-400 font-bold">
+                            {inspectorProjectId ? "لا توجد نتائج مطابقة للبحث" : "يرجى اختيار مشروع لعرض البيانات"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            ) : showMarketingCenters ? (
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center gap-3 border-b pb-4"><div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center"><Store className="text-indigo-600" /></div><h2 className="text-xl font-black text-slate-800">إدارة المراكز التسويقية</h2></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
