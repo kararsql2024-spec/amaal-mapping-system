@@ -252,7 +252,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
       .replace(/[أإآ]/g, "ا") 
       .replace(/[ة]/g, "ه") 
       .replace(/[ى]/g, "ي") 
-      .replace(/[^a-z0-9\u0621-\u064A]/gi, "") 
+      .replace(/[^a-z0-9\u0621-\u064A-]/gi, "") // أبقينا على الشرطة للمطابقة بالأجزاء
       .replace(/\s+/g, "");
   };
 
@@ -343,27 +343,32 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           
           if (projectId) {
             const normExcelUnit = normalizeForMatch(rawUnit);
+            const excelParts = normExcelUnit.split('-');
             const elements = projectElementsMap.get(projectId) || [];
             
             let foundTechKey: string | null = null;
             let foundLabel: string | null = null;
 
-            // البحث الدقيق في العناصر
             for (const el of elements) {
               if (el.type === 'house') {
                 const normMapLabel = normalizeForMatch(el.label);
-                // مطابقة دقيقة: إما تطابق تام، أو ينتهي بـ -رقم الوحدة لضمان عدم تداخل P1 مع P10
-                if (normExcelUnit === normMapLabel || normExcelUnit.endsWith("-" + normMapLabel) || normExcelUnit.endsWith(normMapLabel)) {
-                  // فحص إضافي للتأكد من عدم وجود رقم ملتصق قبل المطابقة (مثل P10 لا تطابق P1)
-                  const suffixStart = normExcelUnit.lastIndexOf(normMapLabel);
-                  if (suffixStart > 0) {
-                    const charBefore = normExcelUnit[suffixStart - 1];
-                    if (/[0-9]/.test(charBefore)) continue; // إذا كان قبله رقم، فهذا ليس تطابقاً صحيحاً
-                  }
-                  
+                const mapParts = normMapLabel.split('-');
+                
+                // مطابقة ذكية بالأجزاء: إذا كانت أجزاء الخريطة موجودة بالكامل في نهاية أجزاء الإكسل
+                if (normExcelUnit === normMapLabel) {
                   foundTechKey = el.id;
                   foundLabel = el.label;
                   break;
+                }
+                
+                if (excelParts.length >= mapParts.length) {
+                  const lastExcelParts = excelParts.slice(-mapParts.length).join('');
+                  const joinedMapParts = mapParts.join('');
+                  if (lastExcelParts === joinedMapParts) {
+                    foundTechKey = el.id;
+                    foundLabel = el.label;
+                    break;
+                  }
                 }
               } else if (el.type === 'tower') {
                 let pCounter = 0;
@@ -383,8 +388,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                     const normFull = normalizeForMatch(fullLabel);
                     const normShort = normalizeForMatch(shortLabel);
 
-                    // مطابقة دقيقة للأبراج
-                    if (normExcelUnit === normFull || normExcelUnit === normShort || normExcelUnit.endsWith("-" + normShort)) {
+                    if (normExcelUnit === normFull || normExcelUnit.endsWith("-" + normShort) || normExcelUnit.endsWith(normShort)) {
                       foundTechKey = techKey;
                       foundLabel = fullLabel;
                       towerMatch = true;
