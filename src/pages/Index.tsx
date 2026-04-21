@@ -64,7 +64,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           .select('*')
           .eq('project_id', selectedProjectId)
           .order('created_at', { ascending: false })
-          .limit(20);
+          .limit(50);
         if (data) setNotifications(data);
       };
       fetchNotifications();
@@ -88,7 +88,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
-  const selectedElement = activeProject?.elements.find(el => el.id === selectedElementId);
+  const selectedElement = activeProject?.elements.find(el => el.id === id);
 
   const handleElementClick = (id: string) => {
     setSelectedElementId(id);
@@ -201,10 +201,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
             <div className={cn(
               "bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 flex flex-col transition-all duration-500 ease-in-out overflow-hidden",
-              isNotificationsOpen ? "h-[400px]" : "h-[88px]"
+              isNotificationsOpen ? "h-[500px]" : "h-[88px]"
             )}>
               <div 
-                className="flex items-center justify-between mb-6 cursor-pointer select-none"
+                className="flex items-center justify-between mb-6 cursor-pointer select-none shrink-0"
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
               >
                 <div className="flex items-center gap-3">
@@ -219,11 +219,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               </div>
               
               <div className={cn(
-                "flex-1 transition-opacity duration-300",
+                "flex-1 min-h-0 transition-opacity duration-300",
                 isNotificationsOpen ? "opacity-100" : "opacity-0 pointer-events-none"
               )}>
-                <ScrollArea className="h-full pr-4">
-                  <div className="space-y-4">
+                <ScrollArea className="h-full w-full">
+                  <div className="space-y-4 pr-4">
                     {notifications.length > 0 ? notifications.map((notif) => (
                       <div key={notif.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 animate-in fade-in slide-in-from-right-2">
                         <p className="text-sm font-bold text-slate-700 leading-relaxed">{notif.message}</p>
@@ -244,8 +244,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         </main>
 
-        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={selectedElement?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} />
-        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={selectedElement} housesData={housesData} onSaveApartment={handleSaveData} />
+        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={activeProject?.elements.find(el => el.id === selectedElementId)?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} />
+        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={activeProject?.elements.find(el => el.id === selectedElementId)} housesData={housesData} onSaveApartment={handleSaveData} />
         <MadeWithDyad />
       </div>
     </div>

@@ -29,9 +29,24 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    // تم رفع الحد الأقصى للتقريب إلى 100 ليكون "غير محدود" فعلياً للمستخدم
-    setScale(prev => Math.min(Math.max(prev * delta, 0.05), 100));
+    const newScale = Math.min(Math.max(scale * delta, 0.05), 100);
+    
+    if (newScale !== scale) {
+      const scaleRatio = newScale / scale;
+      setPosition({
+        x: mouseX - (mouseX - position.x) * scaleRatio,
+        y: mouseY - (mouseY - position.y) * scaleRatio
+      });
+      setScale(newScale);
+    }
   };
 
   const getElementPoints = (el: MapElement): Point[] => {
@@ -185,7 +200,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
             const pathD = pointsToPath(pts, !el.isStroke);
             
-            // Dynamic sizing: Maximize space while keeping a safe margin from borders
             const dynamicIconSize = minDim * 0.6; 
             const dynamicFontSize = minDim * 0.3;
 
