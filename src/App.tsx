@@ -92,6 +92,7 @@ const App = () => {
                 <Admin 
                   projects={projects} 
                   setProjects={setProjects} 
+                  setHousesData={setHousesData}
                 />
               } 
             />

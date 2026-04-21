@@ -18,9 +18,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface AdminProps {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
 }
 
-const Admin = ({ projects, setProjects }: AdminProps) => {
+const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
   const [session, setSession] = useState<any>(null);
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -418,6 +419,15 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           if (notifications.length > 0) {
             await supabase.from('notifications').insert(notifications);
           }
+
+          // تحديث الحالة المحلية فوراً
+          setHousesData(prev => {
+            const next = { ...prev };
+            finalUpdates.forEach(u => {
+              next[u.unit_key] = u.data;
+            });
+            return next;
+          });
 
           const updateTime = new Date().toISOString();
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
