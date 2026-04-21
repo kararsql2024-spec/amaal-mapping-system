@@ -319,43 +319,14 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           housesDataMap[u.unit_key] = u.data;
         });
 
-        const labelToKeyMap = new Map<string, string>();
-        const keyToLabelMap = new Map<string, string>();
+        // بناء خريطة البحث
         const projectMap = new Map<string, string>();
+        const projectElementsMap = new Map<string, MapElement[]>();
 
         projects.forEach(project => {
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
-
-          project.elements.forEach(el => {
-            if (el.type === 'house') {
-              const normLabel = normalizeForMatch(el.label);
-              labelToKeyMap.set(`${project.id}_${normLabel}`, el.id);
-              keyToLabelMap.set(el.id, el.label);
-            } else if (el.type === 'tower') {
-              let pCounter = 0;
-              const floors = el.floors || 1;
-              const aptsPerFloor = el.apartmentsPerFloor || 1;
-
-              for (let f = 1; f <= floors; f++) {
-                const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                for (let a = 1; a <= aptsPerFloor; a++) {
-                  const techKey = `${el.id}_F${f}_A${a}`;
-                  pCounter++;
-                  const aptCode = `P${pCounter}`;
-                  const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
-                  const normLabel = normalizeForMatch(fullLabel);
-                  
-                  labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
-                  keyToLabelMap.set(techKey, fullLabel);
-
-                  // دعم المطابقة المختصرة (بدون كود الطابق)
-                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(`${el.label}-${aptCode}`)}`, techKey);
-                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(`${el.label}-D${pCounter}`)}`, techKey);
-                }
-              }
-            }
-          });
+          projectElementsMap.set(project.id, project.elements);
         });
 
         const updatesMap = new Map<string, any>();
@@ -374,19 +345,60 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           
           if (projectId) {
             projectsInExcel.add(projectId);
-            let normUnitLabel = normalizeForMatch(rawUnit);
+            const normExcelUnit = normalizeForMatch(rawUnit);
+            const elements = projectElementsMap.get(projectId) || [];
             
-            // محاولة المطابقة المباشرة
-            let techKey = labelToKeyMap.get(`${projectId}_${normUnitLabel}`);
+            let foundElementId: string | null = null;
+            let foundTechKey: string | null = null;
+            let foundLabel: string | null = null;
 
-            // إذا لم ينجح، حاول إزالة اسم المشروع من بداية رقم الوحدة (مثلاً Z3-B2-D32 -> B2-D32)
-            if (!techKey && normUnitLabel.startsWith(normCity)) {
-              const strippedLabel = normUnitLabel.substring(normCity.length);
-              techKey = labelToKeyMap.get(`${projectId}_${strippedLabel}`);
+            // البحث الذكي في العناصر
+            for (const el of elements) {
+              if (el.type === 'house') {
+                const normMapLabel = normalizeForMatch(el.label);
+                // مطابقة ذكية: تطابق تام، أو الإكسل ينتهي بملصق الخريطة، أو العكس
+                if (normExcelUnit === normMapLabel || normExcelUnit.endsWith(normMapLabel) || normMapLabel.endsWith(normExcelUnit)) {
+                  foundElementId = el.id;
+                  foundTechKey = el.id;
+                  foundLabel = el.label;
+                  break;
+                }
+              } else if (el.type === 'tower') {
+                let pCounter = 0;
+                const floors = el.floors || 1;
+                const aptsPerFloor = el.apartmentsPerFloor || 1;
+                let towerMatch = false;
+
+                for (let f = 1; f <= floors; f++) {
+                  const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                  for (let a = 1; a <= aptsPerFloor; a++) {
+                    pCounter++;
+                    const techKey = `${el.id}_F${f}_A${a}`;
+                    const aptCode = `P${pCounter}`;
+                    const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
+                    const shortLabel = `${el.label}-${aptCode}`;
+                    const altShortLabel = `${el.label}-D${pCounter}`;
+
+                    const normFull = normalizeForMatch(fullLabel);
+                    const normShort = normalizeForMatch(shortLabel);
+                    const normAlt = normalizeForMatch(altShortLabel);
+
+                    if (normExcelUnit === normFull || normExcelUnit === normShort || normExcelUnit === normAlt || normExcelUnit.endsWith(normShort) || normExcelUnit.endsWith(normAlt)) {
+                      foundElementId = el.id;
+                      foundTechKey = techKey;
+                      foundLabel = fullLabel;
+                      towerMatch = true;
+                      break;
+                    }
+                  }
+                  if (towerMatch) break;
+                }
+                if (towerMatch) break;
+              }
             }
 
-            if (techKey) {
-              const oldData = housesDataMap[techKey] || { status: 'available' };
+            if (foundTechKey) {
+              const oldData = housesDataMap[foundTechKey] || { status: 'available' };
               const newName = String(row[nameIdx] || '');
               let saleDate = '';
               if (row[dateIdx]) {
@@ -397,17 +409,16 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                 }
               }
 
-              const unitLabel = keyToLabelMap.get(techKey);
               if (oldData.status !== 'sold') {
                 let msg = oldData.status === 'reserved' 
-                  ? `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${saleDate || now}`
-                  : `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
+                  ? `تم بيع الوحدة المحجوزة ${foundLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${saleDate || now}`
+                  : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
                 notifications.push({ project_id: projectId, message: msg });
-                addLog(`تطابق: ${rawUnit} -> ${unitLabel} (تم التحديث لمباع)`);
+                addLog(`تطابق ناجح: ${rawUnit} -> ${foundLabel}`);
               }
 
-              updatesMap.set(techKey, {
-                unit_key: techKey,
+              updatesMap.set(foundTechKey, {
+                unit_key: foundTechKey,
                 project_id: projectId,
                 data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: 'sold' }
               });
@@ -417,10 +428,18 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           }
         });
 
+        // معالجة الوحدات التي أصبحت متوفرة (موجودة في قاعدة البيانات كمباعة ولكن غير موجودة في الإكسل الجديد)
         currentHousesData?.forEach(unit => {
           if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
             if (!updatesMap.has(unit.unit_key)) {
-              const unitLabel = keyToLabelMap.get(unit.unit_key);
+              // البحث عن اسم الوحدة للعرض في الإشعار
+              let unitLabel = "وحدة سكنية";
+              const project = projects.find(p => p.id === unit.project_id);
+              if (project) {
+                const el = project.elements.find(e => e.id === unit.unit_key || unit.unit_key.startsWith(e.id));
+                if (el) unitLabel = el.label;
+              }
+
               notifications.push({ project_id: unit.project_id, message: `تم توفر الوحدة السكنية ${unitLabel} بتاريخ ${now}` });
               addLog(`تحديث: الوحدة ${unitLabel} أصبحت متوفرة الآن`);
               updatesMap.set(unit.unit_key, {
@@ -442,7 +461,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           }
           if (notifications.length > 0) await supabase.from('notifications').insert(notifications);
           
-          // تحديث الحالة المحلية فوراً لضمان الانعكاس على الخريطة
           setHousesData(prev => {
             const next = { ...prev };
             finalUpdates.forEach(u => { next[u.unit_key] = u.data; });
