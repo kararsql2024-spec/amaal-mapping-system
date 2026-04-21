@@ -10,7 +10,7 @@ import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
-import { cn } from '@/utils/cn';
+import { cn } from '@/lib/utils';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 
@@ -317,7 +317,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
               const oldData = housesDataMap[techKey] || { status: 'available' };
               const newName = String(row[nameIdx] || '');
               
-              // معالجة التاريخ بشكل أكثر مرونة (سواء كان رقماً أو نصاً)
               let saleDate = '';
               if (row[dateIdx]) {
                 if (typeof row[dateIdx] === 'number') {
