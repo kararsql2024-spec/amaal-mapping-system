@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -138,17 +138,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-  };
-
-  const handleClearNotifications = async () => {
-    if (!confirm("هل أنت متأكد من رغبتك في مسح كافة الإشعارات؟ لا يمكن التراجع عن هذا الإجراء.")) return;
-    try {
-      const { error } = await supabase.from('notifications').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (error) throw error;
-      showSuccess("تم مسح كافة الإشعارات بنجاح");
-    } catch (error) {
-      showError("فشل في مسح الإشعارات");
-    }
   };
 
   const handleAddCenter = async () => {
@@ -327,20 +316,15 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
             if (techKey) {
               const oldData = housesDataMap[techKey] || { status: 'available' };
               const newName = String(row[nameIdx] || '');
-              
-              // Extract date from Excel
-              const excelDateRaw = row[dateIdx];
-              const saleDate = excelDateRaw ? new Date((excelDateRaw - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '';
-              const displayDate = excelDateRaw ? new Date((excelDateRaw - (25567 + 1)) * 86400 * 1000).toLocaleDateString('ar-EG') : now;
-              
+              const saleDate = row[dateIdx] ? new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0] : '';
               const unitLabel = keyToLabelMap.get(techKey);
 
               if (oldData.status !== 'sold') {
                 let msg = "";
                 if (oldData.status === 'reserved') {
-                  msg = `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${displayDate}`;
+                  msg = `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${now}`;
                 } else {
-                  msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${displayDate}`;
+                  msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${now}`;
                 }
                 notifications.push({ project_id: projectId, message: msg });
               }
@@ -507,10 +491,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center justify-between border-b pb-4">
                   <div className="flex items-center gap-3"><div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div><h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2></div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleClearNotifications} variant="outline" className="rounded-xl gap-2 border-rose-200 text-rose-600 hover:bg-rose-50"><Eraser size={18} /> مسح الإشعارات</Button>
-                    <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"><Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ إعدادات الأعمدة"}</Button>
-                  </div>
+                  <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"><Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ إعدادات الأعمدة"}</Button>
                 </div>
 
                 {lastUpdate && (
