@@ -46,7 +46,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
 
-  // تحديث الأعمدة الافتراضية بناءً على ملف المستخدم (I للوحدة، A للمدينة/المشروع)
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
     unitCol: 'I',
@@ -330,7 +329,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
         });
 
         const updatesMap = new Map<string, any>();
-        const projectsInExcel = new Set<string>();
         const notifications: any[] = [];
         const now = new Date().toLocaleString('ar-EG');
 
@@ -344,19 +342,25 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           const projectId = projectMap.get(normCity);
           
           if (projectId) {
-            projectsInExcel.add(projectId);
             const normExcelUnit = normalizeForMatch(rawUnit);
             const elements = projectElementsMap.get(projectId) || [];
             
             let foundTechKey: string | null = null;
             let foundLabel: string | null = null;
 
-            // البحث الذكي في العناصر
+            // البحث الدقيق في العناصر
             for (const el of elements) {
               if (el.type === 'house') {
                 const normMapLabel = normalizeForMatch(el.label);
-                // مطابقة ذكية: إذا كان نص الإكسل يحتوي على ملصق الخريطة (مثلاً Z3-B8-D138 يحتوي على B8-D138)
-                if (normExcelUnit === normMapLabel || normExcelUnit.includes(normMapLabel) || normMapLabel.includes(normExcelUnit)) {
+                // مطابقة دقيقة: إما تطابق تام، أو ينتهي بـ -رقم الوحدة لضمان عدم تداخل P1 مع P10
+                if (normExcelUnit === normMapLabel || normExcelUnit.endsWith("-" + normMapLabel) || normExcelUnit.endsWith(normMapLabel)) {
+                  // فحص إضافي للتأكد من عدم وجود رقم ملتصق قبل المطابقة (مثل P10 لا تطابق P1)
+                  const suffixStart = normExcelUnit.lastIndexOf(normMapLabel);
+                  if (suffixStart > 0) {
+                    const charBefore = normExcelUnit[suffixStart - 1];
+                    if (/[0-9]/.test(charBefore)) continue; // إذا كان قبله رقم، فهذا ليس تطابقاً صحيحاً
+                  }
+                  
                   foundTechKey = el.id;
                   foundLabel = el.label;
                   break;
@@ -379,7 +383,8 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                     const normFull = normalizeForMatch(fullLabel);
                     const normShort = normalizeForMatch(shortLabel);
 
-                    if (normExcelUnit.includes(normFull) || normExcelUnit.includes(normShort)) {
+                    // مطابقة دقيقة للأبراج
+                    if (normExcelUnit === normFull || normExcelUnit === normShort || normExcelUnit.endsWith("-" + normShort)) {
                       foundTechKey = techKey;
                       foundLabel = fullLabel;
                       towerMatch = true;
@@ -409,7 +414,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                   ? `تم بيع الوحدة المحجوزة ${foundLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${saleDate || now}`
                   : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
                 notifications.push({ project_id: projectId, message: msg });
-                addLog(`تطابق ناجح: ${rawUnit} -> ${foundLabel}`);
+                addLog(`تطابق: ${rawUnit} -> ${foundLabel}`);
               }
 
               updatesMap.set(foundTechKey, {
