@@ -30,7 +30,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale(prev => Math.min(Math.max(prev * delta, 0.5), 5));
+    // تم رفع الحد الأقصى للتقريب إلى 100 ليكون "غير محدود" فعلياً للمستخدم
+    setScale(prev => Math.min(Math.max(prev * delta, 0.05), 100));
   };
 
   const getElementPoints = (el: MapElement): Point[] => {
@@ -278,8 +279,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       </div>
       
       <div className="absolute top-6 left-6 flex flex-col gap-2">
-        <button onClick={() => setScale(s => Math.min(s + 0.2, 5))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomIn size={20} /></button>
-        <button onClick={() => setScale(s => Math.max(s - 0.2, 0.5))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
+        <button onClick={() => setScale(s => Math.min(s + 0.5, 100))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomIn size={20} /></button>
+        <button onClick={() => setScale(s => Math.max(s - 0.5, 0.05))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
         <button onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><RotateCcw size={20} /></button>
         <button onClick={() => setIsFullScreen(!isFullScreen)} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50">{isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
       </div>
