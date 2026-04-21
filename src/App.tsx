@@ -93,6 +93,7 @@ const App = () => {
                   projects={projects} 
                   setProjects={setProjects} 
                   setHousesData={setHousesData}
+                  housesData={housesData}
                 />
               } 
             />

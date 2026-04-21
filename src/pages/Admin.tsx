@@ -41,7 +41,7 @@ interface AdminProps {
   housesData: Record<string, any>;
 }
 
-const Admin = ({ projects, setProjects, setHousesData, housesData }: AdminProps) => {
+const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminProps) => {
   const [session, setSession] = useState<any>(null);
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -522,7 +522,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData }: AdminProps)
           id: el.id,
           label: el.label,
           type: 'منزل',
-          data: housesData[el.id] || { status: 'available' }
+          data: (housesData && housesData[el.id]) || { status: 'available' }
         });
       } else if (el.type === 'tower') {
         let pCounter = 0;
@@ -539,7 +539,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData }: AdminProps)
               id: techKey,
               label: fullLabel,
               type: 'شقة',
-              data: housesData[techKey] || { status: 'available' }
+              data: (housesData && housesData[techKey]) || { status: 'available' }
             });
           }
         }
