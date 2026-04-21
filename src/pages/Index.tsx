@@ -78,11 +78,62 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             formattedUnits[u.unit_key] = u.data;
           });
           setHousesData(prev => ({ ...prev, ...formattedUnits }));
+          
+          // فحص انتهاء الحجوزات (7 أيام)
+          checkExpiredBookings(units, selectedProjectId);
         }
       };
       fetchData();
     }
   }, [selectedProjectId, setHousesData]);
+
+  const checkExpiredBookings = async (units: any[], projectId: string) => {
+    const now = new Date();
+    const expiredUnits: any[] = [];
+    const expiredNotifications: any[] = [];
+
+    units.forEach(unit => {
+      if (unit.data?.status === 'pending' && unit.data?.saleDate) {
+        const bookingDate = new Date(unit.data.saleDate);
+        const diffTime = Math.abs(now.getTime() - bookingDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays > 7) {
+          expiredUnits.push({
+            unit_key: unit.unit_key,
+            project_id: projectId,
+            data: { status: 'available' } // تصفير البيانات وإعادتها لمتوفر
+          });
+          
+          expiredNotifications.push({
+            project_id: projectId,
+            message: `انتهى الحجز الأولي للوحدة ${unit.unit_key} لعدم تحويلها لمباع خلال 7 أيام.`
+          });
+        }
+      }
+    });
+
+    if (expiredUnits.length > 0) {
+      await supabase.from('houses_data').upsert(expiredUnits, { onConflict: 'unit_key' });
+      await supabase.from('notifications').insert(expiredNotifications);
+      
+      // تحديث الحالة المحلية
+      setHousesData(prev => {
+        const next = { ...prev };
+        expiredUnits.forEach(u => { next[u.unit_key] = u.data; });
+        return next;
+      });
+      
+      // تحديث الإشعارات
+      const { data: newNotifs } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (newNotifs) setNotifications(newNotifs);
+    }
+  };
 
   const handleLogin = () => {
     const center = marketingCenters.find(c => c.id === loginData.centerId);
@@ -146,6 +197,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const stats = calculateStats();
+
+  const getNotificationColor = (message: string) => {
+    if (message.includes('مباع') || message.includes('بيع')) return 'bg-rose-50 border-rose-100 text-rose-700';
+    if (message.includes('استثمار')) return 'bg-purple-50 border-purple-100 text-purple-700';
+    if (message.includes('متوفر') || message.includes('انتهى الحجز')) return 'bg-blue-50 border-blue-100 text-blue-700';
+    return 'bg-slate-50 border-slate-100 text-slate-700';
+  };
 
   if (!isLoggedIn) {
     return (
@@ -212,7 +270,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               <div className="space-y-4">
                 <StatItem label="إجمالي الوحدات" value={stats.total.toString()} color="bg-blue-500" />
                 <StatItem label="الوحدات المباعة" value={stats.sold.toString()} color="bg-rose-500" />
-                <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-yellow-500" />
+                <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-purple-500" />
                 <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold - stats.investment).toString()} color="bg-emerald-500" />
               </div>
             </div>
@@ -243,9 +301,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 <ScrollArea className="h-full w-full">
                   <div className="space-y-4 pr-4">
                     {notifications.length > 0 ? notifications.map((notif) => (
-                      <div key={notif.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 animate-in fade-in slide-in-from-right-2">
-                        <p className="text-sm font-bold text-slate-700 leading-relaxed">{notif.message}</p>
-                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase">
+                      <div key={notif.id} className={cn("p-4 rounded-2xl border space-y-2 animate-in fade-in slide-in-from-right-2", getNotificationColor(notif.message))}>
+                        <p className="text-sm font-bold leading-relaxed">{notif.message}</p>
+                        <div className="flex items-center gap-2 text-[10px] font-black opacity-60 uppercase">
                           <Clock size={12} /> {new Date(notif.created_at).toLocaleString('ar-EG')}
                         </div>
                       </div>

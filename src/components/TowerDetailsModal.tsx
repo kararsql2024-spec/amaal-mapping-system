@@ -70,7 +70,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
       case 'sold': return 'bg-rose-500 text-white border-rose-600';
       case 'pending': return 'bg-blue-500 text-white border-blue-600';
       case 'reserved': return 'bg-amber-400 text-white border-amber-500';
-      case 'investment': return 'bg-yellow-400 text-white border-yellow-500';
+      case 'investment': return 'bg-purple-400 text-white border-purple-500';
       default: return 'bg-emerald-500 text-white border-emerald-600';
     }
   };

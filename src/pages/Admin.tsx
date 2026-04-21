@@ -664,7 +664,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             <span className={cn(
                               "px-3 py-1 rounded-full text-[10px] font-black uppercase",
                               item.data.status === 'sold' ? "bg-rose-100 text-rose-600" :
-                              item.data.status === 'investment' ? "bg-yellow-100 text-yellow-700" :
+                              item.data.status === 'investment' ? "bg-purple-100 text-purple-700" :
                               item.data.status === 'reserved' ? "bg-amber-100 text-amber-600" :
                               item.data.status === 'pending' ? "bg-blue-100 text-blue-600" :
                               item.data.status?.startsWith('frozen') ? "bg-slate-100 text-slate-600" :
@@ -768,25 +768,25 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <Button asChild disabled={isProcessing} className="bg-slate-900 hover:bg-slate-800 rounded-xl px-8 h-12 font-bold"><label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-2">{isProcessing ? "جاري المعالجة..." : "رفع الملف وبدء التحديث"}</label></Button>
                 </div>
 
-                <div className="bg-yellow-50 p-8 rounded-[2rem] border-2 border-yellow-100 space-y-6">
-                  <div className="flex items-center gap-3 border-b border-yellow-100 pb-4">
-                    <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center"><Coins className="text-yellow-600" /></div>
+                <div className="bg-purple-50 p-8 rounded-[2rem] border-2 border-purple-100 space-y-6">
+                  <div className="flex items-center gap-3 border-b border-purple-100 pb-4">
+                    <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Coins className="text-purple-600" /></div>
                     <h2 className="text-xl font-black text-slate-800">قائمة الاستثمارات</h2>
                   </div>
-                  <p className="text-sm text-slate-600 font-bold">الأسماء المضافة هنا سيتم تحويل حالة وحداتهم تلقائياً إلى "استثمار" (باللون الأصفر) عند رفع ملف الإكسل.</p>
+                  <p className="text-sm text-slate-600 font-bold">الأسماء المضافة هنا سيتم تحويل حالة وحداتهم تلقائياً إلى "استثمار" (باللون البنفسجي) عند رفع ملف الإكسل.</p>
                   <div className="flex gap-2">
                     <Input 
                       placeholder="أدخل اسم المستثمر..." 
                       value={newInvestmentName} 
                       onChange={(e) => setNewInvestmentName(e.target.value)} 
-                      className="rounded-xl h-12 border-yellow-200"
+                      className="rounded-xl h-12 border-purple-200"
                       onKeyPress={(e) => e.key === 'Enter' && handleAddInvestmentName()}
                     />
-                    <Button onClick={handleAddInvestmentName} className="bg-yellow-600 hover:bg-yellow-700 rounded-xl h-12 px-6 font-bold">إضافة وحفظ</Button>
+                    <Button onClick={handleAddInvestmentName} className="bg-purple-600 hover:bg-purple-700 rounded-xl h-12 px-6 font-bold">إضافة وحفظ</Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {investmentNames.map((name, idx) => (
-                      <div key={idx} className="bg-white border border-yellow-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm">
+                      <div key={idx} className="bg-white border border-purple-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm">
                         <span className="font-bold text-slate-700">{name}</span>
                         <button onClick={() => handleDeleteInvestmentName(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
                       </div>

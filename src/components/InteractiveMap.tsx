@@ -79,7 +79,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'house') {
       const baseStroke = el.hasBorder ? (el.borderColor || '#94a3b8') : '#94a3b8';
       if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: baseStroke, opacity: 1, strokeWidth: 2 };
-      if (data?.status === 'investment') return { fill: '#facc15', stroke: el.hasBorder ? (el.borderColor || '#eab308') : '#eab308', opacity: 1, strokeWidth: 2 };
+      if (data?.status === 'investment') return { fill: '#d8b4fe', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : '#a855f7', opacity: 1, strokeWidth: 2 };
       if (!data || data.status === 'available') return { fill: el.color || '#10b981', stroke: el.hasBorder ? (el.borderColor || '#059669') : '#059669', opacity: 1, strokeWidth: 2 };
       if (data.status === 'sold') return { fill: '#f43f5e', stroke: el.hasBorder ? (el.borderColor || '#e11d48') : '#e11d48', opacity: 1, strokeWidth: 2 };
       if (data.status === 'reserved') return { fill: '#fbbf24', stroke: el.hasBorder ? (el.borderColor || '#f59e0b') : '#f59e0b', opacity: 1, strokeWidth: 2 };
