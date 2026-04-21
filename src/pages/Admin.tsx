@@ -46,9 +46,10 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
 
+  // تحديث الأعمدة الافتراضية بناءً على ملف المستخدم (I للوحدة، A للمدينة/المشروع)
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
-    unitCol: 'B',
+    unitCol: 'I',
     nameCol: 'C',
     phoneCol: 'D',
     dateCol: 'E'
@@ -319,7 +320,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           housesDataMap[u.unit_key] = u.data;
         });
 
-        // بناء خريطة البحث
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
 
@@ -348,7 +348,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             const normExcelUnit = normalizeForMatch(rawUnit);
             const elements = projectElementsMap.get(projectId) || [];
             
-            let foundElementId: string | null = null;
             let foundTechKey: string | null = null;
             let foundLabel: string | null = null;
 
@@ -356,9 +355,8 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             for (const el of elements) {
               if (el.type === 'house') {
                 const normMapLabel = normalizeForMatch(el.label);
-                // مطابقة ذكية: تطابق تام، أو الإكسل ينتهي بملصق الخريطة، أو العكس
-                if (normExcelUnit === normMapLabel || normExcelUnit.endsWith(normMapLabel) || normMapLabel.endsWith(normExcelUnit)) {
-                  foundElementId = el.id;
+                // مطابقة ذكية: إذا كان نص الإكسل يحتوي على ملصق الخريطة (مثلاً Z3-B8-D138 يحتوي على B8-D138)
+                if (normExcelUnit === normMapLabel || normExcelUnit.includes(normMapLabel) || normMapLabel.includes(normExcelUnit)) {
                   foundTechKey = el.id;
                   foundLabel = el.label;
                   break;
@@ -377,14 +375,11 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                     const aptCode = `P${pCounter}`;
                     const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                     const shortLabel = `${el.label}-${aptCode}`;
-                    const altShortLabel = `${el.label}-D${pCounter}`;
 
                     const normFull = normalizeForMatch(fullLabel);
                     const normShort = normalizeForMatch(shortLabel);
-                    const normAlt = normalizeForMatch(altShortLabel);
 
-                    if (normExcelUnit === normFull || normExcelUnit === normShort || normExcelUnit === normAlt || normExcelUnit.endsWith(normShort) || normExcelUnit.endsWith(normAlt)) {
-                      foundElementId = el.id;
+                    if (normExcelUnit.includes(normFull) || normExcelUnit.includes(normShort)) {
                       foundTechKey = techKey;
                       foundLabel = fullLabel;
                       towerMatch = true;
@@ -421,31 +416,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                 unit_key: foundTechKey,
                 project_id: projectId,
                 data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: 'sold' }
-              });
-            } else {
-              addLog(`تنبيه: لم يتم العثور على الوحدة "${rawUnit}" في مشروع "${rawCity}"`);
-            }
-          }
-        });
-
-        // معالجة الوحدات التي أصبحت متوفرة (موجودة في قاعدة البيانات كمباعة ولكن غير موجودة في الإكسل الجديد)
-        currentHousesData?.forEach(unit => {
-          if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
-            if (!updatesMap.has(unit.unit_key)) {
-              // البحث عن اسم الوحدة للعرض في الإشعار
-              let unitLabel = "وحدة سكنية";
-              const project = projects.find(p => p.id === unit.project_id);
-              if (project) {
-                const el = project.elements.find(e => e.id === unit.unit_key || unit.unit_key.startsWith(e.id));
-                if (el) unitLabel = el.label;
-              }
-
-              notifications.push({ project_id: unit.project_id, message: `تم توفر الوحدة السكنية ${unitLabel} بتاريخ ${now}` });
-              addLog(`تحديث: الوحدة ${unitLabel} أصبحت متوفرة الآن`);
-              updatesMap.set(unit.unit_key, {
-                unit_key: unit.unit_key,
-                project_id: unit.project_id,
-                data: { ...unit.data, status: 'available', name: '', phone: '', saleDate: '' }
               });
             }
           }
@@ -624,7 +594,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2"><label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> عمود المدينة (A, B, ...)</label><Input placeholder="A" value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" /></div>
-                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">عمود رقم الوحدة</label><Input placeholder="B" value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" /></div>
+                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">عمود رقم الوحدة</label><Input placeholder="I" value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" /></div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
