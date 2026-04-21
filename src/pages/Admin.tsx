@@ -172,15 +172,12 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
   const handleResetAllData = async () => {
     setIsResetting(true);
     try {
-      // حذف كافة البيانات من جدول houses_data
       const { error } = await supabase
         .from('houses_data')
         .delete()
-        .neq('unit_key', 'FORCE_DELETE_ALL'); // شرط وهمي لحذف الكل
+        .neq('unit_key', 'FORCE_DELETE_ALL');
 
       if (error) throw error;
-
-      // تحديث الحالة المحلية
       setHousesData({});
       addLog("تم تصفير كافة بيانات الوحدات بنجاح.");
       showSuccess("تم تصفير كافة البيانات بنجاح");
@@ -255,7 +252,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
       .replace(/[أإآ]/g, "ا") 
       .replace(/[ة]/g, "ه") 
       .replace(/[ى]/g, "ي") 
-      .replace(/[pd]/g, "u")
       .replace(/[^a-z0-9\u0621-\u064A]/gi, "") 
       .replace(/\s+/g, "");
   };
@@ -349,8 +345,11 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                   const aptCode = `P${pCounter}`;
                   const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                   const normLabel = normalizeForMatch(fullLabel);
+                  
                   labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
                   keyToLabelMap.set(techKey, fullLabel);
+
+                  // دعم المطابقة المختصرة (بدون كود الطابق)
                   labelToKeyMap.set(`${project.id}_${normalizeForMatch(`${el.label}-${aptCode}`)}`, techKey);
                   labelToKeyMap.set(`${project.id}_${normalizeForMatch(`${el.label}-D${pCounter}`)}`, techKey);
                 }
@@ -375,8 +374,16 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           
           if (projectId) {
             projectsInExcel.add(projectId);
-            const normUnitLabel = normalizeForMatch(rawUnit);
-            const techKey = labelToKeyMap.get(`${projectId}_${normUnitLabel}`);
+            let normUnitLabel = normalizeForMatch(rawUnit);
+            
+            // محاولة المطابقة المباشرة
+            let techKey = labelToKeyMap.get(`${projectId}_${normUnitLabel}`);
+
+            // إذا لم ينجح، حاول إزالة اسم المشروع من بداية رقم الوحدة (مثلاً Z3-B2-D32 -> B2-D32)
+            if (!techKey && normUnitLabel.startsWith(normCity)) {
+              const strippedLabel = normUnitLabel.substring(normCity.length);
+              techKey = labelToKeyMap.get(`${projectId}_${strippedLabel}`);
+            }
 
             if (techKey) {
               const oldData = housesDataMap[techKey] || { status: 'available' };
@@ -434,11 +441,14 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             if (upsertError) throw upsertError;
           }
           if (notifications.length > 0) await supabase.from('notifications').insert(notifications);
+          
+          // تحديث الحالة المحلية فوراً لضمان الانعكاس على الخريطة
           setHousesData(prev => {
             const next = { ...prev };
             finalUpdates.forEach(u => { next[u.unit_key] = u.data; });
             return next;
           });
+
           const updateTime = new Date().toISOString();
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
