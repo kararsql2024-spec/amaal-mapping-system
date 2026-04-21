@@ -184,9 +184,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
             const pathD = pointsToPath(pts, !el.isStroke);
             
-            // Dynamic sizing for icons and text to fit inside the frame
-            const dynamicIconSize = Math.min(minDim * 0.5, 24);
-            const dynamicFontSize = Math.min(minDim * 0.25, el.fontSize || 12);
+            // Dynamic sizing: Maximize space while keeping a safe margin from borders
+            const dynamicIconSize = minDim * 0.6; 
+            const dynamicFontSize = minDim * 0.3;
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
@@ -234,14 +234,14 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 {IconComponent && !el.hideIcon && (
                   <foreignObject 
                     x={centerX - (dynamicIconSize / 2)} 
-                    y={centerY - (dynamicIconSize * 0.8)} 
+                    y={centerY - (dynamicIconSize * 0.85)} 
                     width={dynamicIconSize} 
                     height={dynamicIconSize} 
                     pointerEvents="none"
                   >
                     <div className="flex items-center justify-center w-full h-full">
                       <IconComponent 
-                        size={dynamicIconSize * 0.8} 
+                        size={dynamicIconSize * 0.9} 
                         color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
                         strokeWidth={2.5}
                       />
@@ -258,7 +258,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 {el.label && el.type !== 'text' && (
                   <text 
                     x={centerX} 
-                    y={IconComponent && !el.hideIcon ? centerY + (dynamicIconSize * 0.4) : centerY} 
+                    y={IconComponent && !el.hideIcon ? centerY + (dynamicIconSize * 0.45) : centerY} 
                     textAnchor="middle" 
                     dominantBaseline="middle" 
                     fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
