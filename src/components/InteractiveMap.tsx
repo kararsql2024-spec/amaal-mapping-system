@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
 import { 
@@ -25,26 +25,31 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const svg = svgRef.current;
-    if (!svg) return;
+    if (!containerRef.current) return;
 
-    const rect = svg.getBoundingClientRect();
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    // موقع الماوس بالنسبة للحاوية
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
+    // موقع الماوس بالنسبة للمخطط (قبل التقريب الجديد)
+    const plotX = (mouseX - position.x) / scale;
+    const plotY = (mouseY - position.y) / scale;
+
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.min(Math.max(scale * delta, 0.05), 100);
-    
+    const newScale = Math.min(Math.max(scale * delta, 0.05), 20);
+
     if (newScale !== scale) {
-      const scaleRatio = newScale / scale;
-      setPosition({
-        x: mouseX - (mouseX - position.x) * scaleRatio,
-        y: mouseY - (mouseY - position.y) * scaleRatio
-      });
+      // حساب الموقع الجديد ليبقى plotX و plotY تحت الماوس
+      const newX = mouseX - plotX * newScale;
+      const newY = mouseY - plotY * newScale;
+
+      setPosition({ x: newX, y: newY });
       setScale(newScale);
     }
   };
@@ -130,12 +135,34 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     });
 
   return (
-    <div className={cn(
-      "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
-      isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
-    )}>
-      <div className="w-full h-full" onWheel={handleWheel} onMouseDown={(e) => { setIsDragging(true); setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y }); }} onMouseMove={(e) => { if (isDragging) setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); }} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)}>
-        <svg ref={svgRef} viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full select-none" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}>
+    <div 
+      ref={containerRef}
+      className={cn(
+        "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
+        isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
+      )}
+      onWheel={handleWheel}
+      onMouseDown={(e) => { 
+        setIsDragging(true); 
+        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y }); 
+      }}
+      onMouseMove={(e) => { 
+        if (isDragging) setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); 
+      }}
+      onMouseUp={() => setIsDragging(false)}
+      onMouseLeave={() => setIsDragging(false)}
+    >
+      <div 
+        className="w-full h-full origin-top-left"
+        style={{ 
+          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+          willChange: 'transform'
+        }}
+      >
+        <svg 
+          viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
+          className="w-full h-full select-none overflow-visible"
+        >
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
@@ -163,7 +190,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
               <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#grid-view)" />
+          <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" />
           
           {sortedElements.map((el) => {
             const styles = getElementStyles(el);
@@ -293,8 +320,30 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       </div>
       
       <div className="absolute top-6 left-6 flex flex-col gap-2">
-        <button onClick={() => setScale(s => Math.min(s + 0.5, 100))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomIn size={20} /></button>
-        <button onClick={() => setScale(s => Math.max(s - 0.5, 0.05))} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
+        <button onClick={() => {
+          if (!containerRef.current) return;
+          const rect = containerRef.current.getBoundingClientRect();
+          const cx = rect.width / 2;
+          const cy = rect.height / 2;
+          const plotX = (cx - position.x) / scale;
+          const plotY = (cy - position.y) / scale;
+          const newScale = Math.min(scale * 1.5, 20);
+          setPosition({ x: cx - plotX * newScale, y: cy - plotY * newScale });
+          setScale(newScale);
+        }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomIn size={20} /></button>
+        
+        <button onClick={() => {
+          if (!containerRef.current) return;
+          const rect = containerRef.current.getBoundingClientRect();
+          const cx = rect.width / 2;
+          const cy = rect.height / 2;
+          const plotX = (cx - position.x) / scale;
+          const plotY = (cy - position.y) / scale;
+          const newScale = Math.max(scale / 1.5, 0.05);
+          setPosition({ x: cx - plotX * newScale, y: cy - plotY * newScale });
+          setScale(newScale);
+        }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
+        
         <button onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><RotateCcw size={20} /></button>
         <button onClick={() => setIsFullScreen(!isFullScreen)} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50">{isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
       </div>

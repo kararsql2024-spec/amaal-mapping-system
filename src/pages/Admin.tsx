@@ -251,6 +251,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
+        // جلب كافة البيانات الحالية بدون حدود
         let currentHousesData: any[] = [];
         let from = 0;
         const step = 1000;
@@ -300,12 +301,23 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                 for (let a = 1; a <= aptsPerFloor; a++) {
                   const techKey = `${el.id}_F${f}_A${a}`;
                   const unitData = housesDataMap[techKey];
-                  if (unitData?.status !== 'frozen_uncounted') pCounter++;
+                  
+                  // تحسين: دائماً نولد تسمية P للمطابقة حتى لو كانت مجمدة لضمان تحديثها إذا وردت في الإكسل
+                  if (unitData?.status !== 'frozen_uncounted') {
+                    pCounter++;
+                  }
+                  
                   const aptCode = unitData?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
                   const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                   const normLabel = normalizeForMatch(fullLabel);
                   labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
                   keyToLabelMap.set(techKey, fullLabel);
+
+                  // إضافة مطابقة بديلة في حال كان الإكسل يحتوي على P حتى لو كانت مجمدة في النظام
+                  if (unitData?.status === 'frozen_uncounted') {
+                    const altLabel = `${el.label}-${floorCode}-P${pCounter + 1}`;
+                    labelToKeyMap.set(`${project.id}_${normalizeForMatch(altLabel)}`, techKey);
+                  }
                 }
               }
             }
@@ -342,6 +354,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
               const unitLabel = keyToLabelMap.get(techKey);
 
+              // توليد إشعار فقط إذا تغيرت الحالة إلى مباع
               if (oldData.status !== 'sold') {
                 let msg = "";
                 const displayDate = saleDate || now;
@@ -362,6 +375,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           }
         });
 
+        // معالجة الوحدات التي أصبحت متوفرة (موجودة في النظام كمباعة ولكن غير موجودة في الإكسل)
         currentHousesData?.forEach(unit => {
           if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
             if (!updatesMap.has(unit.unit_key)) {
@@ -382,6 +396,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
+          // رفع البيانات على دفعات لضمان عدم فشل الطلب
           const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
             const { error: upsertError } = await supabase
