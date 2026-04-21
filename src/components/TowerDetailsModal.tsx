@@ -47,14 +47,11 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
-        const key = getAptKey(f, a);
-        const data = housesData[key];
-        
-        if (data?.status !== 'frozen_uncounted') {
-          pCounter++;
-        }
+        // الترقيم يجب أن يكون ثابتاً تماماً
+        pCounter++;
         
         if (f === floor && a === aptNum) {
+          const data = housesData[getAptKey(f, a)];
           const aptCode = data?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
           return `${tower.label}-${floorCode}-${aptCode}`;
         }

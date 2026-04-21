@@ -220,6 +220,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
       .replace(/[أإآ]/g, "ا") 
       .replace(/[ة]/g, "ه") 
       .replace(/[ى]/g, "ي") 
+      .replace(/[pd]/g, "u") // توحيد P و D إلى U للمطابقة
       .replace(/[^a-z0-9\u0621-\u064A]/gi, "") 
       .replace(/\s+/g, "");
   };
@@ -261,7 +262,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // جلب كافة البيانات الحالية بدون حدود
+        // جلب كافة البيانات الحالية
         let currentHousesData: any[] = [];
         let from = 0;
         const step = 1000;
@@ -282,8 +283,6 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             if (chunk.length < step) hasMore = false;
           }
         }
-
-        addLog(`تم جلب ${currentHousesData.length} وحدة من قاعدة البيانات.`);
 
         const housesDataMap: Record<string, any> = {};
         currentHousesData?.forEach(u => {
@@ -312,13 +311,23 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                 const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                 for (let a = 1; a <= aptsPerFloor; a++) {
                   const techKey = `${el.id}_F${f}_A${a}`;
-                  const unitData = housesDataMap[techKey];
-                  if (unitData?.status !== 'frozen_uncounted') pCounter++;
-                  const aptCode = unitData?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
+                  // الترقيم يجب أن يكون ثابتاً تماماً بغض النظر عن الحالة
+                  pCounter++;
+                  
+                  const aptCode = `P${pCounter}`;
                   const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                   const normLabel = normalizeForMatch(fullLabel);
+                  
                   labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
                   keyToLabelMap.set(techKey, fullLabel);
+
+                  // إضافة مطابقة مختصرة (بدون كود الطابق) لأن الإكسل قد يحتوي على Z3-B2-D32
+                  const shortLabel = `${el.label}-${aptCode}`;
+                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(shortLabel)}`, techKey);
+                  
+                  // دعم حرف D بدلاً من P
+                  const altShortLabel = `${el.label}-D${pCounter}`;
+                  labelToKeyMap.set(`${project.id}_${normalizeForMatch(altShortLabel)}`, techKey);
                 }
               }
             }
@@ -369,7 +378,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                   msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${displayDate}`;
                 }
                 notifications.push({ project_id: projectId, message: msg });
-                addLog(`تحديث: تم بيع الوحدة ${unitLabel} للسيد ${newName}`);
+                addLog(`تطابق: ${rawUnit} -> ${unitLabel} (تم التحديث لمباع)`);
               }
 
               updatesMap.set(techKey, {
@@ -420,7 +429,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
             await supabase.from('notifications').insert(notifications);
           }
 
-          // تحديث الحالة المحلية فوراً
+          // تحديث الحالة المحلية فوراً لضمان الانعكاس على الخريطة
           setHousesData(prev => {
             const next = { ...prev };
             finalUpdates.forEach(u => {

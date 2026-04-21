@@ -32,12 +32,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    
-    // موقع الماوس بالنسبة للحاوية (Viewport)
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // موقع الماوس بالنسبة للمخطط (Coordinates inside the map)
     const mapX = (mouseX - position.x) / scale;
     const mapY = (mouseY - position.y) / scale;
 
@@ -45,10 +42,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
 
     if (newScale !== scale) {
-      // حساب الموقع الجديد ليبقى نفس الـ mapX و mapY تحت الماوس بعد التقريب
       const newX = mouseX - mapX * newScale;
       const newY = mouseY - mapY * newScale;
-
       setPosition({ x: newX, y: newY });
       setScale(newScale);
     }
@@ -310,7 +305,14 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                     }} 
                     className="pointer-events-none select-none"
                   >
-                    {el.label.split('-').pop()}
+                    {/* الترقيم في الخريطة يجب أن يتبع نفس المنطق الثابت */}
+                    {(() => {
+                      if (el.type === 'tower') {
+                        // هذا الجزء للعرض فقط، الترقيم الفعلي يتم عبر pCounter في حلقة الطوابق
+                        return el.label.split('-').pop();
+                      }
+                      return el.label.split('-').pop();
+                    })()}
                   </text>
                 )}
               </g>
