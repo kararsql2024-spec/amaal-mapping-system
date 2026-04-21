@@ -321,12 +321,10 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
               if (oldData.status !== 'sold') {
                 let msg = "";
-                // استخدام تاريخ البيع من الإكسل في نص الإشعار
-                const displayDate = saleDate || now;
                 if (oldData.status === 'reserved') {
-                  msg = `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${displayDate}`;
+                  msg = `تم بيع الوحدة المحجوزة ${unitLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${now}`;
                 } else {
-                  msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${displayDate}`;
+                  msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${now}`;
                 }
                 notifications.push({ project_id: projectId, message: msg });
               }
