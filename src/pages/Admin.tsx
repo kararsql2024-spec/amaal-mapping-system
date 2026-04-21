@@ -246,14 +246,12 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
     if (text === null || text === undefined) return "";
     return text
       .toString()
-      .toLowerCase()
       .trim()
       .replace(/[\u064B-\u0652\u0640]/g, "") 
       .replace(/[أإآ]/g, "ا") 
       .replace(/[ة]/g, "ه") 
       .replace(/[ى]/g, "ي") 
-      .replace(/[^a-z0-9\u0621-\u064A-]/gi, "") // أبقينا على الشرطة للمطابقة بالأجزاء
-      .replace(/\s+/g, "");
+      .replace(/\s+/g, ""); // إزالة المسافات فقط مع الحفاظ على الحالة والشرطات
   };
 
   const colToIdx = (col: string) => {
@@ -343,32 +341,18 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           
           if (projectId) {
             const normExcelUnit = normalizeForMatch(rawUnit);
-            const excelParts = normExcelUnit.split('-');
             const elements = projectElementsMap.get(projectId) || [];
             
             let foundTechKey: string | null = null;
             let foundLabel: string | null = null;
 
+            // مطابقة تامة (Exact Match) فقط
             for (const el of elements) {
               if (el.type === 'house') {
-                const normMapLabel = normalizeForMatch(el.label);
-                const mapParts = normMapLabel.split('-');
-                
-                // مطابقة ذكية بالأجزاء: إذا كانت أجزاء الخريطة موجودة بالكامل في نهاية أجزاء الإكسل
-                if (normExcelUnit === normMapLabel) {
+                if (normExcelUnit === normalizeForMatch(el.label)) {
                   foundTechKey = el.id;
                   foundLabel = el.label;
                   break;
-                }
-                
-                if (excelParts.length >= mapParts.length) {
-                  const lastExcelParts = excelParts.slice(-mapParts.length).join('');
-                  const joinedMapParts = mapParts.join('');
-                  if (lastExcelParts === joinedMapParts) {
-                    foundTechKey = el.id;
-                    foundLabel = el.label;
-                    break;
-                  }
                 }
               } else if (el.type === 'tower') {
                 let pCounter = 0;
@@ -383,12 +367,8 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                     const techKey = `${el.id}_F${f}_A${a}`;
                     const aptCode = `P${pCounter}`;
                     const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
-                    const shortLabel = `${el.label}-${aptCode}`;
-
-                    const normFull = normalizeForMatch(fullLabel);
-                    const normShort = normalizeForMatch(shortLabel);
-
-                    if (normExcelUnit === normFull || normExcelUnit.endsWith("-" + normShort) || normExcelUnit.endsWith(normShort)) {
+                    
+                    if (normExcelUnit === normalizeForMatch(fullLabel)) {
                       foundTechKey = techKey;
                       foundLabel = fullLabel;
                       towerMatch = true;
@@ -418,7 +398,7 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
                   ? `تم بيع الوحدة المحجوزة ${foundLabel} باسم ${oldData.name || 'غير معروف'} إلى ${newName} بتاريخ ${saleDate || now}`
                   : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
                 notifications.push({ project_id: projectId, message: msg });
-                addLog(`تطابق: ${rawUnit} -> ${foundLabel}`);
+                addLog(`تطابق تام: ${rawUnit} -> ${foundLabel}`);
               }
 
               updatesMap.set(foundTechKey, {
@@ -452,8 +432,8 @@ const Admin = ({ projects, setProjects, setHousesData }: AdminProps) => {
           addLog("تمت العملية بنجاح!");
           showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
         } else {
-          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة.");
-          showError("لم يتم العثور على مسميات متطابقة");
+          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة تماماً.");
+          showError("لم يتم العثور على مسميات متطابقة تماماً");
         }
       } catch (error) {
         console.error(error);
