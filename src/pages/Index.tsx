@@ -88,7 +88,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
-  // تم تصحيح الخطأ هنا باستخدام selectedElementId بدلاً من id
   const selectedElement = activeProject?.elements.find(el => el.id === selectedElementId);
 
   const handleElementClick = (id: string) => {

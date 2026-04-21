@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
 import { 
@@ -33,21 +33,21 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
     const rect = containerRef.current.getBoundingClientRect();
     
-    // موقع الماوس بالنسبة للحاوية
+    // موقع الماوس بالنسبة للحاوية (Viewport)
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // موقع الماوس بالنسبة للمخطط (قبل التقريب الجديد)
-    const plotX = (mouseX - position.x) / scale;
-    const plotY = (mouseY - position.y) / scale;
+    // موقع الماوس بالنسبة للمخطط (Coordinates inside the map)
+    const mapX = (mouseX - position.x) / scale;
+    const mapY = (mouseY - position.y) / scale;
 
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.min(Math.max(scale * delta, 0.05), 20);
+    const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
 
     if (newScale !== scale) {
-      // حساب الموقع الجديد ليبقى plotX و plotY تحت الماوس
-      const newX = mouseX - plotX * newScale;
-      const newY = mouseY - plotY * newScale;
+      // حساب الموقع الجديد ليبقى نفس الـ mapX و mapY تحت الماوس بعد التقريب
+      const newX = mouseX - mapX * newScale;
+      const newY = mouseY - mapY * newScale;
 
       setPosition({ x: newX, y: newY });
       setScale(newScale);
@@ -325,10 +325,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           const rect = containerRef.current.getBoundingClientRect();
           const cx = rect.width / 2;
           const cy = rect.height / 2;
-          const plotX = (cx - position.x) / scale;
-          const plotY = (cy - position.y) / scale;
-          const newScale = Math.min(scale * 1.5, 20);
-          setPosition({ x: cx - plotX * newScale, y: cy - plotY * newScale });
+          const mapX = (cx - position.x) / scale;
+          const mapY = (cy - position.y) / scale;
+          const newScale = Math.min(scale * 1.5, 40);
+          setPosition({ x: cx - mapX * newScale, y: cy - mapY * newScale });
           setScale(newScale);
         }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomIn size={20} /></button>
         
@@ -337,10 +337,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           const rect = containerRef.current.getBoundingClientRect();
           const cx = rect.width / 2;
           const cy = rect.height / 2;
-          const plotX = (cx - position.x) / scale;
-          const plotY = (cy - position.y) / scale;
+          const mapX = (cx - position.x) / scale;
+          const mapY = (cy - position.y) / scale;
           const newScale = Math.max(scale / 1.5, 0.05);
-          setPosition({ x: cx - plotX * newScale, y: cy - plotY * newScale });
+          setPosition({ x: cx - mapX * newScale, y: cy - mapY * newScale });
           setScale(newScale);
         }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
         

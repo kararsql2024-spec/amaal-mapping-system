@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface AdminProps {
   projects: Project[];
@@ -31,6 +32,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [newCenter, setNewCenter] = useState({ name: '', password: '' });
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [processLogs, setProcessLogs] = useState<string[]>([]);
 
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
@@ -230,11 +232,16 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
     return res - 1;
   };
 
+  const addLog = (msg: string) => setProcessLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
+
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsProcessing(true);
+    setProcessLogs([]);
+    addLog("بدء معالجة ملف الإكسل...");
+    
     const reader = new FileReader();
     
     reader.onload = async (evt) => {
@@ -244,6 +251,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+
+        addLog(`تم قراءة ${data.length} صف من الإكسل.`);
 
         const cityIdx = colToIdx(excelMapping.cityCol);
         const unitIdx = colToIdx(excelMapping.unitCol);
@@ -273,6 +282,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           }
         }
 
+        addLog(`تم جلب ${currentHousesData.length} وحدة من قاعدة البيانات.`);
+
         const housesDataMap: Record<string, any> = {};
         currentHousesData?.forEach(u => {
           housesDataMap[u.unit_key] = u.data;
@@ -301,23 +312,12 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                 for (let a = 1; a <= aptsPerFloor; a++) {
                   const techKey = `${el.id}_F${f}_A${a}`;
                   const unitData = housesDataMap[techKey];
-                  
-                  // تحسين: دائماً نولد تسمية P للمطابقة حتى لو كانت مجمدة لضمان تحديثها إذا وردت في الإكسل
-                  if (unitData?.status !== 'frozen_uncounted') {
-                    pCounter++;
-                  }
-                  
+                  if (unitData?.status !== 'frozen_uncounted') pCounter++;
                   const aptCode = unitData?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
                   const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
                   const normLabel = normalizeForMatch(fullLabel);
                   labelToKeyMap.set(`${project.id}_${normLabel}`, techKey);
                   keyToLabelMap.set(techKey, fullLabel);
-
-                  // إضافة مطابقة بديلة في حال كان الإكسل يحتوي على P حتى لو كانت مجمدة في النظام
-                  if (unitData?.status === 'frozen_uncounted') {
-                    const altLabel = `${el.label}-${floorCode}-P${pCounter + 1}`;
-                    labelToKeyMap.set(`${project.id}_${normalizeForMatch(altLabel)}`, techKey);
-                  }
                 }
               }
             }
@@ -331,12 +331,17 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         data.forEach((row, index) => {
           if (index === 0) return;
-          const normCity = normalizeForMatch(row[cityIdx]);
+          const rawCity = row[cityIdx];
+          const rawUnit = row[unitIdx];
+          
+          if (!rawCity || !rawUnit) return;
+
+          const normCity = normalizeForMatch(rawCity);
           const projectId = projectMap.get(normCity);
           
           if (projectId) {
             projectsInExcel.add(projectId);
-            const normUnitLabel = normalizeForMatch(row[unitIdx]);
+            const normUnitLabel = normalizeForMatch(rawUnit);
             const techKey = labelToKeyMap.get(`${projectId}_${normUnitLabel}`);
 
             if (techKey) {
@@ -354,7 +359,6 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
               const unitLabel = keyToLabelMap.get(techKey);
 
-              // توليد إشعار فقط إذا تغيرت الحالة إلى مباع
               if (oldData.status !== 'sold') {
                 let msg = "";
                 const displayDate = saleDate || now;
@@ -364,6 +368,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                   msg = `تم بيع الوحدة ${unitLabel} للسيد ${newName} بتاريخ ${displayDate}`;
                 }
                 notifications.push({ project_id: projectId, message: msg });
+                addLog(`تحديث: تم بيع الوحدة ${unitLabel} للسيد ${newName}`);
               }
 
               updatesMap.set(techKey, {
@@ -371,11 +376,14 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                 project_id: projectId,
                 data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: 'sold' }
               });
+            } else {
+              addLog(`تنبيه: لم يتم العثور على الوحدة "${rawUnit}" في مشروع "${rawCity}"`);
             }
+          } else {
+            if (index === 1) addLog(`تنبيه: لم يتم العثور على المشروع "${rawCity}" في النظام`);
           }
         });
 
-        // معالجة الوحدات التي أصبحت متوفرة (موجودة في النظام كمباعة ولكن غير موجودة في الإكسل)
         currentHousesData?.forEach(unit => {
           if (projectsInExcel.has(unit.project_id) && unit.data?.status === 'sold') {
             if (!updatesMap.has(unit.unit_key)) {
@@ -384,6 +392,8 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                 project_id: unit.project_id, 
                 message: `تم توفر الوحدة السكنية ${unitLabel} بتاريخ ${now}` 
               });
+
+              addLog(`تحديث: الوحدة ${unitLabel} أصبحت متوفرة الآن`);
 
               updatesMap.set(unit.unit_key, {
                 unit_key: unit.unit_key,
@@ -396,7 +406,7 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
-          // رفع البيانات على دفعات لضمان عدم فشل الطلب
+          addLog(`جاري رفع ${finalUpdates.length} تحديث إلى قاعدة البيانات...`);
           const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
             const { error: upsertError } = await supabase
@@ -413,12 +423,15 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
           
-          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح. يرجى تحديث الصفحة لرؤية التغييرات.`);
+          addLog("تمت العملية بنجاح!");
+          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
         } else {
-          showError("لم يتم العثور على مسميات متطابقة بين الإكسل والمخطط");
+          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة للتحديث.");
+          showError("لم يتم العثور على مسميات متطابقة");
         }
       } catch (error) {
         console.error(error);
+        addLog(`خطأ فادح: ${error instanceof Error ? error.message : 'حدث خطأ غير معروف'}`);
         showError("حدث خطأ أثناء معالجة البيانات");
       } finally {
         setIsProcessing(false);
@@ -562,6 +575,23 @@ const Admin = ({ projects, setProjects }: AdminProps) => {
                   <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="hidden" id="excel-upload" disabled={isProcessing} />
                   <Button asChild disabled={isProcessing} className="bg-slate-900 hover:bg-slate-800 rounded-xl px-8 h-12 font-bold"><label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-2">{isProcessing ? "جاري المعالجة..." : "رفع الملف وبدء التحديث"}</label></Button>
                 </div>
+
+                {processLogs.length > 0 && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="flex items-center gap-2 text-slate-800 font-black"><Terminal size={18} /> سجل العمليات</div>
+                    <div className="bg-slate-900 rounded-2xl p-4 font-mono text-xs text-emerald-400 border border-slate-800 shadow-inner">
+                      <ScrollArea className="h-48 w-full">
+                        <div className="space-y-1">
+                          {processLogs.map((log, i) => (
+                            <div key={i} className={cn(log.includes('خطأ') ? 'text-rose-400' : log.includes('تنبيه') ? 'text-amber-400' : '')}>
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <>
