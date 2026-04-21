@@ -39,7 +39,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false); // مطوية افتراضياً
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
@@ -144,10 +144,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           <div className="space-y-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-600 mr-2">المركز التسويقي</label>
-              <Select onValueChange={(val) => setLoginData({...loginData, centerId: val})}>
-                <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر المركز التسويقي..." /></SelectTrigger>
-                <SelectContent className="rounded-xl">{marketingCenters.map(center => (<SelectItem key={center.id} value={center.id} className="text-right font-bold">{center.name}</SelectItem>))}</SelectContent>
-              </Select>
+              <div className="relative">
+                <Select onValueChange={(val) => setLoginData({...loginData, centerId: val})}>
+                  <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر المركز التسويقي..." /></SelectTrigger>
+                  <SelectContent className="rounded-xl">{marketingCenters.map(center => (<SelectItem key={center.id} value={center.id} className="text-right font-bold">{center.name}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-600 mr-2">كلمة المرور</label>
@@ -222,8 +224,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 "flex-1 transition-opacity duration-300",
                 isNotificationsOpen ? "opacity-100" : "opacity-0 pointer-events-none"
               )}>
-                <ScrollArea className="h-full pr-4">
-                  <div className="space-y-4">
+                <ScrollArea className="h-full pr-4" dir="rtl">
+                  <div className="space-y-4 pb-4">
                     {notifications.length > 0 ? notifications.map((notif) => (
                       <div key={notif.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 animate-in fade-in slide-in-from-right-2">
                         <p className="text-sm font-bold text-slate-700 leading-relaxed">{notif.message}</p>
