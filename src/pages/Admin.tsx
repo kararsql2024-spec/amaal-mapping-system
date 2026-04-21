@@ -251,6 +251,34 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
+  const handleAddInvestmentName = async () => {
+    if (!newInvestmentName) return;
+    const updatedList = [...investmentNames, newInvestmentName];
+    setInvestmentNames(updatedList);
+    setNewInvestmentName('');
+    
+    // حفظ فوري في قاعدة البيانات
+    try {
+      await supabase.from('settings').upsert({ key: 'investment_names', value: updatedList });
+      showSuccess("تمت إضافة المستثمر وحفظه");
+    } catch (error) {
+      showError("فشل في الحفظ التلقائي");
+    }
+  };
+
+  const handleDeleteInvestmentName = async (idx: number) => {
+    const updatedList = investmentNames.filter((_, i) => i !== idx);
+    setInvestmentNames(updatedList);
+    
+    // حفظ فوري في قاعدة البيانات
+    try {
+      await supabase.from('settings').upsert({ key: 'investment_names', value: updatedList });
+      showSuccess("تم حذف المستثمر وتحديث القائمة");
+    } catch (error) {
+      showError("فشل في تحديث القائمة");
+    }
+  };
+
   const normalizeForMatch = (text: any) => {
     if (text === null || text === undefined) return "";
     return text
@@ -752,15 +780,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       value={newInvestmentName} 
                       onChange={(e) => setNewInvestmentName(e.target.value)} 
                       className="rounded-xl h-12 border-yellow-200"
-                      onKeyPress={(e) => e.key === 'Enter' && (setInvestmentNames([...investmentNames, newInvestmentName]), setNewInvestmentName(''))}
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddInvestmentName()}
                     />
-                    <Button onClick={() => { if(newInvestmentName) { setInvestmentNames([...investmentNames, newInvestmentName]); setNewInvestmentName(''); } }} className="bg-yellow-600 hover:bg-yellow-700 rounded-xl h-12 px-6 font-bold">إضافة</Button>
+                    <Button onClick={handleAddInvestmentName} className="bg-yellow-600 hover:bg-yellow-700 rounded-xl h-12 px-6 font-bold">إضافة وحفظ</Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {investmentNames.map((name, idx) => (
                       <div key={idx} className="bg-white border border-yellow-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm">
                         <span className="font-bold text-slate-700">{name}</span>
-                        <button onClick={() => setInvestmentNames(investmentNames.filter((_, i) => i !== idx))} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
+                        <button onClick={() => handleDeleteInvestmentName(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
                       </div>
                     ))}
                   </div>
