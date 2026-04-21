@@ -160,6 +160,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
             const minX = Math.min(...pts.map(p => p.x));
             const maxX = Math.max(...pts.map(p => p.x));
             const maxY = Math.max(...pts.map(p => p.y));
+            
+            const elWidth = maxX - minX;
+            const elHeight = maxY - minY;
+            const minDim = Math.min(elWidth, elHeight);
 
             if (el.type === 'reference_image') {
               return (
@@ -167,7 +171,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   key={el.id}
                   href={el.color} 
                   x={minX} y={minY} 
-                  width={maxX - minX} height={maxY - minY} 
+                  width={elWidth} height={elHeight} 
                   opacity={el.opacity}
                   transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
                 />
@@ -179,6 +183,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                             el.type === 'amenity' ? getAmenityIcon(el.amenityType) : null;
 
             const pathD = pointsToPath(pts, !el.isStroke);
+            
+            // Dynamic sizing for icons and text to fit inside the frame
+            const dynamicIconSize = Math.min(minDim * 0.5, 24);
+            const dynamicFontSize = Math.min(minDim * 0.25, el.fontSize || 12);
 
             return (
               <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
@@ -222,7 +230,24 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 )}
                 
                 {el.type === 'pitch' && renderPitchLines(pts)}
-                {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
+                
+                {IconComponent && !el.hideIcon && (
+                  <foreignObject 
+                    x={centerX - (dynamicIconSize / 2)} 
+                    y={centerY - (dynamicIconSize * 0.8)} 
+                    width={dynamicIconSize} 
+                    height={dynamicIconSize} 
+                    pointerEvents="none"
+                  >
+                    <div className="flex items-center justify-center w-full h-full">
+                      <IconComponent 
+                        size={dynamicIconSize * 0.8} 
+                        color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
+                        strokeWidth={2.5}
+                      />
+                    </div>
+                  </foreignObject>
+                )}
                 
                 {el.type === 'road' && !el.isStroke && (
                   el.orientation === 'vertical' ? 
@@ -230,7 +255,22 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                 )}
 
-                {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} style={{ fontSize: `${el.fontSize || 10}px`, fontWeight: 'black' }} className="pointer-events-none select-none">{el.label.split('-').pop()}</text>}
+                {el.label && el.type !== 'text' && (
+                  <text 
+                    x={centerX} 
+                    y={IconComponent && !el.hideIcon ? centerY + (dynamicIconSize * 0.4) : centerY} 
+                    textAnchor="middle" 
+                    dominantBaseline="middle" 
+                    fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
+                    style={{ 
+                      fontSize: `${dynamicFontSize}px`, 
+                      fontWeight: 'black' 
+                    }} 
+                    className="pointer-events-none select-none"
+                  >
+                    {el.label.split('-').pop()}
+                  </text>
+                )}
               </g>
             );
           })}
