@@ -88,7 +88,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
-  const selectedElement = activeProject?.elements.find(el => el.id === id);
+  // تم تصحيح الخطأ هنا باستخدام selectedElementId بدلاً من id
+  const selectedElement = activeProject?.elements.find(el => el.id === selectedElementId);
 
   const handleElementClick = (id: string) => {
     setSelectedElementId(id);
@@ -144,10 +145,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           <div className="space-y-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-600 mr-2">المركز التسويقي</label>
-              <Select onValueChange={(val) => setLoginData({...loginData, centerId: val})}>
-                <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر المركز التسويقي..." /></SelectTrigger>
-                <SelectContent className="rounded-xl">{marketingCenters.map(center => (<SelectItem key={center.id} value={center.id} className="text-right font-bold">{center.name}</SelectItem>))}</SelectContent>
-              </Select>
+              <div className="relative">
+                <Select onValueChange={(val) => setLoginData({...loginData, centerId: val})}>
+                  <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر المركز التسويقي..." /></SelectTrigger>
+                  <SelectContent className="rounded-xl">{marketingCenters.map(center => (<SelectItem key={center.id} value={center.id} className="text-right font-bold">{center.name}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-600 mr-2">كلمة المرور</label>
