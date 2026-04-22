@@ -37,45 +37,55 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     ];
   };
 
-  // منطق التمركز التلقائي عند تحميل المخطط
+  // منطق التمركز التلقائي المحسن
   useEffect(() => {
     if (elements.length === 0 || !containerRef.current) return;
 
-    // البحث عن أكبر عنصر مساحةً
-    let largestEl = elements[0];
-    let maxArea = 0;
+    // ننتظر قليلاً لضمان أن المتصفح قد رسم الحاوية وأخذت أبعادها الحقيقية
+    const timer = setTimeout(() => {
+      if (!containerRef.current) return;
+      
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
 
-    elements.forEach(el => {
-      const pts = getElementPoints(el);
+      // البحث عن العنصر المستهدف (الصورة المرجعية أو أكبر عنصر مساحة)
+      let targetEl = elements.find(el => el.type === 'reference_image' && el.showInMain) || 
+                     elements.reduce((prev, current) => {
+                       const prevPts = getElementPoints(prev);
+                       const currPts = getElementPoints(current);
+                       const prevArea = (Math.max(...prevPts.map(p => p.x)) - Math.min(...prevPts.map(p => p.x))) * 
+                                        (Math.max(...prevPts.map(p => p.y)) - Math.min(...prevPts.map(p => p.y)));
+                       const currArea = (Math.max(...currPts.map(p => p.x)) - Math.min(...currPts.map(p => p.x))) * 
+                                        (Math.max(...currPts.map(p => p.y)) - Math.min(...currPts.map(p => p.y)));
+                       return currArea > prevArea ? current : prev;
+                     }, elements[0]);
+
+      const pts = getElementPoints(targetEl);
       const minX = Math.min(...pts.map(p => p.x));
       const maxX = Math.max(...pts.map(p => p.x));
       const minY = Math.min(...pts.map(p => p.y));
       const maxY = Math.max(...pts.map(p => p.y));
-      const area = (maxX - minX) * (maxY - minY);
       
-      // نعطي أولوية للصور المرجعية إذا كانت موجودة
-      if (el.type === 'reference_image' || area > maxArea) {
-        maxArea = area;
-        largestEl = el;
-      }
-    });
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      
+      const elW = maxX - minX;
+      const elH = maxY - minY;
 
-    const pts = getElementPoints(largestEl);
-    const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-    const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+      // حساب المقياس ليناسب 90% من مساحة العرض المتوفرة
+      const scaleW = (rect.width * 0.9) / elW;
+      const scaleH = (rect.height * 0.9) / elH;
+      const newScale = Math.min(scaleW, scaleH, 1.5); // لا نتجاوز تكبير 150%
 
-    const rect = containerRef.current.getBoundingClientRect();
-    
-    // حساب المقياس المناسب (اختياري: يمكن تثبيته على 1 أو جعله يتناسب مع الشاشة)
-    // هنا سنقوم بالتمركز مع مقياس افتراضي مريح
-    const initialScale = 0.5; 
-    
-    const newX = (rect.width / 2) - (centerX * initialScale);
-    const newY = (rect.height / 2) - (centerY * initialScale);
+      const newX = (rect.width / 2) - (centerX * newScale);
+      const newY = (rect.height / 2) - (centerY * newScale);
 
-    setPosition({ x: newX, y: newY });
-    setScale(initialScale);
-  }, [elements.length]); // يعمل عند تغيير عدد العناصر (تحميل مشروع جديد)
+      setScale(newScale);
+      setPosition({ x: newX, y: newY });
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [elements, mapWidth, mapHeight]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -89,7 +99,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const mapY = (mouseY - position.y) / scale;
 
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
+    const newScale = Math.min(Math.max(scale * delta, 0.01), 50);
 
     if (newScale !== scale) {
       const newX = mouseX - mapX * newScale;
