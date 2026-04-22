@@ -35,7 +35,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // حساب الإحداثيات داخل المخطط قبل التكبير
     const mapX = (mouseX - position.x) / scale;
     const mapY = (mouseY - position.y) / scale;
 
@@ -43,7 +42,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
 
     if (newScale !== scale) {
-      // حساب الموقع الجديد ليبقى نفس النقطة تحت الماوس
       const newX = mouseX - mapX * newScale;
       const newY = mouseY - mapY * newScale;
       setPosition({ x: newX, y: newY });
@@ -152,40 +150,49 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       onMouseUp={() => setIsDragging(false)}
       onMouseLeave={() => setIsDragging(false)}
     >
-      <svg 
-        viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
-        className="w-full h-full select-none overflow-visible"
-        style={{ imageRendering: 'auto' }}
+      <div 
+        className="w-full h-full origin-top-left"
+        style={{ 
+          transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${scale})`,
+          willChange: 'transform',
+          backfaceVisibility: 'hidden'
+        }}
       >
-        <defs>
-          <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
-          <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
+        <svg 
+          width={mapWidth}
+          height={mapHeight}
+          viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
+          className="select-none overflow-visible"
+          style={{ imageRendering: 'auto' }}
+        >
+          <defs>
+            <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
+            <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
+            
+            <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-brick" width="30" height="15" patternUnits="userSpaceOnUse">
+              <rect width="30" height="15" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
+              <path d="M15 0 L15 15" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-dots" width="10" height="10" patternUnits="userSpaceOnUse">
+              <circle cx="5" cy="5" r="1" fill="currentColor" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M0 0 L10 10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-grid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-zigzag" width="20" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" />
+            </pattern>
+            <pattern id="texture-crosshatch" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
+            </pattern>
+          </defs>
           
-          <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-          </pattern>
-          <pattern id="texture-brick" width="30" height="15" patternUnits="userSpaceOnUse">
-            <rect width="30" height="15" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-            <path d="M15 0 L15 15" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-          </pattern>
-          <pattern id="texture-dots" width="10" height="10" patternUnits="userSpaceOnUse">
-            <circle cx="5" cy="5" r="1" fill="currentColor" opacity="0.2" />
-          </pattern>
-          <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
-            <path d="M0 0 L10 10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-          </pattern>
-          <pattern id="texture-grid" width="10" height="10" patternUnits="userSpaceOnUse">
-            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-          </pattern>
-          <pattern id="texture-zigzag" width="20" height="10" patternUnits="userSpaceOnUse">
-            <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-          </pattern>
-          <pattern id="texture-crosshatch" width="10" height="10" patternUnits="userSpaceOnUse">
-            <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-          </pattern>
-        </defs>
-        
-        <g transform={`translate(${position.x}, ${position.y}) scale(${scale})`}>
           <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" />
           
           {sortedElements.map((el) => {
@@ -312,8 +319,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
               </g>
             );
           })}
-        </g>
-      </svg>
+        </svg>
+      </div>
       
       <div className="absolute top-6 left-6 flex flex-col gap-2">
         <button onClick={() => {
