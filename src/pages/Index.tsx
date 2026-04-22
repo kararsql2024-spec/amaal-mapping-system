@@ -9,7 +9,7 @@ import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Cloc
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Project } from '@/types/project';
+import { Project, MapElement } from '@/types/project';
 import { supabase } from "@/integrations/supabase/client";
 import {
   DropdownMenu,
@@ -35,11 +35,13 @@ interface IndexProps {
 
 const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projects.length > 0 ? projects[0].id : null);
+  const [activeElements, setActiveElements] = useState<MapElement[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
+  const [isProjectLoading, setIsProjectLoading] = useState(false);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
@@ -58,32 +60,52 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   useEffect(() => {
     if (selectedProjectId) {
-      const fetchData = async () => {
-        const { data: notifs } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('project_id', selectedProjectId)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        if (notifs) setNotifications(notifs);
-
-        const { data: units } = await supabase
-          .from('houses_data')
-          .select('*')
-          .eq('project_id', selectedProjectId);
-        
-        if (units) {
-          const formattedUnits: Record<string, any> = {};
-          units.forEach(u => {
-            formattedUnits[u.unit_key] = u.data;
-          });
-          setHousesData(prev => ({ ...prev, ...formattedUnits }));
+      const fetchProjectData = async () => {
+        setIsProjectLoading(true);
+        try {
+          // 1. جلب تفاصيل المخطط (Elements) لهذا المشروع فقط
+          const { data: projectDetails, error: projectError } = await supabase
+            .from('projects')
+            .select('elements')
+            .eq('id', selectedProjectId)
+            .single();
           
-          // فحص انتهاء الحجوزات (7 أيام)
-          checkExpiredBookings(units, selectedProjectId);
+          if (projectError) throw projectError;
+          setActiveElements(projectDetails?.elements || []);
+
+          // 2. جلب الإشعارات لهذا المشروع فقط
+          const { data: notifs } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('project_id', selectedProjectId)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          if (notifs) setNotifications(notifs);
+
+          // 3. جلب بيانات الوحدات لهذا المشروع فقط
+          const { data: units } = await supabase
+            .from('houses_data')
+            .select('*')
+            .eq('project_id', selectedProjectId);
+          
+          if (units) {
+            const formattedUnits: Record<string, any> = {};
+            units.forEach(u => {
+              formattedUnits[u.unit_key] = u.data;
+            });
+            setHousesData(formattedUnits); // استبدال البيانات القديمة ببيانات المشروع الحالي فقط
+            
+            // فحص انتهاء الحجوزات (7 أيام)
+            checkExpiredBookings(units, selectedProjectId);
+          }
+        } catch (error) {
+          console.error("Error loading project data:", error);
+          showError("فشل في تحميل بيانات المشروع");
+        } finally {
+          setIsProjectLoading(false);
         }
       };
-      fetchData();
+      fetchProjectData();
     }
   }, [selectedProjectId, setHousesData]);
 
@@ -102,7 +124,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           expiredUnits.push({
             unit_key: unit.unit_key,
             project_id: projectId,
-            data: { status: 'available' } // تصفير البيانات وإعادتها لمتوفر
+            data: { status: 'available' }
           });
           
           expiredNotifications.push({
@@ -117,14 +139,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       await supabase.from('houses_data').upsert(expiredUnits, { onConflict: 'unit_key' });
       await supabase.from('notifications').insert(expiredNotifications);
       
-      // تحديث الحالة المحلية
       setHousesData(prev => {
         const next = { ...prev };
         expiredUnits.forEach(u => { next[u.unit_key] = u.data; });
         return next;
       });
       
-      // تحديث الإشعارات
       const { data: newNotifs } = await supabase
         .from('notifications')
         .select('*')
@@ -152,11 +172,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
-  const selectedElement = activeProject?.elements.find(el => el.id === selectedElementId);
+  const selectedElement = activeElements.find(el => el.id === selectedElementId);
 
   const handleElementClick = (id: string) => {
     setSelectedElementId(id);
-    const element = activeProject?.elements.find(el => el.id === id);
+    const element = activeElements.find(el => el.id === id);
     if (element?.type === 'tower') setIsTowerModalOpen(true);
     else setIsUnitModalOpen(true);
   };
@@ -171,9 +191,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const calculateStats = () => {
-    if (!activeProject) return { total: 0, sold: 0, investment: 0 };
+    if (!activeProject || !activeElements) return { total: 0, sold: 0, investment: 0 };
     let total = 0; let sold = 0; let investment = 0;
-    activeProject.elements.forEach(el => {
+    activeElements.forEach(el => {
       if (el.type === 'house') {
         const data = housesData[el.id];
         if (data?.status !== 'frozen_uncounted') total++;
@@ -257,8 +277,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            {activeProject ? (
-              <InteractiveMap elements={activeProject.elements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} />
+            {isProjectLoading ? (
+              <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <h2 className="text-xl font-bold text-slate-600">جاري تحميل بيانات المشروع...</h2>
+              </div>
+            ) : activeProject ? (
+              <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} />
             ) : (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">يرجى إنشاء مشروع أولاً</h2></div>
             )}
@@ -320,8 +345,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         </main>
 
-        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={activeProject?.elements.find(el => el.id === selectedElementId)?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} />
-        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={activeProject?.elements.find(el => el.id === selectedElementId)} housesData={housesData} onSaveApartment={handleSaveData} />
+        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} />
+        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={activeElements.find(el => el.id === selectedElementId)} housesData={housesData} onSaveApartment={handleSaveData} />
         <MadeWithDyad />
       </div>
     </div>

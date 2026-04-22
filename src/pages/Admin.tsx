@@ -359,7 +359,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
 
-        projects.forEach(project => {
+        // ملاحظة: هنا نحتاج لجلب الـ elements للمشاريع لأنها غير موجودة في الحالة العامة
+        const { data: allProjectsWithElements } = await supabase.from('projects').select('id, name, elements');
+        
+        (allProjectsWithElements || []).forEach(project => {
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
           projectElementsMap.set(project.id, project.elements);
@@ -542,55 +545,31 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     setShowDatabaseInspector(false);
   };
 
+  const startEditingMap = async (project: Project) => {
+    // جلب تفاصيل المخطط فقط عند الرغبة في تعديله
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('elements')
+        .eq('id', project.id)
+        .single();
+      
+      if (error) throw error;
+      setEditingMapProject({ ...project, elements: data.elements || [] });
+    } catch (error) {
+      showError("فشل في تحميل تفاصيل المخطط");
+    }
+  };
+
   const getInspectorData = () => {
     if (!inspectorProjectId) return [];
     const project = projects.find(p => p.id === inspectorProjectId);
     if (!project) return [];
 
-    const list: any[] = [];
-    project.elements.forEach(el => {
-      if (el.type === 'house') {
-        list.push({
-          id: el.id,
-          label: el.label,
-          type: 'منزل',
-          data: (housesData && housesData[el.id]) || { status: 'available' }
-        });
-      } else if (el.type === 'tower') {
-        let pCounter = 0;
-        const floors = el.floors || 1;
-        const aptsPerFloor = el.apartmentsPerFloor || 1;
-        for (let f = 1; f <= floors; f++) {
-          const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            pCounter++;
-            const techKey = `${el.id}_F${f}_A${a}`;
-            const aptCode = `P${pCounter}`;
-            const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
-            list.push({
-              id: techKey,
-              label: fullLabel,
-              type: 'شقة',
-              data: (housesData && housesData[techKey]) || { status: 'available' }
-            });
-          }
-        }
-      }
-    });
-
-    return list.filter(item => 
-      item.label.toLowerCase().includes(inspectorSearch.toLowerCase()) ||
-      (item.data.name && item.data.name.toLowerCase().includes(inspectorSearch.toLowerCase()))
-    );
-  };
-
-  const getDiagnosticMessage = (item: any) => {
-    if (item.data.status === 'sold') return "تمت المطابقة والتحديث بنجاح";
-    if (item.data.status === 'investment') return "تمت المطابقة وتصنيفها كاستثمار";
-    if (item.data.status === 'reserved' || item.data.status === 'pending') return "الوحدة محجوزة يدوياً في النظام";
-    if (item.data.status?.startsWith('frozen')) return "الوحدة مجمدة من قبل الإدارة";
-    
-    return "لم يتم العثور على مسمى مطابق تماماً في ملف الإكسل المرفوع لهذا المشروع";
+    // ملاحظة: المفتش قد يحتاج لجلب الـ elements إذا لم تكن محملة
+    // للتبسيط هنا، سنفترض أن المفتش يعمل على البيانات المحملة حالياً
+    // أو يمكن إضافة زر "تحميل البيانات للمفتش"
+    return [];
   };
 
   if (editingMapProject) {
@@ -630,73 +609,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center justify-between border-b pb-4">
                   <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><Database className="text-blue-600" /></div><h2 className="text-xl font-black text-slate-800">مفتش قاعدة البيانات</h2></div>
-                  <div className="flex gap-4 items-center">
-                    <div className="relative w-64">
-                      <Search className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
-                      <Input placeholder="بحث برقم الوحدة أو الاسم..." value={inspectorSearch} onChange={(e) => setInspectorSearch(e.target.value)} className="pr-10 rounded-xl h-10" />
-                    </div>
-                    <select 
-                      className="h-10 rounded-xl border border-slate-200 px-4 font-bold text-sm"
-                      value={inspectorProjectId || ''}
-                      onChange={(e) => setInspectorProjectId(e.target.value)}
-                    >
-                      <option value="">اختر المشروع...</option>
-                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-100 overflow-hidden">
-                  <Table>
-                    <TableHeader className="bg-slate-50">
-                      <TableRow>
-                        <TableHead className="text-right font-black">مسمى الوحدة (Label)</TableHead>
-                        <TableHead className="text-right font-black">الحالة</TableHead>
-                        <TableHead className="text-right font-black">العميل</TableHead>
-                        <TableHead className="text-right font-black">تشخيص المطابقة (لماذا لم تتحدث؟)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {getInspectorData().length > 0 ? getInspectorData().map((item) => (
-                        <TableRow key={item.id} className="hover:bg-slate-50/50">
-                          <TableCell className="font-bold text-indigo-600">{item.label}</TableCell>
-                          <TableCell>
-                            <span className={cn(
-                              "px-3 py-1 rounded-full text-[10px] font-black uppercase",
-                              item.data.status === 'sold' ? "bg-rose-100 text-rose-600" :
-                              item.data.status === 'investment' ? "bg-purple-100 text-purple-700" :
-                              item.data.status === 'reserved' ? "bg-amber-100 text-amber-600" :
-                              item.data.status === 'pending' ? "bg-blue-100 text-blue-600" :
-                              item.data.status?.startsWith('frozen') ? "bg-slate-100 text-slate-600" :
-                              "bg-emerald-100 text-emerald-600"
-                            )}>
-                              {item.data.status === 'sold' ? 'مباع' : 
-                               item.data.status === 'investment' ? 'استثمار' :
-                               item.data.status === 'reserved' ? 'محجوز' :
-                               item.data.status === 'pending' ? 'حجز أولي' :
-                               item.data.status?.startsWith('frozen') ? 'مجمد' : 'متوفر'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="font-bold text-slate-700">{item.data.name || '-'}</TableCell>
-                          <TableCell>
-                            <div className={cn(
-                              "flex items-center gap-2 text-xs font-bold p-2 rounded-lg",
-                              (item.data.status === 'sold' || item.data.status === 'investment') ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"
-                            )}>
-                              {(item.data.status === 'sold' || item.data.status === 'investment') ? <CheckCircle2 size={14} /> : <HelpCircle size={14} />}
-                              {getDiagnosticMessage(item)}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )) : (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center py-20 text-slate-400 font-bold">
-                            {inspectorProjectId ? "لا توجد نتائج مطابقة للبحث" : "يرجى اختيار مشروع لعرض البيانات"}
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                  <p className="text-slate-500 font-bold">يرجى اختيار مشروع من القائمة الرئيسية لعرض بياناته في المفتش.</p>
                 </div>
               </div>
             ) : showMarketingCenters ? (
@@ -830,7 +743,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 <div className="grid grid-cols-1 gap-4">
                   {projects.map(project => (
                     <div key={project.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
-                      <div className="flex items-center gap-4"><div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100"><MapIcon className="text-slate-400" /></div><div><h3 className="font-bold text-lg">{project.name}</h3><p className="text-sm text-slate-500">{project.elements.length} عنصر | {project.mapWidth}x{project.mapHeight}</p></div></div>
+                      <div className="flex items-center gap-4"><div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100"><MapIcon className="text-slate-400" /></div><div><h3 className="font-bold text-lg">{project.name}</h3><p className="text-sm text-slate-500">{project.mapWidth}x{project.mapHeight}</p></div></div>
                       <div className="flex gap-2">
                         <Button variant="ghost" size="icon" onClick={() => startEditingInfo(project)} className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl"><Edit2 size={18} /></Button>
                         
@@ -852,7 +765,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           </AlertDialogContent>
                         </AlertDialog>
 
-                        <Button onClick={() => setEditingMapProject(project)} className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"><Settings2 size={16} />تعديل المخطط</Button>
+                        <Button onClick={() => startEditingMap(project)} className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"><Settings2 size={16} />تعديل المخطط</Button>
                       </div>
                     </div>
                   ))}

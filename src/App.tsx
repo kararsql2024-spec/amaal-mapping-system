@@ -17,56 +17,41 @@ const App = () => {
   const [housesData, setHousesData] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
 
-  // جلب البيانات عند تحميل التطبيق
+  // جلب قائمة المشاريع الأساسية فقط عند تحميل التطبيق
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchProjectsList = async () => {
       try {
-        // جلب المشاريع
+        // جلب المشاريع بدون حقل elements لتقليل الحجم
         const { data: projectsData, error: projectsError } = await supabase
           .from('projects')
-          .select('*')
+          .select('id, name, description, map_width, map_height, created_at')
           .order('created_at', { ascending: false });
 
         if (projectsError) throw projectsError;
         
-        // تحويل البيانات لتناسب النوع Project
         const formattedProjects = (projectsData || []).map(p => ({
           id: p.id,
           name: p.name,
           description: p.description || '',
-          elements: p.elements || [],
+          elements: [], // سنقوم بجلبها لاحقاً عند الحاجة
           mapWidth: p.map_width,
           mapHeight: p.map_height,
           createdAt: p.created_at
         }));
 
         setProjects(formattedProjects);
-
-        // جلب بيانات الوحدات
-        const { data: unitsData, error: unitsError } = await supabase
-          .from('houses_data')
-          .select('*');
-
-        if (unitsError) throw unitsError;
-
-        const formattedUnits: Record<string, any> = {};
-        (unitsData || []).forEach(u => {
-          formattedUnits[u.unit_key] = u.data;
-        });
-
-        setHousesData(formattedUnits);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Error fetching projects list:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
+    fetchProjectsList();
   }, []);
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center font-bold">جاري تحميل البيانات...</div>;
+    return <div className="min-h-screen flex items-center justify-center font-bold">جاري تحميل النظام...</div>;
   }
 
   return (
