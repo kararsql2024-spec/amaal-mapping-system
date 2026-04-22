@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
 import { 
@@ -27,6 +27,56 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const getElementPoints = (el: MapElement): Point[] => {
+    if (el.points && el.points.length > 0) return el.points;
+    return [
+      { x: el.x, y: el.y },
+      { x: el.x + el.width, y: el.y },
+      { x: el.x + el.width, y: el.y + el.height },
+      { x: el.x, y: el.y + el.height },
+    ];
+  };
+
+  // منطق التمركز التلقائي عند تحميل المخطط
+  useEffect(() => {
+    if (elements.length === 0 || !containerRef.current) return;
+
+    // البحث عن أكبر عنصر مساحةً
+    let largestEl = elements[0];
+    let maxArea = 0;
+
+    elements.forEach(el => {
+      const pts = getElementPoints(el);
+      const minX = Math.min(...pts.map(p => p.x));
+      const maxX = Math.max(...pts.map(p => p.x));
+      const minY = Math.min(...pts.map(p => p.y));
+      const maxY = Math.max(...pts.map(p => p.y));
+      const area = (maxX - minX) * (maxY - minY);
+      
+      // نعطي أولوية للصور المرجعية إذا كانت موجودة
+      if (el.type === 'reference_image' || area > maxArea) {
+        maxArea = area;
+        largestEl = el;
+      }
+    });
+
+    const pts = getElementPoints(largestEl);
+    const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+    const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    // حساب المقياس المناسب (اختياري: يمكن تثبيته على 1 أو جعله يتناسب مع الشاشة)
+    // هنا سنقوم بالتمركز مع مقياس افتراضي مريح
+    const initialScale = 0.5; 
+    
+    const newX = (rect.width / 2) - (centerX * initialScale);
+    const newY = (rect.height / 2) - (centerY * initialScale);
+
+    setPosition({ x: newX, y: newY });
+    setScale(initialScale);
+  }, [elements.length]); // يعمل عند تغيير عدد العناصر (تحميل مشروع جديد)
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (!containerRef.current) return;
@@ -47,16 +97,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       setPosition({ x: newX, y: newY });
       setScale(newScale);
     }
-  };
-
-  const getElementPoints = (el: MapElement): Point[] => {
-    if (el.points && el.points.length > 0) return el.points;
-    return [
-      { x: el.x, y: el.y },
-      { x: el.x + el.width, y: el.y },
-      { x: el.x + el.width, y: el.y + el.height },
-      { x: el.x, y: el.y + el.height },
-    ];
   };
 
   const pointsToPath = (points: Point[], closed = true) => {
