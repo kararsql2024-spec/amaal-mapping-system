@@ -45,5 +45,7 @@ export interface Project {
   elements: MapElement[];
   mapWidth: number;
   mapHeight: number;
+  centerX?: number;
+  centerY?: number;
   createdAt: string;
 }
