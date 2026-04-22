@@ -35,6 +35,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
+    // حساب الإحداثيات داخل المخطط قبل التكبير
     const mapX = (mouseX - position.x) / scale;
     const mapY = (mouseY - position.y) / scale;
 
@@ -42,6 +43,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
 
     if (newScale !== scale) {
+      // حساب الموقع الجديد ليبقى نفس النقطة تحت الماوس
       const newX = mouseX - mapX * newScale;
       const newY = mouseY - mapY * newScale;
       setPosition({ x: newX, y: newY });
@@ -134,7 +136,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     <div 
       ref={containerRef}
       className={cn(
-        "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
+        "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing touch-none",
         isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
       )}
       onWheel={handleWheel}
@@ -143,7 +145,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
         setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y }); 
       }}
       onMouseMove={(e) => { 
-        if (isDragging) setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); 
+        if (isDragging) {
+          setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+        }
       }}
       onMouseUp={() => setIsDragging(false)}
       onMouseLeave={() => setIsDragging(false)}
