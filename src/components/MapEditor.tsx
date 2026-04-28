@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { showError } from '@/utils/toast';
+import { showSuccess, showError } from '@/utils/toast';
 
 interface MapEditorProps {
   initialElements: MapElement[];
