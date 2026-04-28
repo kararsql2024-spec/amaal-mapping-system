@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -18,12 +18,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { showError } from '@/utils/toast';
 
 interface MapEditorProps {
   initialElements: MapElement[];
   onSave: (elements: MapElement[], width: number, height: number) => void;
   mapWidth: number;
   mapHeight: number;
+  isSaving?: boolean;
 }
 
 const GRID_SIZE = 10;
@@ -69,7 +71,7 @@ const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = 
   { type: 'label_area', label: 'منطقة تسمية', icon: Type, color: 'bg-purple-500' },
 ];
 
-const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorProps) => {
+const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = false }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType | null>(null);
@@ -374,6 +376,13 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
   const handleAddReferenceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // فحص حجم الصورة (الحد الأقصى 1 ميجابايت لتجنب أخطاء السيرفر)
+    if (file.size > 1024 * 1024) {
+      showError("حجم الصورة كبير جداً. يرجى اختيار صورة أقل من 1 ميجابايت.");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       const url = evt.target?.result as string;
@@ -436,7 +445,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
             {isFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
           </Button>
         </div>
-        <Button onClick={() => onSave(elements, dims.w, dims.h)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"><Save size={18} /> حفظ المخطط</Button>
+        <Button 
+          onClick={() => onSave(elements, dims.w, dims.h)} 
+          className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"
+          disabled={isSaving}
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={18} />}
+          {isSaving ? "جاري الحفظ..." : "حفظ المخطط"}
+        </Button>
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
@@ -602,7 +618,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight }: MapEditorPr
                     )}
                     
                     {el.type === 'pitch' && renderPitchLines(pts)}
-                    {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
+                    {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
                     
                     {el.type === 'road' && !el.isStroke && (
                       el.orientation === 'vertical' ? 

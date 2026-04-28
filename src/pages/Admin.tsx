@@ -25,14 +25,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 interface AdminProps {
   projects: Project[];
@@ -49,9 +41,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [showMarketingCenters, setShowMarketingCenters] = useState(false);
   const [showDatabaseInspector, setShowDatabaseInspector] = useState(false);
-  const [inspectorProjectId, setInspectorProjectId] = useState<string | null>(null);
-  const [inspectorSearch, setInspectorSearch] = useState('');
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
+  const [isSavingMap, setIsSavingMap] = useState(false);
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [newCenter, setNewCenter] = useState({ name: '', password: '' });
@@ -257,7 +248,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     setInvestmentNames(updatedList);
     setNewInvestmentName('');
     
-    // حفظ فوري في قاعدة البيانات
     try {
       await supabase.from('settings').upsert({ key: 'investment_names', value: updatedList });
       showSuccess("تمت إضافة المستثمر وحفظه");
@@ -270,7 +260,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     const updatedList = investmentNames.filter((_, i) => i !== idx);
     setInvestmentNames(updatedList);
     
-    // حفظ فوري في قاعدة البيانات
     try {
       await supabase.from('settings').upsert({ key: 'investment_names', value: updatedList });
       showSuccess("تم حذف المستثمر وتحديث القائمة");
@@ -359,7 +348,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
 
-        // ملاحظة: هنا نحتاج لجلب الـ elements للمشاريع لأنها غير موجودة في الحالة العامة
         const { data: allProjectsWithElements } = await supabase.from('projects').select('id, name, elements');
         
         (allProjectsWithElements || []).forEach(project => {
@@ -526,13 +514,48 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleSaveMap = async (elements: MapElement[], newWidth: number, newHeight: number) => {
-    if (editingMapProject) {
-      try {
-        await supabase.from('projects').update({ elements, map_width: Math.round(newWidth), map_height: Math.round(newHeight) }).eq('id', editingMapProject.id);
-        setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements, mapWidth: Math.round(newWidth), mapHeight: Math.round(newHeight) } : p));
-        setEditingMapProject(null);
-        showSuccess('تم حفظ المخطط بنجاح');
-      } catch (error) { showError("فشل في حفظ المخطط"); }
+    if (!editingMapProject || isSavingMap) return;
+    
+    setIsSavingMap(true);
+    try {
+      // تنظيف البيانات لتقليل الحجم (إزالة القيم الفارغة)
+      const cleanedElements = elements.map(el => {
+        const cleaned: any = { ...el };
+        Object.keys(cleaned).forEach(key => {
+          if (cleaned[key] === undefined || cleaned[key] === null) {
+            delete cleaned[key];
+          }
+        });
+        return cleaned;
+      });
+
+      // فحص حجم البيانات التقريبي
+      const payloadSize = JSON.stringify(cleanedElements).length;
+      if (payloadSize > 5 * 1024 * 1024) { // 5MB
+        showError("حجم المخطط كبير جداً. يرجى تقليل عدد العناصر أو استخدام صور مرجعية أصغر.");
+        setIsSavingMap(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ 
+          elements: cleanedElements, 
+          map_width: Math.round(newWidth), 
+          map_height: Math.round(newHeight) 
+        })
+        .eq('id', editingMapProject.id);
+      
+      if (error) throw error;
+      
+      setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements: cleanedElements, mapWidth: Math.round(newWidth), mapHeight: Math.round(newHeight) } : p));
+      setEditingMapProject(null);
+      showSuccess('تم حفظ المخطط بنجاح');
+    } catch (error) { 
+      console.error("Save error:", error);
+      showError("فشل في حفظ المخطط. قد يكون حجم البيانات كبيراً جداً على السيرفر."); 
+    } finally {
+      setIsSavingMap(false);
     }
   };
 
@@ -546,7 +569,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const startEditingMap = async (project: Project) => {
-    // جلب تفاصيل المخطط فقط عند الرغبة في تعديله
     try {
       const { data, error } = await supabase
         .from('projects')
@@ -561,26 +583,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  const getInspectorData = () => {
-    if (!inspectorProjectId) return [];
-    const project = projects.find(p => p.id === inspectorProjectId);
-    if (!project) return [];
-
-    // ملاحظة: المفتش قد يحتاج لجلب الـ elements إذا لم تكن محملة
-    // للتبسيط هنا، سنفترض أن المفتش يعمل على البيانات المحملة حالياً
-    // أو يمكن إضافة زر "تحميل البيانات للمفتش"
-    return [];
-  };
-
   if (editingMapProject) {
     return (
       <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => setEditingMapProject(null)} className="rounded-xl"><ArrowRight className="ml-2" />العودة</Button>
+            <Button variant="ghost" onClick={() => setEditingMapProject(null)} className="rounded-xl" disabled={isSavingMap}><ArrowRight className="ml-2" />العودة</Button>
             <h1 className="text-2xl font-black">تعديل مخطط: {editingMapProject.name}</h1>
           </div>
-          <MapEditor initialElements={editingMapProject.elements} onSave={handleSaveMap} mapWidth={editingMapProject.mapWidth} mapHeight={editingMapProject.mapHeight} />
+          <MapEditor 
+            initialElements={editingMapProject.elements} 
+            onSave={handleSaveMap} 
+            mapWidth={editingMapProject.mapWidth} 
+            mapHeight={editingMapProject.mapHeight}
+            isSaving={isSavingMap}
+          />
         </div>
       </div>
     );
