@@ -10,7 +10,7 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -377,12 +377,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // فحص حجم الصورة (الحد الأقصى 1 ميجابايت لتجنب أخطاء السيرفر)
-    if (file.size > 1024 * 1024) {
-      showError("حجم الصورة كبير جداً. يرجى اختيار صورة أقل من 1 ميجابايت.");
-      return;
-    }
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       const url = evt.target?.result as string;
@@ -407,6 +401,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
       };
       setElements(prev => [newElement, ...prev]);
       setSelectedId(newElement.id);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleReplaceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const url = evt.target?.result as string;
+      updateSelectedElement({ color: url });
+      showSuccess("تم استبدال الصورة بنجاح");
     };
     reader.readAsDataURL(file);
   };
@@ -829,6 +836,16 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
 
                   {selectedElement.type === 'reference_image' && (
                     <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">استبدال الصورة</Label>
+                        <label className="flex items-center justify-center w-full h-12 px-4 transition bg-white border-2 border-slate-200 border-dashed rounded-xl appearance-none cursor-pointer hover:border-indigo-600 focus:outline-none">
+                          <span className="flex items-center space-x-2 rtl:space-x-reverse">
+                            <RefreshCcw size={18} className="text-indigo-600" />
+                            <span className="font-bold text-slate-600">اختر صورة جديدة</span>
+                          </span>
+                          <input type="file" accept="image/*" className="hidden" onChange={handleReplaceImage} />
+                        </label>
+                      </div>
                       <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                         <div className="flex items-center gap-2"><ImageIcon size={16} className="text-indigo-600" /><Label className="font-bold text-sm text-slate-700">إظهار في الواجهة الرئيسية</Label></div>
                         <Switch checked={selectedElement.showInMain} onCheckedChange={(val) => updateSelectedElement({ showInMain: val })} />
