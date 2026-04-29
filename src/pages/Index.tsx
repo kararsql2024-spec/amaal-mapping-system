@@ -63,7 +63,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       const fetchProjectData = async () => {
         setIsProjectLoading(true);
         try {
-          // 1. جلب تفاصيل المخطط (Elements) لهذا المشروع فقط
+          // 1. جلب تفاصيل المخطط (Elements) لهذا المشروع
           const { data: projectDetails, error: projectError } = await supabase
             .from('projects')
             .select('elements')
@@ -73,7 +73,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           if (projectError) throw projectError;
           setActiveElements(projectDetails?.elements || []);
 
-          // 2. جلب الإشعارات لهذا المشروع فقط
+          // 2. جلب الإشعارات لهذا المشروع
           const { data: notifs } = await supabase
             .from('notifications')
             .select('*')
@@ -82,22 +82,39 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             .limit(50);
           if (notifs) setNotifications(notifs);
 
-          // 3. جلب بيانات الوحدات لهذا المشروع فقط
-          const { data: units } = await supabase
-            .from('houses_data')
-            .select('*')
-            .eq('project_id', selectedProjectId);
-          
-          if (units) {
-            const formattedUnits: Record<string, any> = {};
-            units.forEach(u => {
-              formattedUnits[u.unit_key] = u.data;
-            });
-            setHousesData(formattedUnits); // استبدال البيانات القديمة ببيانات المشروع الحالي فقط
+          // 3. جلب بيانات الوحدات لهذا المشروع (مع معالجة حد الـ 1000 سجل)
+          let allUnits: any[] = [];
+          let from = 0;
+          const step = 1000;
+          let hasMore = true;
+
+          while (hasMore) {
+            const { data: chunk, error: unitsError } = await supabase
+              .from('houses_data')
+              .select('*')
+              .eq('project_id', selectedProjectId)
+              .range(from, from + step - 1);
             
-            // فحص انتهاء الحجوزات (7 أيام)
-            checkExpiredBookings(units, selectedProjectId);
+            if (unitsError) throw unitsError;
+            
+            if (!chunk || chunk.length === 0) {
+              hasMore = false;
+            } else {
+              allUnits = [...allUnits, ...chunk];
+              from += step;
+              if (chunk.length < step) hasMore = false;
+            }
           }
+          
+          const formattedUnits: Record<string, any> = {};
+          allUnits.forEach(u => {
+            formattedUnits[u.unit_key] = u.data;
+          });
+          setHousesData(formattedUnits);
+          
+          // فحص انتهاء الحجوزات
+          checkExpiredBookings(allUnits, selectedProjectId);
+          
         } catch (error) {
           console.error("Error loading project data:", error);
           showError("فشل في تحميل بيانات المشروع");
