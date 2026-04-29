@@ -319,6 +319,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
+        // 1. جلب كافة بيانات الوحدات الحالية (معالجة التكرار)
         let currentHousesData: any[] = [];
         let from = 0;
         const step = 1000;
@@ -345,114 +346,166 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           housesDataMap[u.unit_key] = u.data;
         });
 
+        // 2. جلب كافة المشاريع (معالجة التكرار لضمان جلب الجميع)
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
-
-        const { data: allProjectsWithElements } = await supabase.from('projects').select('id, name, elements');
         
-        (allProjectsWithElements || []).forEach(project => {
+        let allProjectsWithElements: any[] = [];
+        let pFrom = 0;
+        let pHasMore = true;
+        
+        addLog("جاري جلب بيانات المشاريع والمخططات...");
+        while (pHasMore) {
+          const { data: pChunk, error: pError } = await supabase
+            .from('projects')
+            .select('id, name, elements')
+            .range(pFrom, pFrom + 999);
+          
+          if (pError) throw pError;
+          if (!pChunk || pChunk.length === 0) {
+            pHasMore = false;
+          } else {
+            allProjectsWithElements = [...allProjectsWithElements, ...pChunk];
+            pFrom += 1000;
+            if (pChunk.length < 1000) pHasMore = false;
+          }
+        }
+        
+        allProjectsWithElements.forEach(project => {
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
-          projectElementsMap.set(project.id, project.elements);
+          projectElementsMap.set(project.id, project.elements || []);
         });
 
         const updatesMap = new Map<string, any>();
         const notifications: any[] = [];
         const now = new Date().toLocaleString('ar-EG');
 
+        // عدادات للتقرير النهائي
+        let stats = {
+          totalRows: data.length - 1,
+          missingInfo: 0,
+          projectNotFound: 0,
+          unitNotFound: 0,
+          matched: 0
+        };
+
         data.forEach((row, index) => {
           if (index === 0) return;
           const rawCity = row[cityIdx];
           const rawUnit = row[unitIdx];
-          if (!rawCity || !rawUnit) return;
+          
+          if (!rawCity || !rawUnit) {
+            stats.missingInfo++;
+            return;
+          }
 
           const normCity = normalizeForMatch(rawCity);
           const projectId = projectMap.get(normCity);
           
-          if (projectId) {
-            const normExcelUnit = normalizeForMatch(rawUnit);
-            const elements = projectElementsMap.get(projectId) || [];
-            
-            let foundTechKey: string | null = null;
-            let foundLabel: string | null = null;
+          if (!projectId) {
+            stats.projectNotFound++;
+            return;
+          }
 
-            for (const el of elements) {
-              if (el.type === 'house') {
-                if (normExcelUnit === normalizeForMatch(el.label)) {
-                  foundTechKey = el.id;
-                  foundLabel = el.label;
-                  break;
-                }
-              } else if (el.type === 'tower') {
-                let pCounter = 0;
-                const floors = el.floors || 1;
-                const aptsPerFloor = el.apartmentsPerFloor || 1;
-                let towerMatch = false;
+          const normExcelUnit = normalizeForMatch(rawUnit);
+          const elements = projectElementsMap.get(projectId) || [];
+          
+          let foundTechKey: string | null = null;
+          let foundLabel: string | null = null;
 
-                for (let f = 1; f <= floors; f++) {
-                  const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                  for (let a = 1; a <= aptsPerFloor; a++) {
-                    pCounter++;
-                    const techKey = `${el.id}_F${f}_A${a}`;
-                    const aptCode = `P${pCounter}`;
-                    const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
-                    
-                    if (normExcelUnit === normalizeForMatch(fullLabel)) {
-                      foundTechKey = techKey;
-                      foundLabel = fullLabel;
-                      towerMatch = true;
-                      break;
-                    }
+          for (const el of elements) {
+            if (el.type === 'house') {
+              if (normExcelUnit === normalizeForMatch(el.label)) {
+                foundTechKey = el.id;
+                foundLabel = el.label;
+                break;
+              }
+            } else if (el.type === 'tower') {
+              let pCounter = 0;
+              const floors = el.floors || 1;
+              const aptsPerFloor = el.apartmentsPerFloor || 1;
+              let towerMatch = false;
+
+              for (let f = 1; f <= floors; f++) {
+                const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                for (let a = 1; a <= aptsPerFloor; a++) {
+                  pCounter++;
+                  const techKey = `${el.id}_F${f}_A${a}`;
+                  const aptCode = `P${pCounter}`;
+                  const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
+                  
+                  if (normExcelUnit === normalizeForMatch(fullLabel)) {
+                    foundTechKey = techKey;
+                    foundLabel = fullLabel;
+                    towerMatch = true;
+                    break;
                   }
-                  if (towerMatch) break;
                 }
                 if (towerMatch) break;
               }
+              if (towerMatch) break;
+            }
+          }
+
+          if (foundTechKey) {
+            stats.matched++;
+            const oldData = housesDataMap[foundTechKey] || { status: 'available' };
+            const newName = String(row[nameIdx] || '');
+            const normNewName = normalizeForMatch(newName);
+            const isInvestment = normInvestmentNames.includes(normNewName);
+            
+            let saleDate = '';
+            if (row[dateIdx]) {
+              if (typeof row[dateIdx] === 'number') {
+                saleDate = new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0];
+              } else {
+                saleDate = String(row[dateIdx]);
+              }
             }
 
-            if (foundTechKey) {
-              const oldData = housesDataMap[foundTechKey] || { status: 'available' };
-              const newName = String(row[nameIdx] || '');
-              const normNewName = normalizeForMatch(newName);
-              const isInvestment = normInvestmentNames.includes(normNewName);
-              
-              let saleDate = '';
-              if (row[dateIdx]) {
-                if (typeof row[dateIdx] === 'number') {
-                  saleDate = new Date((row[dateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0];
-                } else {
-                  saleDate = String(row[dateIdx]);
-                }
-              }
+            const newStatus = isInvestment ? 'investment' : 'sold';
 
-              const newStatus = isInvestment ? 'investment' : 'sold';
-
-              if (oldData.status !== newStatus) {
-                let msg = isInvestment 
-                  ? `تم تحويل الوحدة ${foundLabel} إلى حالة استثمار باسم ${newName}`
-                  : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
-                notifications.push({ project_id: projectId, message: msg });
-                addLog(`${isInvestment ? 'استثمار' : 'تطابق تام'}: ${rawUnit} -> ${foundLabel}`);
-              }
-
-              updatesMap.set(foundTechKey, {
-                unit_key: foundTechKey,
-                project_id: projectId,
-                data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: newStatus, lastSyncStatus: 'success' }
-              });
+            if (oldData.status !== newStatus) {
+              let msg = isInvestment 
+                ? `تم تحويل الوحدة ${foundLabel} إلى حالة استثمار باسم ${newName}`
+                : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
+              notifications.push({ project_id: projectId, message: msg });
             }
+
+            updatesMap.set(foundTechKey, {
+              unit_key: foundTechKey,
+              project_id: projectId,
+              data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: newStatus, lastSyncStatus: 'success' }
+            });
+          } else {
+            stats.unitNotFound++;
           }
         });
 
+        // تقرير المطابقة
+        addLog(`تقرير المطابقة:`);
+        addLog(`- إجمالي الصفوف: ${stats.totalRows}`);
+        addLog(`- تم المطابقة بنجاح: ${stats.matched}`);
+        if (stats.projectNotFound > 0) addLog(`- تنبيه: ${stats.projectNotFound} صف لم يتم العثور على مشروعهم (تأكد من اسم المدينة).`);
+        if (stats.unitNotFound > 0) addLog(`- تنبيه: ${stats.unitNotFound} صف لم يتم العثور على رقم وحدتهم في المخطط.`);
+        if (stats.missingInfo > 0) addLog(`- تنبيه: ${stats.missingInfo} صف ينقصهم بيانات أساسية.`);
+
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
-          addLog(`جاري رفع ${finalUpdates.length} تحديث...`);
+          addLog(`جاري رفع ${finalUpdates.length} تحديث إلى قاعدة البيانات...`);
           const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
             const { error: upsertError } = await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
             if (upsertError) throw upsertError;
           }
-          if (notifications.length > 0) await supabase.from('notifications').insert(notifications);
+          
+          if (notifications.length > 0) {
+            addLog(`جاري تسجيل ${notifications.length} إشعار جديد...`);
+            for (let i = 0; i < notifications.length; i += chunkSize) {
+              await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize));
+            }
+          }
           
           setHousesData(prev => {
             const next = { ...prev };
@@ -463,11 +516,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const updateTime = new Date().toISOString();
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
-          addLog("تمت العملية بنجاح!");
+          addLog("اكتملت عملية التحديث بنجاح!");
           showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
         } else {
-          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة تماماً.");
-          showError("لم يتم العثور على مسميات متطابقة تماماً");
+          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة للتحديث.");
+          showError("لم يتم العثور على مسميات متطابقة");
         }
       } catch (error) {
         console.error(error);
@@ -518,7 +571,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     
     setIsSavingMap(true);
     try {
-      // تنظيف البيانات لتقليل الحجم (إزالة القيم الفارغة)
       const cleanedElements = elements.map(el => {
         const cleaned: any = { ...el };
         Object.keys(cleaned).forEach(key => {
@@ -529,9 +581,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         return cleaned;
       });
 
-      // فحص حجم البيانات التقريبي
       const payloadSize = JSON.stringify(cleanedElements).length;
-      if (payloadSize > 5 * 1024 * 1024) { // 5MB
+      if (payloadSize > 5 * 1024 * 1024) {
         showError("حجم المخطط كبير جداً. يرجى تقليل عدد العناصر أو استخدام صور مرجعية أصغر.");
         setIsSavingMap(false);
         return;
