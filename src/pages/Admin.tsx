@@ -319,7 +319,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
-        // 1. جلب كافة بيانات الوحدات الحالية (معالجة التكرار)
+        // 1. جلب كافة بيانات الوحدات الحالية
         let currentHousesData: any[] = [];
         let from = 0;
         const step = 1000;
@@ -346,15 +346,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           housesDataMap[u.unit_key] = u.data;
         });
 
-        // 2. جلب كافة المشاريع (معالجة التكرار لضمان جلب الجميع)
+        // 2. جلب كافة المشاريع والمخططات
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
+        const projectLabelsMap = new Map<string, Map<string, string>>(); // techKey -> label
         
         let allProjectsWithElements: any[] = [];
         let pFrom = 0;
         let pHasMore = true;
         
-        addLog("جاري جلب بيانات المشاريع والمخططات...");
         while (pHasMore) {
           const { data: pChunk, error: pError } = await supabase
             .from('projects')
@@ -374,40 +374,48 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         allProjectsWithElements.forEach(project => {
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
-          projectElementsMap.set(project.id, project.elements || []);
+          const elements = project.elements || [];
+          projectElementsMap.set(project.id, elements);
+          
+          const labels = new Map<string, string>();
+          elements.forEach(el => {
+            if (el.type === 'house') {
+              labels.set(el.id, el.label);
+            } else if (el.type === 'tower') {
+              let pCounter = 0;
+              for (let f = 1; f <= (el.floors || 1); f++) {
+                const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                for (let a = 1; a <= (el.apartmentsPerFloor || 1); a++) {
+                  pCounter++;
+                  const techKey = `${el.id}_F${f}_A${a}`;
+                  labels.set(techKey, `${el.label}-${floorCode}-P${pCounter}`);
+                }
+              }
+            }
+          });
+          projectLabelsMap.set(project.id, labels);
         });
 
         const updatesMap = new Map<string, any>();
         const notifications: any[] = [];
+        const matchedTechKeys = new Set<string>();
+        const projectsInExcel = new Set<string>();
         const now = new Date().toLocaleString('ar-EG');
 
-        // عدادات للتقرير النهائي
-        let stats = {
-          totalRows: data.length - 1,
-          missingInfo: 0,
-          projectNotFound: 0,
-          unitNotFound: 0,
-          matched: 0
-        };
+        let stats = { totalRows: data.length - 1, matched: 0, reset: 0 };
 
+        // معالجة الصفوف الموجودة في الإكسل
         data.forEach((row, index) => {
           if (index === 0) return;
           const rawCity = row[cityIdx];
           const rawUnit = row[unitIdx];
-          
-          if (!rawCity || !rawUnit) {
-            stats.missingInfo++;
-            return;
-          }
+          if (!rawCity || !rawUnit) return;
 
           const normCity = normalizeForMatch(rawCity);
           const projectId = projectMap.get(normCity);
-          
-          if (!projectId) {
-            stats.projectNotFound++;
-            return;
-          }
+          if (!projectId) return;
 
+          projectsInExcel.add(projectId);
           const normExcelUnit = normalizeForMatch(rawUnit);
           const elements = projectElementsMap.get(projectId) || [];
           
@@ -423,18 +431,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               }
             } else if (el.type === 'tower') {
               let pCounter = 0;
-              const floors = el.floors || 1;
-              const aptsPerFloor = el.apartmentsPerFloor || 1;
               let towerMatch = false;
-
-              for (let f = 1; f <= floors; f++) {
+              for (let f = 1; f <= (el.floors || 1); f++) {
                 const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                for (let a = 1; a <= aptsPerFloor; a++) {
+                for (let a = 1; a <= (el.apartmentsPerFloor || 1); a++) {
                   pCounter++;
                   const techKey = `${el.id}_F${f}_A${a}`;
-                  const aptCode = `P${pCounter}`;
-                  const fullLabel = `${el.label}-${floorCode}-${aptCode}`;
-                  
+                  const fullLabel = `${el.label}-${floorCode}-P${pCounter}`;
                   if (normExcelUnit === normalizeForMatch(fullLabel)) {
                     foundTechKey = techKey;
                     foundLabel = fullLabel;
@@ -449,11 +452,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           }
 
           if (foundTechKey) {
+            matchedTechKeys.add(foundTechKey);
             stats.matched++;
             const oldData = housesDataMap[foundTechKey] || { status: 'available' };
             const newName = String(row[nameIdx] || '');
-            const normNewName = normalizeForMatch(newName);
-            const isInvestment = normInvestmentNames.includes(normNewName);
+            const isInvestment = normInvestmentNames.includes(normalizeForMatch(newName));
             
             let saleDate = '';
             if (row[dateIdx]) {
@@ -465,66 +468,71 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             }
 
             const newStatus = isInvestment ? 'investment' : 'sold';
-
             if (oldData.status !== newStatus) {
-              let msg = isInvestment 
-                ? `تم تحويل الوحدة ${foundLabel} إلى حالة استثمار باسم ${newName}`
-                : `تم بيع الوحدة ${foundLabel} للسيد ${newName} بتاريخ ${saleDate || now}`;
-              notifications.push({ project_id: projectId, message: msg });
+              notifications.push({ 
+                project_id: projectId, 
+                message: isInvestment ? `تم تحويل الوحدة ${foundLabel} إلى استثمار باسم ${newName}` : `تم بيع الوحدة ${foundLabel} للسيد ${newName}` 
+              });
             }
 
             updatesMap.set(foundTechKey, {
               unit_key: foundTechKey,
               project_id: projectId,
-              data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: newStatus, lastSyncStatus: 'success' }
+              data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: newStatus }
             });
-          } else {
-            stats.unitNotFound++;
           }
         });
 
-        // تقرير المطابقة
-        addLog(`تقرير المطابقة:`);
-        addLog(`- إجمالي الصفوف: ${stats.totalRows}`);
-        addLog(`- تم المطابقة بنجاح: ${stats.matched}`);
-        if (stats.projectNotFound > 0) addLog(`- تنبيه: ${stats.projectNotFound} صف لم يتم العثور على مشروعهم (تأكد من اسم المدينة).`);
-        if (stats.unitNotFound > 0) addLog(`- تنبيه: ${stats.unitNotFound} صف لم يتم العثور على رقم وحدتهم في المخطط.`);
-        if (stats.missingInfo > 0) addLog(`- تنبيه: ${stats.missingInfo} صف ينقصهم بيانات أساسية.`);
+        // معالجة الوحدات المختفية من الإكسل (فقط للمباع والاستثمار)
+        for (const [techKey, oldData] of Object.entries(housesDataMap)) {
+          if (!matchedTechKeys.has(techKey)) {
+            const unitInfo = currentHousesData.find(u => u.unit_key === techKey);
+            if (unitInfo && projectsInExcel.has(unitInfo.project_id)) {
+              if (oldData.status === 'sold' || oldData.status === 'investment') {
+                const label = projectLabelsMap.get(unitInfo.project_id)?.get(techKey) || techKey;
+                stats.reset++;
+                addLog(`تنبيه: الوحدة ${label} اختفت من الإكسل، تم تحويلها إلى متاح.`);
+                
+                notifications.push({
+                  project_id: unitInfo.project_id,
+                  message: `الوحدة ${label} لم تعد موجودة في ملف المبيعات، تم إعادتها للحالة (متوفر).`
+                });
+
+                updatesMap.set(techKey, {
+                  unit_key: techKey,
+                  project_id: unitInfo.project_id,
+                  data: { status: 'available', name: '', phone: '', saleDate: '', details: 'تم التصفير تلقائياً لعدم وجودها في ملف الإكسل' }
+                });
+              }
+            }
+          }
+        }
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
-          addLog(`جاري رفع ${finalUpdates.length} تحديث إلى قاعدة البيانات...`);
           const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
-            const { error: upsertError } = await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
-            if (upsertError) throw upsertError;
+            await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
           }
-          
           if (notifications.length > 0) {
-            addLog(`جاري تسجيل ${notifications.length} إشعار جديد...`);
             for (let i = 0; i < notifications.length; i += chunkSize) {
               await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize));
             }
           }
-          
           setHousesData(prev => {
             const next = { ...prev };
             finalUpdates.forEach(u => { next[u.unit_key] = u.data; });
             return next;
           });
-
-          const updateTime = new Date().toISOString();
-          await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
-          setLastUpdate(updateTime);
-          addLog("اكتملت عملية التحديث بنجاح!");
-          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
+          await supabase.from('settings').upsert({ key: 'last_excel_update', value: new Date().toISOString() });
+          setLastUpdate(new Date().toISOString());
+          addLog(`اكتملت العملية: تم تحديث ${stats.matched} وحدة، وإعادة ${stats.reset} وحدة للحالة متاح.`);
+          showSuccess(`تم تحديث ${stats.matched} وحدة وتصفير ${stats.reset} وحدة.`);
         } else {
-          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة للتحديث.");
-          showError("لم يتم العثور على مسميات متطابقة");
+          showError("لم يتم العثور على بيانات مطابقة");
         }
       } catch (error) {
         console.error(error);
-        addLog(`خطأ فادح: ${error instanceof Error ? error.message : 'حدث خطأ غير معروف'}`);
         showError("حدث خطأ أثناء معالجة البيانات");
       } finally {
         setIsProcessing(false);
@@ -568,46 +576,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const handleSaveMap = async (elements: MapElement[], newWidth: number, newHeight: number) => {
     if (!editingMapProject || isSavingMap) return;
-    
     setIsSavingMap(true);
     try {
       const cleanedElements = elements.map(el => {
         const cleaned: any = { ...el };
         Object.keys(cleaned).forEach(key => {
-          if (cleaned[key] === undefined || cleaned[key] === null) {
-            delete cleaned[key];
-          }
+          if (cleaned[key] === undefined || cleaned[key] === null) delete cleaned[key];
         });
         return cleaned;
       });
-
-      const payloadSize = JSON.stringify(cleanedElements).length;
-      if (payloadSize > 5 * 1024 * 1024) {
-        showError("حجم المخطط كبير جداً. يرجى تقليل عدد العناصر أو استخدام صور مرجعية أصغر.");
-        setIsSavingMap(false);
-        return;
-      }
-
-      const { error } = await supabase
-        .from('projects')
-        .update({ 
-          elements: cleanedElements, 
-          map_width: Math.round(newWidth), 
-          map_height: Math.round(newHeight) 
-        })
-        .eq('id', editingMapProject.id);
-      
+      const { error } = await supabase.from('projects').update({ elements: cleanedElements, map_width: Math.round(newWidth), map_height: Math.round(newHeight) }).eq('id', editingMapProject.id);
       if (error) throw error;
-      
       setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements: cleanedElements, mapWidth: Math.round(newWidth), mapHeight: Math.round(newHeight) } : p));
       setEditingMapProject(null);
       showSuccess('تم حفظ المخطط بنجاح');
-    } catch (error) { 
-      console.error("Save error:", error);
-      showError("فشل في حفظ المخطط. قد يكون حجم البيانات كبيراً جداً على السيرفر."); 
-    } finally {
-      setIsSavingMap(false);
-    }
+    } catch (error) { showError("فشل في حفظ المخطط"); } finally { setIsSavingMap(false); }
   };
 
   const startEditingInfo = (project: Project) => {
@@ -621,17 +604,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const startEditingMap = async (project: Project) => {
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('elements')
-        .eq('id', project.id)
-        .single();
-      
+      const { data, error } = await supabase.from('projects').select('elements').eq('id', project.id).single();
       if (error) throw error;
       setEditingMapProject({ ...project, elements: data.elements || [] });
-    } catch (error) {
-      showError("فشل في تحميل تفاصيل المخطط");
-    }
+    } catch (error) { showError("فشل في تحميل تفاصيل المخطط"); }
   };
 
   if (editingMapProject) {
@@ -642,13 +618,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             <Button variant="ghost" onClick={() => setEditingMapProject(null)} className="rounded-xl" disabled={isSavingMap}><ArrowRight className="ml-2" />العودة</Button>
             <h1 className="text-2xl font-black">تعديل مخطط: {editingMapProject.name}</h1>
           </div>
-          <MapEditor 
-            initialElements={editingMapProject.elements} 
-            onSave={handleSaveMap} 
-            mapWidth={editingMapProject.mapWidth} 
-            mapHeight={editingMapProject.mapHeight}
-            isSaving={isSavingMap}
-          />
+          <MapEditor initialElements={editingMapProject.elements} onSave={handleSaveMap} mapWidth={editingMapProject.mapWidth} mapHeight={editingMapProject.mapHeight} isSaving={isSavingMap} />
         </div>
       </div>
     );
@@ -677,7 +647,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center justify-between border-b pb-4">
                   <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><Database className="text-blue-600" /></div><h2 className="text-xl font-black text-slate-800">مفتش قاعدة البيانات</h2></div>
-                  <p className="text-slate-500 font-bold">يرجى اختيار مشروع من القائمة الرئيسية لعرض بياناته في المفتش.</p>
                 </div>
               </div>
             ) : showMarketingCenters ? (
@@ -704,20 +673,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div className="flex items-center gap-3"><div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div><h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2></div>
                   <div className="flex gap-2">
                     <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="outline" className="rounded-xl gap-2 border-rose-200 text-rose-500 hover:bg-rose-50"><RefreshCcw size={18} /> تصفير كافة البيانات</Button>
-                      </AlertDialogTrigger>
+                      <AlertDialogTrigger asChild><Button variant="outline" className="rounded-xl gap-2 border-rose-200 text-rose-500 hover:bg-rose-50"><RefreshCcw size={18} /> تصفير كافة البيانات</Button></AlertDialogTrigger>
                       <AlertDialogContent dir="rtl">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle className="text-right">هل أنت متأكد تماماً؟</AlertDialogTitle>
-                          <AlertDialogDescription className="text-right">
-                            سيؤدي هذا الإجراء إلى حذف كافة بيانات المبيعات والأسماء والتواريخ من قاعدة البيانات لجميع المشاريع. لا يمكن التراجع عن هذا الإجراء.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter className="flex-row-reverse gap-2">
-                          <AlertDialogAction onClick={handleResetAllData} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، قم بالتصفير</AlertDialogAction>
-                          <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
-                        </AlertDialogFooter>
+                        <AlertDialogHeader><AlertDialogTitle className="text-right">هل أنت متأكد تماماً؟</AlertDialogTitle><AlertDialogDescription className="text-right">سيؤدي هذا الإجراء إلى حذف كافة بيانات المبيعات والأسماء والتواريخ من قاعدة البيانات لجميع المشاريع.</AlertDialogDescription></AlertDialogHeader>
+                        <AlertDialogFooter className="flex-row-reverse gap-2"><AlertDialogAction onClick={handleResetAllData} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، قم بالتصفير</AlertDialogAction><AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel></AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
                     <Button variant="outline" onClick={handleClearNotifications} className="rounded-xl gap-2 border-amber-200 text-amber-600 hover:bg-amber-50"><Eraser size={18} /> تصفير الإشعارات</Button>
@@ -725,11 +684,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   </div>
                 </div>
 
-                {lastUpdate && (
-                  <div className="flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                    <Clock size={16} /> آخر تحديث للبيانات: {new Date(lastUpdate).toLocaleString('ar-EG')}
-                  </div>
-                )}
+                {lastUpdate && <div className="flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100"><Clock size={16} /> آخر تحديث للبيانات: {new Date(lastUpdate).toLocaleString('ar-EG')}</div>}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2"><label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> عمود المدينة (A, B, ...)</label><Input placeholder="A" value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" /></div>
@@ -750,44 +705,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
 
                 <div className="bg-purple-50 p-8 rounded-[2rem] border-2 border-purple-100 space-y-6">
-                  <div className="flex items-center gap-3 border-b border-purple-100 pb-4">
-                    <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Coins className="text-purple-600" /></div>
-                    <h2 className="text-xl font-black text-slate-800">قائمة الاستثمارات</h2>
-                  </div>
-                  <p className="text-sm text-slate-600 font-bold">الأسماء المضافة هنا سيتم تحويل حالة وحداتهم تلقائياً إلى "استثمار" (باللون البنفسجي) عند رفع ملف الإكسل.</p>
-                  <div className="flex gap-2">
-                    <Input 
-                      placeholder="أدخل اسم المستثمر..." 
-                      value={newInvestmentName} 
-                      onChange={(e) => setNewInvestmentName(e.target.value)} 
-                      className="rounded-xl h-12 border-purple-200"
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddInvestmentName()}
-                    />
-                    <Button onClick={handleAddInvestmentName} className="bg-purple-600 hover:bg-purple-700 rounded-xl h-12 px-6 font-bold">إضافة وحفظ</Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {investmentNames.map((name, idx) => (
-                      <div key={idx} className="bg-white border border-purple-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm">
-                        <span className="font-bold text-slate-700">{name}</span>
-                        <button onClick={() => handleDeleteInvestmentName(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
-                      </div>
-                    ))}
-                  </div>
+                  <div className="flex items-center gap-3 border-b border-purple-100 pb-4"><div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Coins className="text-purple-600" /></div><h2 className="text-xl font-black text-slate-800">قائمة الاستثمارات</h2></div>
+                  <div className="flex gap-2"><Input placeholder="أدخل اسم المستثمر..." value={newInvestmentName} onChange={(e) => setNewInvestmentName(e.target.value)} className="rounded-xl h-12 border-purple-200" onKeyPress={(e) => e.key === 'Enter' && handleAddInvestmentName()} /><Button onClick={handleAddInvestmentName} className="bg-purple-600 hover:bg-purple-700 rounded-xl h-12 px-6 font-bold">إضافة وحفظ</Button></div>
+                  <div className="flex flex-wrap gap-2">{investmentNames.map((name, idx) => (<div key={idx} className="bg-white border border-purple-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm"><span className="font-bold text-slate-700">{name}</span><button onClick={() => handleDeleteInvestmentName(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button></div>))}</div>
                 </div>
 
                 {processLogs.length > 0 && (
                   <div className="space-y-2 animate-in fade-in slide-in-from-bottom-4">
                     <div className="flex items-center gap-2 text-slate-800 font-black"><Terminal size={18} /> سجل العمليات</div>
                     <div className="bg-slate-900 rounded-2xl p-4 font-mono text-xs text-emerald-400 border border-slate-800 shadow-inner">
-                      <ScrollArea className="h-48 w-full">
-                        <div className="space-y-1">
-                          {processLogs.map((log, i) => (
-                            <div key={i} className={cn(log.includes('خطأ') ? 'text-rose-400' : log.includes('تنبيه') ? 'text-amber-400' : '')}>
-                              {log}
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
+                      <ScrollArea className="h-48 w-full"><div className="space-y-1">{processLogs.map((log, i) => (<div key={i} className={cn(log.includes('خطأ') ? 'text-rose-400' : log.includes('تنبيه') ? 'text-amber-400' : '')}>{log}</div>))}</div></ScrollArea>
                     </div>
                   </div>
                 )}
@@ -814,25 +741,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       <div className="flex items-center gap-4"><div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100"><MapIcon className="text-slate-400" /></div><div><h3 className="font-bold text-lg">{project.name}</h3><p className="text-sm text-slate-500">{project.mapWidth}x{project.mapHeight}</p></div></div>
                       <div className="flex gap-2">
                         <Button variant="ghost" size="icon" onClick={() => startEditingInfo(project)} className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl"><Edit2 size={18} /></Button>
-                        
                         <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></Button>
-                          </AlertDialogTrigger>
+                          <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></Button></AlertDialogTrigger>
                           <AlertDialogContent dir="rtl">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle className="text-right">هل أنت متأكد من حذف المشروع؟</AlertDialogTitle>
-                              <AlertDialogDescription className="text-right">
-                                سيتم حذف مشروع "{project.name}" وكافة المخططات والبيانات المرتبطة به نهائياً. لا يمكن التراجع عن هذا الإجراء.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter className="flex-row-reverse gap-2">
-                              <AlertDialogAction onClick={() => handleDeleteProject(project.id)} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، احذف المشروع</AlertDialogAction>
-                              <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
-                            </AlertDialogFooter>
+                            <AlertDialogHeader><AlertDialogTitle className="text-right">هل أنت متأكد من حذف المشروع؟</AlertDialogTitle><AlertDialogDescription className="text-right">سيتم حذف مشروع "{project.name}" وكافة المخططات والبيانات المرتبطة به نهائياً.</AlertDialogDescription></AlertDialogHeader>
+                            <AlertDialogFooter className="flex-row-reverse gap-2"><AlertDialogAction onClick={() => handleDeleteProject(project.id)} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، احذف المشروع</AlertDialogAction><AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel></AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
-
                         <Button onClick={() => startEditingMap(project)} className="bg-slate-900 hover:bg-slate-800 rounded-xl gap-2"><Settings2 size={16} />تعديل المخطط</Button>
                       </div>
                     </div>
