@@ -349,7 +349,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         // 2. جلب كافة المشاريع
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
-        const projectLabelsMap = new Map<string, string>();
         
         let allProjectsWithElements: any[] = [];
         let pFrom = 0;
@@ -376,7 +375,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
           projectElementsMap.set(project.id, project.elements || []);
-          projectLabelsMap.set(project.id, project.name);
         });
 
         const updatesMap = new Map<string, any>();
@@ -490,17 +488,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           }
         });
 
-        // الدورة الثانية: معالجة الوحدات التي اختفت من الإكسل (تحويلها لمتوفر)
+        // الدورة الثانية: معالجة الوحدات التي اختفت من الإكسل
         addLog("جاري فحص الوحدات التي اختفت من ملف الإكسل...");
         currentHousesData.forEach(unit => {
-          // فقط للوحدات التي تنتمي للمشاريع الموجودة في ملف الإكسل المرفوع حالياً
           if (projectsInExcel.has(unit.project_id) && !matchedUnitKeys.has(unit.unit_key)) {
             const currentData = unit.data || {};
-            // إذا كانت الحالة ليست "متوفر" وليست "مجمدة"
-            if (currentData.status !== 'available' && !currentData.status?.startsWith('frozen')) {
+            
+            // التصفير ينطبق فقط على "مباع" و "استثمار"
+            // الحجز (pending) يبقى كما هو لأنه يدار داخلياً
+            if (currentData.status === 'sold' || currentData.status === 'investment') {
               stats.resetToAvailable++;
               
-              // البحث عن اسم الوحدة (Label) من المخطط
               const elements = projectElementsMap.get(unit.project_id) || [];
               let unitLabel = unit.unit_key;
               
@@ -509,16 +507,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   unitLabel = el.label;
                   break;
                 } else if (el.type === 'tower' && unit.unit_key.startsWith(el.id)) {
-                  // استخراج التسمية للشقة
                   const parts = unit.unit_key.split('_');
                   const floorPart = parts[1]?.replace('F', '');
                   const aptPart = parts[2]?.replace('A', '');
                   if (floorPart && aptPart) {
                     const f = parseInt(floorPart);
-                    const a = parseInt(aptPart);
                     const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                    // حساب رقم P التقريبي (أو نكتفي بذكر البريد والطابق)
-                    unitLabel = `${el.label}-${floorCode}-A${a}`;
+                    unitLabel = `${el.label}-${floorCode}-A${aptPart}`;
                   }
                   break;
                 }
@@ -542,9 +537,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         addLog(`تقرير المطابقة:`);
         addLog(`- إجمالي الصفوف في الإكسل: ${stats.totalRows}`);
         addLog(`- تم المطابقة والتحديث: ${stats.matched}`);
-        addLog(`- وحدات اختفت من الملف وتم تصفيرها: ${stats.resetToAvailable}`);
-        if (stats.projectNotFound > 0) addLog(`- تنبيه: ${stats.projectNotFound} صف لم يتم العثور على مشروعهم.`);
-        if (stats.unitNotFound > 0) addLog(`- تنبيه: ${stats.unitNotFound} صف لم يتم العثور على رقم وحدتهم.`);
+        addLog(`- وحدات (مباع/استثمار) اختفت وتم تصفيرها: ${stats.resetToAvailable}`);
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
