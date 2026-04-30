@@ -309,12 +309,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
 
-        if (data.length <= 1) {
-          showError("الملف فارغ أو لا يحتوي على بيانات");
-          setIsProcessing(false);
-          return;
-        }
-
         addLog(`تم قراءة ${data.length} صف من الإكسل.`);
 
         const cityIdx = colToIdx(excelMapping.cityCol);
@@ -323,89 +317,79 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
 
-        // 1. استخراج أسماء المدن/المشاريع الفريدة من الإكسل لتقليل حجم البحث
-        const uniqueCitiesInExcel = new Set<string>();
-        data.forEach((row, index) => {
-          if (index === 0 || !row[cityIdx]) return;
-          uniqueCitiesInExcel.add(normalizeForMatch(row[cityIdx]));
-        });
+        const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
-        addLog(`تم العثور على ${uniqueCitiesInExcel.size} مشروع في ملف الإكسل.`);
-
-        // 2. جلب بيانات المشاريع المذكورة فقط (لتقليل حجم البيانات وتجنب الـ Timeout)
-        const projectMap = new Map<string, string>();
-        const projectElementsMap = new Map<string, MapElement[]>();
-        
-        addLog("جاري جلب بيانات المخططات للمشاريع المذكورة...");
-        const { data: projectsFromDb, error: pError } = await supabase
-          .from('projects')
-          .select('id, name, elements');
-        
-        if (pError) throw pError;
-
-        projectsFromDb.forEach(project => {
-          const normProjectName = normalizeForMatch(project.name);
-          if (uniqueCitiesInExcel.has(normProjectName)) {
-            projectMap.set(normProjectName, project.id);
-            projectElementsMap.set(project.id, project.elements || []);
-          }
-        });
-
-        const targetProjectIds = Array.from(projectMap.values());
-        if (targetProjectIds.length === 0) {
-          addLog("خطأ: لم يتم العثور على أي مشروع مطابق في قاعدة البيانات.");
-          showError("لم يتم العثور على مشاريع مطابقة");
-          setIsProcessing(false);
-          return;
-        }
-
-        // 3. جلب بيانات الوحدات الحالية للمشاريع المستهدفة فقط
+        // 1. جلب كافة بيانات الوحدات الحالية (معالجة التكرار)
         let currentHousesData: any[] = [];
-        addLog("جاري جلب بيانات الوحدات الحالية...");
-        
-        // جلب البيانات على دفعات لتجنب الـ Timeout
-        for (const pid of targetProjectIds) {
-          let from = 0;
-          let hasMore = true;
-          while (hasMore) {
-            const { data: chunk, error: fetchError } = await supabase
-              .from('houses_data')
-              .select('*')
-              .eq('project_id', pid)
-              .range(from, from + 999);
+        let from = 0;
+        const step = 1000;
+        let hasMore = true;
 
-            if (fetchError) throw fetchError;
-            if (!chunk || chunk.length === 0) {
-              hasMore = false;
-            } else {
-              currentHousesData = [...currentHousesData, ...chunk];
-              from += 1000;
-              if (chunk.length < 1000) hasMore = false;
-            }
+        while (hasMore) {
+          const { data: chunk, error: fetchError } = await supabase
+            .from('houses_data')
+            .select('*')
+            .range(from, from + step - 1);
+
+          if (fetchError) throw fetchError;
+          if (!chunk || chunk.length === 0) {
+            hasMore = false;
+          } else {
+            currentHousesData = [...currentHousesData, ...chunk];
+            from += step;
+            if (chunk.length < step) hasMore = false;
           }
         }
 
         const housesDataMap: Record<string, any> = {};
-        currentHousesData.forEach(u => {
+        currentHousesData?.forEach(u => {
           housesDataMap[u.unit_key] = u.data;
         });
 
-        const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
+        // 2. جلب كافة المشاريع (معالجة التكرار لضمان جلب الجميع)
+        const projectMap = new Map<string, string>();
+        const projectElementsMap = new Map<string, MapElement[]>();
+        
+        let allProjectsWithElements: any[] = [];
+        let pFrom = 0;
+        let pHasMore = true;
+        
+        addLog("جاري جلب بيانات المشاريع والمخططات...");
+        while (pHasMore) {
+          const { data: pChunk, error: pError } = await supabase
+            .from('projects')
+            .select('id, name, elements')
+            .range(pFrom, pFrom + 999);
+          
+          if (pError) throw pError;
+          if (!pChunk || pChunk.length === 0) {
+            pHasMore = false;
+          } else {
+            allProjectsWithElements = [...allProjectsWithElements, ...pChunk];
+            pFrom += 1000;
+            if (pChunk.length < 1000) pHasMore = false;
+          }
+        }
+        
+        allProjectsWithElements.forEach(project => {
+          const normProjectName = normalizeForMatch(project.name);
+          projectMap.set(normProjectName, project.id);
+          projectElementsMap.set(project.id, project.elements || []);
+        });
+
         const updatesMap = new Map<string, any>();
-        const matchedUnitKeys = new Set<string>();
         const notifications: any[] = [];
         const now = new Date().toLocaleString('ar-EG');
 
+        // عدادات للتقرير النهائي
         let stats = {
           totalRows: data.length - 1,
           missingInfo: 0,
           projectNotFound: 0,
           unitNotFound: 0,
-          matched: 0,
-          resetToAvailable: 0
+          matched: 0
         };
 
-        // الدورة الأولى: معالجة الصفوف الموجودة في الإكسل
         data.forEach((row, index) => {
           if (index === 0) return;
           const rawCity = row[cityIdx];
@@ -466,7 +450,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           if (foundTechKey) {
             stats.matched++;
-            matchedUnitKeys.add(foundTechKey);
             const oldData = housesDataMap[foundTechKey] || { status: 'available' };
             const newName = String(row[nameIdx] || '');
             const normNewName = normalizeForMatch(newName);
@@ -500,79 +483,48 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           }
         });
 
-        // الدورة الثانية: معالجة الوحدات التي اختفت من الإكسل
-        addLog("جاري فحص الوحدات التي اختفت من ملف الإكسل...");
-        currentHousesData.forEach(unit => {
-          if (!matchedUnitKeys.has(unit.unit_key)) {
-            const currentData = unit.data || {};
-            if (currentData.status === 'sold' || currentData.status === 'investment') {
-              stats.resetToAvailable++;
-              
-              const elements = projectElementsMap.get(unit.project_id) || [];
-              let unitLabel = unit.unit_key;
-              
-              for (const el of elements) {
-                if (el.id === unit.unit_key) {
-                  unitLabel = el.label;
-                  break;
-                } else if (el.type === 'tower' && unit.unit_key.startsWith(el.id)) {
-                  const parts = unit.unit_key.split('_');
-                  const floorPart = parts[1]?.replace('F', '');
-                  const aptPart = parts[2]?.replace('A', '');
-                  if (floorPart && aptPart) {
-                    const f = parseInt(floorPart);
-                    const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                    unitLabel = `${el.label}-${floorCode}-A${aptPart}`;
-                  }
-                  break;
-                }
-              }
-
-              notifications.push({ 
-                project_id: unit.project_id, 
-                message: `تم تحويل الوحدة ${unitLabel} إلى حالة متوفر لعدم وجودها في ملف المبيعات المحدث.` 
-              });
-
-              updatesMap.set(unit.unit_key, {
-                unit_key: unit.unit_key,
-                project_id: unit.project_id,
-                data: { ...currentData, status: 'available', name: '', phone: '', saleDate: '', lastSyncStatus: 'reset' }
-              });
-            }
-          }
-        });
-
-        addLog(`تقرير المطابقة: ${stats.matched} تحديث، ${stats.resetToAvailable} تصفير.`);
+        // تقرير المطابقة
+        addLog(`تقرير المطابقة:`);
+        addLog(`- إجمالي الصفوف: ${stats.totalRows}`);
+        addLog(`- تم المطابقة بنجاح: ${stats.matched}`);
+        if (stats.projectNotFound > 0) addLog(`- تنبيه: ${stats.projectNotFound} صف لم يتم العثور على مشروعهم (تأكد من اسم المدينة).`);
+        if (stats.unitNotFound > 0) addLog(`- تنبيه: ${stats.unitNotFound} صف لم يتم العثور على رقم وحدتهم في المخطط.`);
+        if (stats.missingInfo > 0) addLog(`- تنبيه: ${stats.missingInfo} صف ينقصهم بيانات أساسية.`);
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
-          addLog(`جاري رفع التحديثات على دفعات صغيرة...`);
-          // تقليل حجم الدفعة إلى 200 لتجنب الـ Timeout
-          const chunkSize = 200;
+          addLog(`جاري رفع ${finalUpdates.length} تحديث إلى قاعدة البيانات...`);
+          const chunkSize = 500;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
             const { error: upsertError } = await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
             if (upsertError) throw upsertError;
-            addLog(`تم رفع الدفعة ${Math.floor(i/chunkSize) + 1}...`);
           }
           
           if (notifications.length > 0) {
+            addLog(`جاري تسجيل ${notifications.length} إشعار جديد...`);
             for (let i = 0; i < notifications.length; i += chunkSize) {
               await supabase.from('notifications').insert(notifications.slice(i, i + chunkSize));
             }
           }
           
+          setHousesData(prev => {
+            const next = { ...prev };
+            finalUpdates.forEach(u => { next[u.unit_key] = u.data; });
+            return next;
+          });
+
           const updateTime = new Date().toISOString();
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
           addLog("اكتملت عملية التحديث بنجاح!");
-          showSuccess(`تم تحديث ${stats.matched} وحدة وتصفير ${stats.resetToAvailable} وحدة.`);
+          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
         } else {
-          addLog("تنبيه: لم يتم العثور على أي بيانات مطابقة للتحديث.");
+          addLog("خطأ: لم يتم العثور على أي بيانات مطابقة للتحديث.");
           showError("لم يتم العثور على مسميات متطابقة");
         }
       } catch (error) {
         console.error(error);
-        addLog(`خطأ: ${error instanceof Error ? error.message : 'حدث خطأ في الاتصال'}`);
+        addLog(`خطأ فادح: ${error instanceof Error ? error.message : 'حدث خطأ غير معروف'}`);
         showError("حدث خطأ أثناء معالجة البيانات");
       } finally {
         setIsProcessing(false);
