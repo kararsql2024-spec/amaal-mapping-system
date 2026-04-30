@@ -319,7 +319,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
-        // 1. جلب كافة بيانات الوحدات الحالية (معالجة التكرار)
+        // 1. جلب كافة بيانات الوحدات الحالية
         let currentHousesData: any[] = [];
         let from = 0;
         const step = 1000;
@@ -346,9 +346,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           housesDataMap[u.unit_key] = u.data;
         });
 
-        // 2. جلب كافة المشاريع (معالجة التكرار لضمان جلب الجميع)
+        // 2. جلب كافة المشاريع
         const projectMap = new Map<string, string>();
         const projectElementsMap = new Map<string, MapElement[]>();
+        const projectLabelsMap = new Map<string, string>();
         
         let allProjectsWithElements: any[] = [];
         let pFrom = 0;
@@ -375,21 +376,25 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
           projectElementsMap.set(project.id, project.elements || []);
+          projectLabelsMap.set(project.id, project.name);
         });
 
         const updatesMap = new Map<string, any>();
+        const matchedUnitKeys = new Set<string>();
+        const projectsInExcel = new Set<string>();
         const notifications: any[] = [];
         const now = new Date().toLocaleString('ar-EG');
 
-        // عدادات للتقرير النهائي
         let stats = {
           totalRows: data.length - 1,
           missingInfo: 0,
           projectNotFound: 0,
           unitNotFound: 0,
-          matched: 0
+          matched: 0,
+          resetToAvailable: 0
         };
 
+        // الدورة الأولى: معالجة الصفوف الموجودة في الإكسل
         data.forEach((row, index) => {
           if (index === 0) return;
           const rawCity = row[cityIdx];
@@ -408,6 +413,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             return;
           }
 
+          projectsInExcel.add(projectId);
           const normExcelUnit = normalizeForMatch(rawUnit);
           const elements = projectElementsMap.get(projectId) || [];
           
@@ -450,6 +456,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           if (foundTechKey) {
             stats.matched++;
+            matchedUnitKeys.add(foundTechKey);
             const oldData = housesDataMap[foundTechKey] || { status: 'available' };
             const newName = String(row[nameIdx] || '');
             const normNewName = normalizeForMatch(newName);
@@ -483,13 +490,61 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           }
         });
 
+        // الدورة الثانية: معالجة الوحدات التي اختفت من الإكسل (تحويلها لمتوفر)
+        addLog("جاري فحص الوحدات التي اختفت من ملف الإكسل...");
+        currentHousesData.forEach(unit => {
+          // فقط للوحدات التي تنتمي للمشاريع الموجودة في ملف الإكسل المرفوع حالياً
+          if (projectsInExcel.has(unit.project_id) && !matchedUnitKeys.has(unit.unit_key)) {
+            const currentData = unit.data || {};
+            // إذا كانت الحالة ليست "متوفر" وليست "مجمدة"
+            if (currentData.status !== 'available' && !currentData.status?.startsWith('frozen')) {
+              stats.resetToAvailable++;
+              
+              // البحث عن اسم الوحدة (Label) من المخطط
+              const elements = projectElementsMap.get(unit.project_id) || [];
+              let unitLabel = unit.unit_key;
+              
+              for (const el of elements) {
+                if (el.id === unit.unit_key) {
+                  unitLabel = el.label;
+                  break;
+                } else if (el.type === 'tower' && unit.unit_key.startsWith(el.id)) {
+                  // استخراج التسمية للشقة
+                  const parts = unit.unit_key.split('_');
+                  const floorPart = parts[1]?.replace('F', '');
+                  const aptPart = parts[2]?.replace('A', '');
+                  if (floorPart && aptPart) {
+                    const f = parseInt(floorPart);
+                    const a = parseInt(aptPart);
+                    const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                    // حساب رقم P التقريبي (أو نكتفي بذكر البريد والطابق)
+                    unitLabel = `${el.label}-${floorCode}-A${a}`;
+                  }
+                  break;
+                }
+              }
+
+              notifications.push({ 
+                project_id: unit.project_id, 
+                message: `تم تحويل الوحدة ${unitLabel} إلى حالة متوفر لعدم وجودها في ملف المبيعات المحدث.` 
+              });
+
+              updatesMap.set(unit.unit_key, {
+                unit_key: unit.unit_key,
+                project_id: unit.project_id,
+                data: { ...currentData, status: 'available', name: '', phone: '', saleDate: '', lastSyncStatus: 'reset' }
+              });
+            }
+          }
+        });
+
         // تقرير المطابقة
         addLog(`تقرير المطابقة:`);
-        addLog(`- إجمالي الصفوف: ${stats.totalRows}`);
-        addLog(`- تم المطابقة بنجاح: ${stats.matched}`);
-        if (stats.projectNotFound > 0) addLog(`- تنبيه: ${stats.projectNotFound} صف لم يتم العثور على مشروعهم (تأكد من اسم المدينة).`);
-        if (stats.unitNotFound > 0) addLog(`- تنبيه: ${stats.unitNotFound} صف لم يتم العثور على رقم وحدتهم في المخطط.`);
-        if (stats.missingInfo > 0) addLog(`- تنبيه: ${stats.missingInfo} صف ينقصهم بيانات أساسية.`);
+        addLog(`- إجمالي الصفوف في الإكسل: ${stats.totalRows}`);
+        addLog(`- تم المطابقة والتحديث: ${stats.matched}`);
+        addLog(`- وحدات اختفت من الملف وتم تصفيرها: ${stats.resetToAvailable}`);
+        if (stats.projectNotFound > 0) addLog(`- تنبيه: ${stats.projectNotFound} صف لم يتم العثور على مشروعهم.`);
+        if (stats.unitNotFound > 0) addLog(`- تنبيه: ${stats.unitNotFound} صف لم يتم العثور على رقم وحدتهم.`);
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
@@ -517,7 +572,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           await supabase.from('settings').upsert({ key: 'last_excel_update', value: updateTime });
           setLastUpdate(updateTime);
           addLog("اكتملت عملية التحديث بنجاح!");
-          showSuccess(`تم تحديث ${finalUpdates.length} وحدة بنجاح.`);
+          showSuccess(`تم تحديث ${stats.matched} وحدة وتصفير ${stats.resetToAvailable} وحدة.`);
         } else {
           addLog("خطأ: لم يتم العثور على أي بيانات مطابقة للتحديث.");
           showError("لم يتم العثور على مسميات متطابقة");
