@@ -96,6 +96,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <SelectItem value="investment">استثمار</SelectItem>
                 <SelectItem value="frozen_counted">تجميد (محسوب في المجموع)</SelectItem>
                 <SelectItem value="frozen_uncounted">تجميد (غير محسوب في المجموع)</SelectItem>
+                <SelectItem value="frozen_hidden">تجميد (مخفي من العدد والمجموع)</SelectItem>
               </SelectContent>
             </Select>
           </div>

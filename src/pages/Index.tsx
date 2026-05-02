@@ -63,7 +63,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       const fetchProjectData = async () => {
         setIsProjectLoading(true);
         try {
-          // 1. جلب تفاصيل المخطط (Elements) لهذا المشروع
           const { data: projectDetails, error: projectError } = await supabase
             .from('projects')
             .select('elements')
@@ -73,7 +72,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           if (projectError) throw projectError;
           setActiveElements(projectDetails?.elements || []);
 
-          // 2. جلب الإشعارات لهذا المشروع
           const { data: notifs } = await supabase
             .from('notifications')
             .select('*')
@@ -82,7 +80,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             .limit(50);
           if (notifs) setNotifications(notifs);
 
-          // 3. جلب بيانات الوحدات لهذا المشروع (مع معالجة حد الـ 1000 سجل)
           let allUnits: any[] = [];
           let from = 0;
           const step = 1000;
@@ -112,7 +109,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           });
           setHousesData(formattedUnits);
           
-          // فحص انتهاء الحجوزات
           checkExpiredBookings(allUnits, selectedProjectId);
           
         } catch (error) {
@@ -213,7 +209,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     activeElements.forEach(el => {
       if (el.type === 'house') {
         const data = housesData[el.id];
-        if (data?.status !== 'frozen_uncounted') total++;
+        // استبعاد الوحدات التي تحمل حالة تجميد مخفي من العدد الكلي
+        if (data?.status !== 'frozen_uncounted' && data?.status !== 'frozen_hidden') total++;
         if (data?.status === 'sold') sold++;
         if (data?.status === 'investment') investment++;
       } else if (el.type === 'tower') {
@@ -223,7 +220,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           for (let a = 1; a <= aptsPerFloor; a++) {
             const key = `${el.id}_F${f}_A${a}`;
             const data = housesData[key];
-            if (data?.status !== 'frozen_uncounted') total++;
+            // استبعاد الوحدات التي تحمل حالة تجميد مخفي من العدد الكلي
+            if (data?.status !== 'frozen_uncounted' && data?.status !== 'frozen_hidden') total++;
             if (data?.status === 'sold') sold++;
             if (data?.status === 'investment') investment++;
           }
