@@ -386,9 +386,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               for (let f = 1; f <= (el.floors || 1); f++) {
                 const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                 for (let a = 1; a <= (el.apartmentsPerFloor || 1); a++) {
-                  pCounter++;
                   const techKey = `${el.id}_F${f}_A${a}`;
-                  labels.set(techKey, `${el.label}-${floorCode}-P${pCounter}`);
+                  const unitData = housesDataMap[techKey];
+                  // منطق العد التسلسلي: تجاوز الوحدات المجمدة
+                  const isFrozenSequence = unitData?.status === 'frozen_uncounted' || unitData?.status === 'frozen_hidden';
+                  
+                  if (!isFrozenSequence) {
+                    pCounter++;
+                  }
+                  
+                  const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
+                  labels.set(techKey, `${el.label}-${floorCode}-${aptCode}`);
                 }
               }
             }
@@ -417,37 +425,18 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           projectsInExcel.add(projectId);
           const normExcelUnit = normalizeForMatch(rawUnit);
-          const elements = projectElementsMap.get(projectId) || [];
+          const labels = projectLabelsMap.get(projectId);
           
           let foundTechKey: string | null = null;
           let foundLabel: string | null = null;
 
-          for (const el of elements) {
-            if (el.type === 'house') {
-              if (normExcelUnit === normalizeForMatch(el.label)) {
-                foundTechKey = el.id;
-                foundLabel = el.label;
+          if (labels) {
+            for (const [techKey, label] of labels.entries()) {
+              if (normExcelUnit === normalizeForMatch(label)) {
+                foundTechKey = techKey;
+                foundLabel = label;
                 break;
               }
-            } else if (el.type === 'tower') {
-              let pCounter = 0;
-              let towerMatch = false;
-              for (let f = 1; f <= (el.floors || 1); f++) {
-                const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                for (let a = 1; a <= (el.apartmentsPerFloor || 1); a++) {
-                  pCounter++;
-                  const techKey = `${el.id}_F${f}_A${a}`;
-                  const fullLabel = `${el.label}-${floorCode}-P${pCounter}`;
-                  if (normExcelUnit === normalizeForMatch(fullLabel)) {
-                    foundTechKey = techKey;
-                    foundLabel = fullLabel;
-                    towerMatch = true;
-                    break;
-                  }
-                }
-                if (towerMatch) break;
-              }
-              if (towerMatch) break;
             }
           }
 

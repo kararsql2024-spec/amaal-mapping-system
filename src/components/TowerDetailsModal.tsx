@@ -47,11 +47,18 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
-        pCounter++;
+        const key = getAptKey(f, a);
+        const data = housesData[key];
+        // إذا كانت الشقة مجمدة (بأي نوع من أنواع التجميد التي تستبعدها من العد)، لا نزيد العداد
+        const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
+        
+        if (!isFrozenSequence) {
+          pCounter++;
+        }
+
         if (f === floor && a === aptNum) {
-          const data = housesData[getAptKey(f, a)];
-          const aptCode = data?.status === 'frozen_uncounted' ? "مجمدة" : `P${pCounter}`;
-          return `${tower.label}-${floorCode}-${aptCode}`;
+          const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
+          return `${tower.label}-${getFloorCode(f)}-${aptCode}`;
         }
       }
     }
@@ -141,6 +148,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                         <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
                           {data.status === 'frozen_uncounted' ? 'مجمدة (خارج المجموع)' : 
                            data.status === 'frozen_counted' ? 'مجمدة (داخل المجموع)' : 
+                           data.status === 'frozen_hidden' ? 'مجمدة (مخفي من العدد)' :
                            data.status === 'investment' ? 'استثمار' :
                            data.status}
                         </p>
