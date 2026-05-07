@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import InteractiveMap from '@/components/InteractiveMap';
 import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
+import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
 import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
@@ -209,7 +210,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     activeElements.forEach(el => {
       if (el.type === 'house') {
         const data = housesData[el.id];
-        // استبعاد الوحدات التي تحمل حالة تجميد مخفي من العدد الكلي
         if (data?.status !== 'frozen_uncounted' && data?.status !== 'frozen_hidden') total++;
         if (data?.status === 'sold') sold++;
         if (data?.status === 'investment') investment++;
@@ -220,7 +220,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           for (let a = 1; a <= aptsPerFloor; a++) {
             const key = `${el.id}_F${f}_A${a}`;
             const data = housesData[key];
-            // استبعاد الوحدات التي تحمل حالة تجميد مخفي من العدد الكلي
             if (data?.status !== 'frozen_uncounted' && data?.status !== 'frozen_hidden') total++;
             if (data?.status === 'sold') sold++;
             if (data?.status === 'investment') investment++;
@@ -291,14 +290,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         </header>
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-8">
             {isProjectLoading ? (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4">
                 <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 <h2 className="text-xl font-bold text-slate-600">جاري تحميل بيانات المشروع...</h2>
               </div>
             ) : activeProject ? (
-              <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} />
+              <>
+                <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} />
+                <DetailedStatsTable elements={activeElements} housesData={housesData} />
+              </>
             ) : (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">يرجى إنشاء مشروع أولاً</h2></div>
             )}
