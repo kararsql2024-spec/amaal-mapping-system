@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MapElement } from '@/types/project';
 import {
   Table,
@@ -12,9 +12,16 @@ import {
   TableFooter,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Home, BarChart3 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/tabs";
+import { Building2, Home, BarChart3, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface DetailedStatsTableProps {
   elements: MapElement[];
@@ -22,6 +29,21 @@ interface DetailedStatsTableProps {
 }
 
 const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) => {
+  const [selectedType, setSelectedType] = useState<string>("all");
+
+  // استخراج كافة الأصناف المتاحة للفلترة
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    elements.filter(el => el.type === 'house').forEach(house => {
+      const parts = house.label.split('-');
+      if (parts.length >= 3) {
+        const typeMatch = parts[2].match(/[a-zA-Z]+/);
+        if (typeMatch) types.add(typeMatch[0]);
+      }
+    });
+    return Array.from(types).sort();
+  }, [elements]);
+
   // معالجة إحصائيات العمارات
   const towerStats = useMemo(() => {
     const stats: any[] = [];
@@ -68,7 +90,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     return stats;
   }, [elements, housesData]);
 
-  // معالجة إحصائيات المنازل (Z-B-Unit)
+  // معالجة إحصائيات المنازل مع دعم الفلترة
   const houseStats = useMemo(() => {
     const stats: Record<string, { blocks: Record<string, Record<string, any>>, totals: any }> = {};
     
@@ -80,6 +102,9 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       const block = parts[1];
       const typeMatch = parts[2].match(/[a-zA-Z]+/);
       const type = typeMatch ? typeMatch[0] : 'غير محدد';
+
+      // تطبيق الفلتر
+      if (selectedType !== "all" && type !== selectedType) return;
 
       const data = housesData[house.id] || { status: 'available' };
       if (data.status === 'frozen_hidden') return;
@@ -109,7 +134,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     });
 
     return stats;
-  }, [elements, housesData]);
+  }, [elements, housesData, selectedType]);
 
   return (
     <Card className="rounded-[2rem] border-slate-100 shadow-lg overflow-hidden bg-white">
@@ -131,6 +156,24 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           </TabsList>
 
           <TabsContent value="houses" className="space-y-12">
+            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-2 text-slate-600 font-bold">
+                <Filter size={18} />
+                <span>فلترة حسب الصنف:</span>
+              </div>
+              <Select value={selectedType} onValueChange={setSelectedType}>
+                <SelectTrigger className="w-[180px] rounded-xl bg-white font-bold">
+                  <SelectValue placeholder="اختر الصنف" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold">كافة الأصناف</SelectItem>
+                  {availableTypes.map(type => (
+                    <SelectItem key={type} value={type} className="font-bold">صنف {type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {Object.entries(houseStats).map(([zone, zoneData]) => (
               <div key={zone} className="space-y-4">
                 <h3 className="text-lg font-black text-blue-600 flex items-center gap-2 px-2">
@@ -157,20 +200,20 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           <TableRow 
                             key={`${block}-${type}`} 
                             className={cn(
-                              "hover:bg-slate-50/50 transition-colors",
-                              bIdx % 2 === 0 ? "bg-white" : "bg-slate-50/30"
+                              "hover:opacity-80 transition-all",
+                              bIdx % 2 === 0 ? "bg-orange-50/50" : "bg-sky-50/50"
                             )}
                           >
-                            <TableCell className={cn("font-bold border-l", tIdx === 0 && "bg-slate-100/50")}>
+                            <TableCell className={cn("font-bold border-l", tIdx === 0 && "bg-black/5")}>
                               {tIdx === 0 ? block : ""}
                             </TableCell>
-                            <TableCell className="font-bold text-slate-500">{type}</TableCell>
+                            <TableCell className="font-bold text-slate-600">{type}</TableCell>
                             <TableCell className="text-center font-black">{s.available}</TableCell>
                             <TableCell className="text-center font-black">{s.sold}</TableCell>
                             <TableCell className="text-center font-black">{s.investment}</TableCell>
                             <TableCell className="text-center font-black">{s.reserved}</TableCell>
                             <TableCell className="text-center font-black">{s.pending}</TableCell>
-                            <TableCell className="text-center font-black bg-slate-100/30">{s.total}</TableCell>
+                            <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>
                           </TableRow>
                         ))
                       ))}
@@ -217,8 +260,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableRow 
                           key={floor.label} 
                           className={cn(
-                            "hover:bg-slate-50/50 transition-colors",
-                            fIdx % 2 === 0 ? "bg-white" : "bg-slate-50/30"
+                            "hover:opacity-80 transition-all",
+                            fIdx % 2 === 0 ? "bg-orange-50/50" : "bg-sky-50/50"
                           )}
                         >
                           <TableCell className="font-bold border-l">{floor.label}</TableCell>
@@ -227,7 +270,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           <TableCell className="text-center font-black">{floor.investment}</TableCell>
                           <TableCell className="text-center font-black">{floor.reserved}</TableCell>
                           <TableCell className="text-center font-black">{floor.pending}</TableCell>
-                          <TableCell className="text-center font-black bg-slate-100/30">{floor.total}</TableCell>
+                          <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
