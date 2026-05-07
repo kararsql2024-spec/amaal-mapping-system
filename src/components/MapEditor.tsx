@@ -278,16 +278,43 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
     const el = elements.find(e => e.id === selectedId);
     if (!el) return;
     const pts = getElementPoints(el);
+    
+    // حساب العرض والطول الفعلي للعنصر قبل التدوير
     const minX = Math.min(...pts.map(p => p.x));
     const maxX = Math.max(...pts.map(p => p.x));
     const minY = Math.min(...pts.map(p => p.y));
     const maxY = Math.max(...pts.map(p => p.y));
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    // تحويل الزاوية إلى راديان
+    const angleRad = (el.rotation || 0) * (Math.PI / 180);
     
     let offset = { x: 0, y: 0 };
-    if (direction === 'right') offset = { x: (maxX - minX), y: 0 };
-    else if (direction === 'left') offset = { x: -(maxX - minX), y: 0 };
-    else if (direction === 'down') offset = { x: 0, y: (maxY - minY) };
-    else if (direction === 'up') offset = { x: 0, y: -(maxY - minY) };
+    
+    // حساب الإزاحة بناءً على زاوية الدوران (الإحداثيات المحلية)
+    if (direction === 'right') {
+      offset = { 
+        x: width * Math.cos(angleRad), 
+        y: width * Math.sin(angleRad) 
+      };
+    } else if (direction === 'left') {
+      offset = { 
+        x: -width * Math.cos(angleRad), 
+        y: -width * Math.sin(angleRad) 
+      };
+    } else if (direction === 'down') {
+      // الاتجاه العمودي يتأثر بالزاوية أيضاً
+      offset = { 
+        x: -height * Math.sin(angleRad), 
+        y: height * Math.cos(angleRad) 
+      };
+    } else if (direction === 'up') {
+      offset = { 
+        x: height * Math.sin(angleRad), 
+        y: -height * Math.cos(angleRad) 
+      };
+    }
 
     const newPoints = pts.map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
     
@@ -363,14 +390,33 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
   const handleSizeChange = (dim: 'w' | 'h', value: number) => {
     if (!selectedElement) return;
     const pts = getElementPoints(selectedElement);
+    
     const minX = Math.min(...pts.map(p => p.x));
     const minY = Math.min(...pts.map(p => p.y));
     const maxX = Math.max(...pts.map(p => p.x));
     const maxY = Math.max(...pts.map(p => p.y));
-    const scaleX = dim === 'w' ? value / (maxX - minX) : 1;
-    const scaleY = dim === 'h' ? value / (maxY - minY) : 1;
-    const newPoints = pts.map(p => ({ x: minX + (p.x - minX) * scaleX, y: minY + (p.y - minY) * scaleY }));
-    updateSelectedElement({ points: newPoints, width: value, height: dim === 'h' ? value : selectedElement.height });
+    
+    const currentW = maxX - minX;
+    const currentH = maxY - minY;
+    
+    // حساب نسبة التغيير
+    const scaleX = dim === 'w' ? value / currentW : 1;
+    const scaleY = dim === 'h' ? value / currentH : 1;
+    
+    // حساب المركز لضمان عدم إزاحة العنصر عند تغيير الحجم وهو مائل
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    const newPoints = pts.map(p => ({ 
+      x: centerX + (p.x - centerX) * scaleX, 
+      y: centerY + (p.y - centerY) * scaleY 
+    }));
+    
+    updateSelectedElement({ 
+      points: newPoints, 
+      width: dim === 'w' ? value : selectedElement.width, 
+      height: dim === 'h' ? value : selectedElement.height 
+    });
   };
 
   const handleAddReferenceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
