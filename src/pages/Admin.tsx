@@ -319,7 +319,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
-        // 1. استخراج أسماء المشاريع الفريدة من الإكسل لتقليل حجم الجلب
+        // 1. استخراج أسماء المشاريع الفريدة من الإكسل
         const uniqueProjectNamesInExcel = new Set<string>();
         data.forEach((row, index) => {
           if (index === 0) return;
@@ -328,7 +328,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         addLog(`تم العثور على ${uniqueProjectNamesInExcel.size} مشروع مختلف في ملف الإكسل.`);
 
-        // 2. جلب المشاريع المطابقة فقط
+        // 2. جلب قائمة المشاريع (الأسماء فقط) للمطابقة
         const { data: allProjectsList, error: pListError } = await supabase
           .from('projects')
           .select('id, name');
@@ -345,31 +345,34 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           return;
         }
 
-        // 3. جلب تفاصيل المشاريع المطابقة (بما في ذلك العناصر) بقطع صغيرة
+        // 3. جلب تفاصيل المشاريع المطابقة (مشروع تلو الآخر لتجنب حجم البيانات الكبير)
         let projectsWithElements: any[] = [];
-        const pChunkSize = 20; // تقليل الحجم لتجنب Failed to fetch
-        for (let i = 0; i < matchedProjectIds.length; i += pChunkSize) {
-          const chunkIds = matchedProjectIds.slice(i, i + pChunkSize);
-          const { data: pChunk, error: pError } = await supabase
+        addLog(`جاري جلب تفاصيل المخططات لـ ${matchedProjectIds.length} مشروع...`);
+        
+        for (const pId of matchedProjectIds) {
+          const { data: pData, error: pError } = await supabase
             .from('projects')
             .select('id, name, elements')
-            .in('id', chunkIds);
+            .eq('id', pId)
+            .single();
           
-          if (pError) throw pError;
-          if (pChunk) projectsWithElements = [...projectsWithElements, ...pChunk];
+          if (pError) {
+            addLog(`تنبيه: فشل جلب بيانات المشروع ${pId}. سيتم تخطيه.`);
+            continue;
+          }
+          if (pData) projectsWithElements.push(pData);
         }
 
-        // 4. جلب بيانات الوحدات للمشاريع المطابقة فقط
+        // 4. جلب بيانات الوحدات للمشاريع المطابقة
         let currentHousesData: any[] = [];
-        for (let i = 0; i < matchedProjectIds.length; i += pChunkSize) {
-          const chunkIds = matchedProjectIds.slice(i, i + pChunkSize);
+        for (const pId of matchedProjectIds) {
           let hFrom = 0;
           let hHasMore = true;
           while (hHasMore) {
             const { data: hChunk, error: hError } = await supabase
               .from('houses_data')
               .select('*')
-              .in('project_id', chunkIds)
+              .eq('project_id', pId)
               .range(hFrom, hFrom + 999);
             
             if (hError) throw hError;
