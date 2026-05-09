@@ -319,25 +319,67 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
-        // 1. جلب كافة بيانات الوحدات الحالية
+        // 1. استخراج أسماء المشاريع الفريدة من الإكسل لتقليل حجم الجلب
+        const uniqueProjectNamesInExcel = new Set<string>();
+        data.forEach((row, index) => {
+          if (index === 0) return;
+          if (row[cityIdx]) uniqueProjectNamesInExcel.add(normalizeForMatch(row[cityIdx]));
+        });
+
+        addLog(`تم العثور على ${uniqueProjectNamesInExcel.size} مشروع مختلف في ملف الإكسل.`);
+
+        // 2. جلب المشاريع المطابقة فقط
+        const { data: allProjectsList, error: pListError } = await supabase
+          .from('projects')
+          .select('id, name');
+        
+        if (pListError) throw pListError;
+
+        const matchedProjectIds = allProjectsList
+          ?.filter(p => uniqueProjectNamesInExcel.has(normalizeForMatch(p.name)))
+          .map(p => p.id) || [];
+
+        if (matchedProjectIds.length === 0) {
+          addLog("خطأ: لم يتم العثور على أي مشاريع مطابقة في قاعدة البيانات.");
+          setIsProcessing(false);
+          return;
+        }
+
+        // 3. جلب تفاصيل المشاريع المطابقة (بما في ذلك العناصر) بقطع صغيرة
+        let projectsWithElements: any[] = [];
+        const pChunkSize = 20; // تقليل الحجم لتجنب Failed to fetch
+        for (let i = 0; i < matchedProjectIds.length; i += pChunkSize) {
+          const chunkIds = matchedProjectIds.slice(i, i + pChunkSize);
+          const { data: pChunk, error: pError } = await supabase
+            .from('projects')
+            .select('id, name, elements')
+            .in('id', chunkIds);
+          
+          if (pError) throw pError;
+          if (pChunk) projectsWithElements = [...projectsWithElements, ...pChunk];
+        }
+
+        // 4. جلب بيانات الوحدات للمشاريع المطابقة فقط
         let currentHousesData: any[] = [];
-        let from = 0;
-        const step = 1000;
-        let hasMore = true;
-
-        while (hasMore) {
-          const { data: chunk, error: fetchError } = await supabase
-            .from('houses_data')
-            .select('*')
-            .range(from, from + step - 1);
-
-          if (fetchError) throw fetchError;
-          if (!chunk || chunk.length === 0) {
-            hasMore = false;
-          } else {
-            currentHousesData = [...currentHousesData, ...chunk];
-            from += step;
-            if (chunk.length < step) hasMore = false;
+        for (let i = 0; i < matchedProjectIds.length; i += pChunkSize) {
+          const chunkIds = matchedProjectIds.slice(i, i + pChunkSize);
+          let hFrom = 0;
+          let hHasMore = true;
+          while (hHasMore) {
+            const { data: hChunk, error: hError } = await supabase
+              .from('houses_data')
+              .select('*')
+              .in('project_id', chunkIds)
+              .range(hFrom, hFrom + 999);
+            
+            if (hError) throw hError;
+            if (!hChunk || hChunk.length === 0) {
+              hHasMore = false;
+            } else {
+              currentHousesData = [...currentHousesData, ...hChunk];
+              hFrom += 1000;
+              if (hChunk.length < 1000) hHasMore = false;
+            }
           }
         }
 
@@ -346,36 +388,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           housesDataMap[u.unit_key] = u.data;
         });
 
-        // 2. جلب كافة المشاريع والمخططات
         const projectMap = new Map<string, string>();
-        const projectElementsMap = new Map<string, MapElement[]>();
-        const projectLabelsMap = new Map<string, Map<string, string>>(); // techKey -> label
+        const projectLabelsMap = new Map<string, Map<string, string>>();
         
-        let allProjectsWithElements: any[] = [];
-        let pFrom = 0;
-        let pHasMore = true;
-        
-        while (pHasMore) {
-          const { data: pChunk, error: pError } = await supabase
-            .from('projects')
-            .select('id, name, elements')
-            .range(pFrom, pFrom + 999);
-          
-          if (pError) throw pError;
-          if (!pChunk || pChunk.length === 0) {
-            pHasMore = false;
-          } else {
-            allProjectsWithElements = [...allProjectsWithElements, ...pChunk];
-            pFrom += 1000;
-            if (pChunk.length < 1000) pHasMore = false;
-          }
-        }
-        
-        allProjectsWithElements.forEach(project => {
+        projectsWithElements.forEach(project => {
           const normProjectName = normalizeForMatch(project.name);
           projectMap.set(normProjectName, project.id);
           const elements = project.elements || [];
-          projectElementsMap.set(project.id, elements);
           
           const labels = new Map<string, string>();
           elements.forEach(el => {
@@ -388,13 +407,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 for (let a = 1; a <= (el.apartmentsPerFloor || 1); a++) {
                   const techKey = `${el.id}_F${f}_A${a}`;
                   const unitData = housesDataMap[techKey];
-                  // منطق العد التسلسلي: تجاوز الوحدات المجمدة
                   const isFrozenSequence = unitData?.status === 'frozen_uncounted' || unitData?.status === 'frozen_hidden';
-                  
-                  if (!isFrozenSequence) {
-                    pCounter++;
-                  }
-                  
+                  if (!isFrozenSequence) pCounter++;
                   const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
                   labels.set(techKey, `${el.label}-${floorCode}-${aptCode}`);
                 }
@@ -408,11 +422,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const notifications: any[] = [];
         const matchedTechKeys = new Set<string>();
         const projectsInExcel = new Set<string>();
-        const now = new Date().toLocaleString('ar-EG');
 
         let stats = { totalRows: data.length - 1, matched: 0, reset: 0 };
 
-        // معالجة الصفوف الموجودة في الإكسل
         data.forEach((row, index) => {
           if (index === 0) return;
           const rawCity = row[cityIdx];
@@ -472,7 +484,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           }
         });
 
-        // معالجة الوحدات المختفية من الإكسل (فقط للمباع والاستثمار)
         for (const [techKey, oldData] of Object.entries(housesDataMap)) {
           if (!matchedTechKeys.has(techKey)) {
             const unitInfo = currentHousesData.find(u => u.unit_key === techKey);
@@ -480,13 +491,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               if (oldData.status === 'sold' || oldData.status === 'investment') {
                 const label = projectLabelsMap.get(unitInfo.project_id)?.get(techKey) || techKey;
                 stats.reset++;
-                addLog(`تنبيه: الوحدة ${label} اختفت من الإكسل، تم تحويلها إلى متاح.`);
-                
                 notifications.push({
                   project_id: unitInfo.project_id,
                   message: `الوحدة ${label} لم تعد موجودة في ملف المبيعات، تم إعادتها للحالة (متوفر).`
                 });
-
                 updatesMap.set(techKey, {
                   unit_key: techKey,
                   project_id: unitInfo.project_id,
@@ -499,7 +507,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const finalUpdates = Array.from(updatesMap.values());
         if (finalUpdates.length > 0) {
-          const chunkSize = 500;
+          const chunkSize = 200;
           for (let i = 0; i < finalUpdates.length; i += chunkSize) {
             await supabase.from('houses_data').upsert(finalUpdates.slice(i, i + chunkSize), { onConflict: 'unit_key' });
           }
