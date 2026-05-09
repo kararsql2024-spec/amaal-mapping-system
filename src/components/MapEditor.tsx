@@ -113,27 +113,48 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
       
       const step = gridLock ? GRID_SIZE : 1;
-      let dx = 0; let dy = 0;
       
-      if (e.key === 'ArrowUp') dy = -step;
-      else if (e.key === 'ArrowDown') dy = step;
-      else if (e.key === 'ArrowLeft') dx = -step;
-      else if (e.key === 'ArrowRight') dx = step;
-      else if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
         setElements(prev => prev.filter(el => el.id !== selectedId));
         setSelectedId(null);
         return;
-      } else return;
+      }
+
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
 
       e.preventDefault();
-      setElements(prev => prev.map(el => {
-        if (el.id !== selectedId) return el;
-        if (el.locked) return el;
+      setElements(prev => {
+        const el = prev.find(item => item.id === selectedId);
+        if (!el || el.locked) return prev;
+
+        const angleRad = (el.rotation || 0) * (Math.PI / 180);
+        let dx = 0; let dy = 0;
+        
+        // التحريك بناءً على زاوية ميل العنصر (Local Coordinates)
+        if (e.key === 'ArrowUp') {
+          dx = step * Math.sin(angleRad);
+          dy = -step * Math.cos(angleRad);
+        } else if (e.key === 'ArrowDown') {
+          dx = -step * Math.sin(angleRad);
+          dy = step * Math.cos(angleRad);
+        } else if (e.key === 'ArrowLeft') {
+          dx = -step * Math.cos(angleRad);
+          dy = -step * Math.sin(angleRad);
+        } else if (e.key === 'ArrowRight') {
+          dx = step * Math.cos(angleRad);
+          dy = step * Math.sin(angleRad);
+        }
+
         const pts = getElementPoints(el);
         const newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
         checkAndExpandMap(newPoints);
-        return { ...el, points: newPoints, x: newPoints[0].x, y: newPoints[0].y };
-      }));
+        
+        return prev.map(item => 
+          item.id === selectedId 
+            ? { ...item, points: newPoints, x: newPoints[0].x, y: newPoints[0].y } 
+            : item
+        );
+      });
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -279,7 +300,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
     if (!el) return;
     const pts = getElementPoints(el);
     
-    // حساب العرض والطول الفعلي للعنصر قبل التدوير
     const minX = Math.min(...pts.map(p => p.x));
     const maxX = Math.max(...pts.map(p => p.x));
     const minY = Math.min(...pts.map(p => p.y));
@@ -287,12 +307,10 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
     const width = maxX - minX;
     const height = maxY - minY;
 
-    // تحويل الزاوية إلى راديان
     const angleRad = (el.rotation || 0) * (Math.PI / 180);
     
     let offset = { x: 0, y: 0 };
     
-    // حساب الإزاحة بناءً على زاوية الدوران (الإحداثيات المحلية)
     if (direction === 'right') {
       offset = { 
         x: width * Math.cos(angleRad), 
@@ -304,7 +322,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
         y: -width * Math.sin(angleRad) 
       };
     } else if (direction === 'down') {
-      // الاتجاه العمودي يتأثر بالزاوية أيضاً
       offset = { 
         x: -height * Math.sin(angleRad), 
         y: height * Math.cos(angleRad) 
@@ -399,11 +416,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
     const currentW = maxX - minX;
     const currentH = maxY - minY;
     
-    // حساب نسبة التغيير
     const scaleX = dim === 'w' ? value / currentW : 1;
     const scaleY = dim === 'h' ? value / currentH : 1;
     
-    // حساب المركز لضمان عدم إزاحة العنصر عند تغيير الحجم وهو مائل
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     
