@@ -24,6 +24,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +48,56 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       setPosition({ x: newX, y: newY });
       setScale(newScale);
     }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      const touch = e.touches[0];
+      setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+    } else if (e.touches.length === 2) {
+      setIsDragging(false);
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setLastTouchDistance(dist);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 1 && isDragging) {
+      const touch = e.touches[0];
+      setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+    } else if (e.touches.length === 2 && lastTouchDistance !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      
+      const delta = dist / lastTouchDistance;
+      const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
+      
+      if (newScale !== scale && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        
+        const mouseX = centerX - rect.left;
+        const mouseY = centerY - rect.top;
+        const mapX = (mouseX - position.x) / scale;
+        const mapY = (mouseY - position.y) / scale;
+        
+        setPosition({ x: mouseX - mapX * newScale, y: mouseY - mapY * newScale });
+        setScale(newScale);
+      }
+      setLastTouchDistance(dist);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    setLastTouchDistance(null);
   };
 
   const getElementPoints = (el: MapElement): Point[] => {
@@ -73,7 +124,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: el.hasBorder ? (el.borderColor || '#22c55e') : '#22c55e', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
     if (el.type === 'pitch') return { fill: '#16a34a', stroke: el.hasBorder ? (el.borderColor || '#ffffff') : '#ffffff', opacity: 1, strokeWidth: 2 };
     if (el.type === 'tower') return { fill: el.color || '#1e293b', stroke: el.hasBorder ? (el.borderColor || '#0f172a') : '#0f172a', opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
-    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.hasBorder ? (el.borderColor || '#d97706') : (el.color || '#d97706'), opacity: 1, strokeWidth: 2 };
+    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.hasBorder ? (el.borderColor || '#d97706') : (el.color || '#f59e0b'), opacity: 1, strokeWidth: 2 };
     if (el.type === 'text') return { fill: 'none', stroke: 'none', opacity: 1, strokeWidth: 0 };
     
     if (el.type === 'house') {
@@ -147,6 +198,9 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       }}
       onMouseUp={() => setIsDragging(false)}
       onMouseLeave={() => setIsDragging(false)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       <div 
         className="w-full h-full origin-top-left"
