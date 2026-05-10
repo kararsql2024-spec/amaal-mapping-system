@@ -201,17 +201,21 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      style={{ transformStyle: 'preserve-3d', backfaceVisibility: 'hidden' }}
     >
       <div 
         className="w-full h-full origin-top-left"
         style={{ 
-          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-          willChange: 'transform'
+          transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) translateZ(0)`,
+          willChange: 'transform',
+          transformStyle: 'preserve-3d',
+          backfaceVisibility: 'hidden'
         }}
       >
         <svg 
           viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
           className="w-full h-full select-none overflow-visible"
+          shapeRendering="geometricPrecision"
         >
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
