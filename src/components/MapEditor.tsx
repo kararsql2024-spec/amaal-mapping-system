@@ -10,7 +10,8 @@ import {
   Trophy, Store, GraduationCap, Stethoscope, Baby, ShoppingBag, Dumbbell, ShoppingCart,
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
-  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw
+  SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
+  Frame
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -60,7 +61,7 @@ const AMENITY_TYPES = [
   { id: 'mosque', label: 'مسجد', icon: MoonStar },
 ];
 
-const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = [
+const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; color: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, color: 'bg-blue-500' },
   { type: 'tower', label: 'برج', icon: Building2, color: 'bg-slate-700' },
   { type: 'road', label: 'طريق', icon: Waypoints, color: 'bg-gray-400' },
@@ -69,15 +70,16 @@ const TOOLS: { type: ElementType; label: string; icon: any; color: string }[] = 
   { type: 'amenity', label: 'مرفق', icon: MapPin, color: 'bg-amber-500' },
   { type: 'text', label: 'نص', icon: Type, color: 'bg-rose-500' },
   { type: 'label_area', label: 'منطقة تسمية', icon: Type, color: 'bg-purple-500' },
+  { type: 'map_boundary', label: 'حدود الخريطة', icon: Frame, color: 'bg-orange-600' },
 ];
 
 const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = false }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTool, setActiveTool] = useState<ElementType | null>(null);
+  const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | null>(null);
   const [isBrushMode, setIsBrushMode] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
-  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush', startPos?: Point, index?: number } | null>(null);
+  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush' | 'boundary', startPos?: Point, index?: number } | null>(null);
   const [tempPoints, setTempPoints] = useState<Point[]>([]);
   const [gridLock, setGridLock] = useState(true);
   const [dims, setDims] = useState({ w: Math.round(mapWidth), h: Math.round(mapHeight) });
@@ -130,7 +132,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
         const angleRad = (el.rotation || 0) * (Math.PI / 180);
         let dx = 0; let dy = 0;
         
-        // التحريك بناءً على زاوية ميل العنصر (Local Coordinates)
         if (e.key === 'ArrowUp') {
           dx = step * Math.sin(angleRad);
           dy = -step * Math.cos(angleRad);
@@ -176,7 +177,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (dragMode || !activeTool || isBrushMode) return;
+    if (dragMode || !activeTool || isBrushMode || activeTool === 'map_boundary') return;
     const pos = getMousePos(e);
     const w = activeTool === 'road' ? 200 : 80;
     const h = activeTool === 'road' ? 40 : 80;
@@ -186,7 +187,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
       { x: snap(pos.x + w/2), y: snap(pos.y + h/2) },
       { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
     ];
-    createElement(activeTool, newPoints);
+    createElement(activeTool as ElementType, newPoints);
   };
 
   const createElement = (type: ElementType, pts: Point[], isStroke = false, customLabel?: string) => {
@@ -226,6 +227,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const pos = getMousePos(e);
+    if (activeTool === 'map_boundary') {
+      setDragMode({ type: 'boundary', startPos: pos });
+      setTempPoints([pos, pos, pos, pos]);
+      return;
+    }
     if (isBrushMode && activeTool) {
       setDragMode({ type: 'brush' });
       setTempPoints([pos]);
@@ -239,6 +245,19 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!dragMode) return;
     const pos = getMousePos(e);
+    
+    if (dragMode.type === 'boundary' && dragMode.startPos) {
+      const start = dragMode.startPos;
+      const current = pos;
+      setTempPoints([
+        { x: start.x, y: start.y },
+        { x: current.x, y: start.y },
+        { x: current.x, y: current.y },
+        { x: start.x, y: current.y }
+      ]);
+      return;
+    }
+
     if (dragMode.type === 'brush') {
       const lastPt = tempPoints[tempPoints.length - 1];
       const dist = Math.sqrt(Math.pow(pos.x - lastPt.x, 2) + Math.pow(pos.y - lastPt.y, 2));
@@ -288,8 +307,28 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
   };
 
   const handleMouseUp = () => {
-    if (dragMode?.type === 'brush' && activeTool && tempPoints.length > 1) {
-      createElement(activeTool, tempPoints, true);
+    if (dragMode?.type === 'boundary' && tempPoints.length === 4) {
+      const minX = Math.min(...tempPoints.map(p => p.x));
+      const minY = Math.min(...tempPoints.map(p => p.y));
+      const maxX = Math.max(...tempPoints.map(p => p.x));
+      const maxY = Math.max(...tempPoints.map(p => p.y));
+      
+      const newW = Math.round(maxX - minX);
+      const newH = Math.round(maxY - minY);
+      
+      if (newW > 50 && newH > 50) {
+        setDims({ w: newW, h: newH });
+        setElements(prev => prev.map(el => ({
+          ...el,
+          points: getElementPoints(el).map(p => ({ x: p.x - minX, y: p.y - minY })),
+          x: el.x - minX,
+          y: el.y - minY
+        })));
+        showSuccess(`تم تحديث حدود الخريطة إلى ${newW}x${newH} ونقل العناصر بنجاح`);
+        setActiveTool(null);
+      }
+    } else if (dragMode?.type === 'brush' && activeTool && tempPoints.length > 1) {
+      createElement(activeTool as ElementType, tempPoints, true);
     }
     setDragMode(null);
     setTempPoints([]);
@@ -550,7 +589,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
         </div>
 
         <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
-          <svg ref={svgRef} className={cn("w-full h-full", isBrushMode ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel}>
+          <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel}>
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
               <defs>
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/></pattern>
@@ -706,15 +745,16 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
                 );
               })}
 
-              {tempPoints.length > 1 && isBrushMode && (
+              {tempPoints.length > 1 && (isBrushMode || activeTool === 'map_boundary') && (
                 <path
-                  d={pointsToPath(tempPoints, false)}
-                  fill="none"
-                  stroke={activeTool ? getElementColor({ type: activeTool } as any) : "#3b82f6"}
-                  strokeWidth={brushSize}
+                  d={pointsToPath(tempPoints, activeTool === 'map_boundary')}
+                  fill={activeTool === 'map_boundary' ? "rgba(249, 115, 22, 0.1)" : "none"}
+                  stroke={activeTool === 'map_boundary' ? "#f97316" : (activeTool ? getElementColor({ type: activeTool } as any) : "#3b82f6")}
+                  strokeWidth={activeTool === 'map_boundary' ? 2 : brushSize}
+                  strokeDasharray={activeTool === 'map_boundary' ? "5,5" : "none"}
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  opacity="0.5"
+                  opacity="0.8"
                   pointerEvents="none"
                 />
               )}
