@@ -324,6 +324,11 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
           x: el.x - minX,
           y: el.y - minY
         })));
+        
+        // إعادة ضبط الرؤية في المحرر لتظهر المنطقة الجديدة
+        setViewPos({ x: 0, y: 0 });
+        setScale(1);
+        
         showSuccess(`تم تحديث حدود الخريطة إلى ${newW}x${newH} ونقل العناصر بنجاح`);
         setActiveTool(null);
       }

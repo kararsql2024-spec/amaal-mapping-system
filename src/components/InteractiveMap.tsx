@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
 import { 
@@ -27,6 +27,31 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // وظيفة لتوسيط الخريطة تلقائياً بناءً على الأبعاد المحددة
+  const autoFit = () => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const padding = 40;
+    const availableW = rect.width - padding;
+    const availableH = rect.height - padding;
+
+    const scaleW = availableW / mapWidth;
+    const scaleH = availableH / mapHeight;
+    const newScale = Math.min(scaleW, scaleH, 1.5); // لا نتجاوز 1.5 في التقريب التلقائي
+
+    const newX = (rect.width - mapWidth * newScale) / 2;
+    const newY = (rect.height - mapHeight * newScale) / 2;
+
+    setScale(newScale);
+    setPosition({ x: newX, y: newY });
+  };
+
+  // تنفيذ التوسيط عند تحميل المشروع أو تغيير الأبعاد أو تغيير وضع ملء الشاشة
+  useEffect(() => {
+    const timer = setTimeout(autoFit, 100);
+    return () => clearTimeout(timer);
+  }, [mapWidth, mapHeight, isFullScreen]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -388,7 +413,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
           setScale(newScale);
         }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
         
-        <button onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><RotateCcw size={20} /></button>
+        <button onClick={autoFit} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><RotateCcw size={20} /></button>
         <button onClick={() => setIsFullScreen(!isFullScreen)} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50">{isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
       </div>
     </div>
