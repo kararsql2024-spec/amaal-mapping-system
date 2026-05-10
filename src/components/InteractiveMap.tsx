@@ -201,22 +201,12 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      style={{ transformStyle: 'preserve-3d', backfaceVisibility: 'hidden' }}
     >
-      <div 
-        className="w-full h-full origin-top-left"
-        style={{ 
-          transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) translateZ(0)`,
-          willChange: 'transform',
-          transformStyle: 'preserve-3d',
-          backfaceVisibility: 'hidden'
-        }}
+      <svg 
+        className="w-full h-full select-none overflow-visible"
+        shapeRendering="geometricPrecision"
       >
-        <svg 
-          viewBox={`0 0 ${mapWidth} ${mapHeight}`} 
-          className="w-full h-full select-none overflow-visible"
-          shapeRendering="geometricPrecision"
-        >
+        <g transform={`translate(${position.x}, ${position.y}) scale(${scale})`}>
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
@@ -370,8 +360,8 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
               </g>
             );
           })}
-        </svg>
-      </div>
+        </g>
+      </svg>
       
       <div className="absolute top-6 left-6 flex flex-col gap-2">
         <button onClick={() => {
