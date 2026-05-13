@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/AlertDialog";
+} from "@/components/ui/alert-dialog";
 
 interface AdminProps {
   projects: Project[];
