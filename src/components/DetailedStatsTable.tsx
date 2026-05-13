@@ -35,16 +35,23 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     return new Intl.NumberFormat('en-US').format(Math.round(num));
   };
 
-  // وظيفة لتوحيد مسمى العملة لضمان المطابقة مع بيانات الإكسل أو الإدخال اليدوي
+  // وظيفة ذكية لتوحيد مسمى العملة
   const getCurrencyType = (curr: any) => {
-    if (!curr) return '';
-    const c = curr.toString().trim();
-    if (c.includes('دينار') || c.includes('IQD') || c.includes('د.ع')) return 'IQD';
-    if (c.includes('دولار') || c.includes('USD') || c.includes('$')) return 'USD';
-    return '';
+    if (!curr) return 'IQD'; // افتراضي دينار إذا وجد سعر بدون عملة
+    const c = curr.toString().trim().toLowerCase();
+    if (c.includes('دينار') || c.includes('iqd') || c.includes('د.ع') || c.includes('عراقي')) return 'IQD';
+    if (c.includes('دولار') || c.includes('usd') || c.includes('$')) return 'USD';
+    return 'IQD'; 
   };
 
-  // استخراج كافة الأصناف المتاحة للفلترة
+  // وظيفة لتنظيف وتحويل السعر إلى رقم
+  const parsePrice = (price: any) => {
+    if (price === null || price === undefined) return 0;
+    const cleaned = price.toString().replace(/,/g, '').replace(/[^\d.]/g, '');
+    const val = parseFloat(cleaned);
+    return isNaN(val) ? 0 : val;
+  };
+
   const availableTypes = useMemo(() => {
     const types = new Set<string>();
     elements.filter(el => el.type === 'house').forEach(house => {
@@ -57,7 +64,6 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     return Array.from(types).sort();
   }, [elements]);
 
-  // معالجة إحصائيات العمارات
   const towerStats = useMemo(() => {
     const stats: any[] = [];
     elements.filter(el => el.type === 'tower').forEach(tower => {
@@ -67,14 +73,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       for (let f = 1; f <= (tower.floors || 1); f++) {
         const floorStats = { 
           label: f === 1 ? "الأرضي" : `الطابق ${f - 1}`, 
-          available: 0, 
-          sold: 0, 
-          investment: 0, 
-          pending: 0,
-          reserved: 0,
-          total: 0,
-          priceIQD: 0,
-          priceUSD: 0
+          available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0
         };
         
         for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
@@ -91,9 +90,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           
           if (data.status !== 'frozen_uncounted') floorStats.total++;
 
-          // جمع المبالغ مع تنظيف النص من الفواصل واستخدام الموحد للعملة
-          const priceValue = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
-          if (!isNaN(priceValue) && priceValue > 0) {
+          const priceValue = parsePrice(data.price);
+          if (priceValue > 0) {
             const cType = getCurrencyType(data.currency);
             if (cType === 'IQD') floorStats.priceIQD += priceValue;
             else if (cType === 'USD') floorStats.priceUSD += priceValue;
@@ -115,18 +113,21 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     return stats;
   }, [elements, housesData]);
 
-  // معالجة إحصائيات المنازل مع دعم الفلترة
   const houseStats = useMemo(() => {
     const stats: Record<string, { blocks: Record<string, Record<string, any>>, totals: any }> = {};
     
     elements.filter(el => el.type === 'house').forEach(house => {
       const parts = house.label.split('-');
-      if (parts.length < 3) return;
+      let zone = "عام";
+      let block = "عام";
+      let type = "غير محدد";
 
-      const zone = parts[0];
-      const block = parts[1];
-      const typeMatch = parts[2].match(/[a-zA-Z]+/);
-      const type = typeMatch ? typeMatch[0] : 'غير محدد';
+      if (parts.length >= 3) {
+        zone = parts[0];
+        block = parts[1];
+        const typeMatch = parts[2].match(/[a-zA-Z]+/);
+        type = typeMatch ? typeMatch[0] : 'غير محدد';
+      }
 
       if (selectedType !== "all" && type !== selectedType) return;
 
@@ -156,9 +157,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       
       if (data.status !== 'frozen_uncounted') { s.total++; zt.total++; }
 
-      // جمع المبالغ مع تنظيف النص من الفواصل واستخدام الموحد للعملة
-      const priceValue = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
-      if (!isNaN(priceValue) && priceValue > 0) {
+      const priceValue = parsePrice(data.price);
+      if (priceValue > 0) {
         const cType = getCurrencyType(data.currency);
         if (cType === 'IQD') {
           s.priceIQD += priceValue;
