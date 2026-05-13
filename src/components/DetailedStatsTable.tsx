@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Home, BarChart3, Filter, Banknote } from "lucide-react";
+import { Building2, Home, BarChart3, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -32,6 +32,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
   const [selectedType, setSelectedType] = useState<string>("all");
 
   const formatNumber = (num: number) => {
+    if (num === 0) return "0";
     return new Intl.NumberFormat('en-US').format(num);
   };
 
@@ -83,7 +84,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           if (data.status !== 'frozen_uncounted') floorStats.total++;
 
           // جمع المبالغ
-          const price = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
+          const priceStr = data.price?.toString().replace(/,/g, '') || '0';
+          const price = parseFloat(priceStr);
           if (!isNaN(price)) {
             if (data.currency === 'دينار') floorStats.priceIQD += price;
             else if (data.currency === 'دولار') floorStats.priceUSD += price;
@@ -148,7 +150,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       if (data.status !== 'frozen_uncounted') { s.total++; zt.total++; }
 
       // جمع المبالغ
-      const price = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
+      const priceStr = data.price?.toString().replace(/,/g, '') || '0';
+      const price = parseFloat(priceStr);
       if (!isNaN(price)) {
         if (data.currency === 'دينار') {
           s.priceIQD += price;
@@ -162,16 +165,6 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
 
     return stats;
   }, [elements, housesData, selectedType]);
-
-  const renderPriceTotal = (iqd: number, usd: number) => {
-    if (iqd === 0 && usd === 0) return "---";
-    return (
-      <div className="flex flex-col gap-1 text-[10px] leading-tight">
-        {iqd > 0 && <div className="text-emerald-700 font-black">{formatNumber(iqd)} د.ع</div>}
-        {usd > 0 && <div className="text-blue-700 font-black">{formatNumber(usd)} $</div>}
-      </div>
-    );
-  };
 
   return (
     <Card className="rounded-[2rem] border-slate-100 shadow-lg overflow-hidden bg-white">
@@ -195,7 +188,6 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           <TabsContent value="houses" className="space-y-12">
             <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
               <div className="flex items-center gap-2 text-slate-600 font-bold">
-                <Filter size={18} />
                 <span>فلترة حسب الصنف:</span>
               </div>
               <Select value={selectedType} onValueChange={setSelectedType}>
@@ -229,7 +221,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableHead className="text-center font-black text-amber-600">محجوز</TableHead>
                         <TableHead className="text-center font-black text-blue-600">حجز أولي</TableHead>
                         <TableHead className="text-center font-black bg-slate-100">المجموع</TableHead>
-                        <TableHead className="text-center font-black bg-indigo-50 text-indigo-700">إجمالي المبالغ</TableHead>
+                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700">إجمالي (د.ع)</TableHead>
+                        <TableHead className="text-center font-black bg-blue-50 text-blue-700">إجمالي ($)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -252,8 +245,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                             <TableCell className="text-center font-black">{s.reserved}</TableCell>
                             <TableCell className="text-center font-black">{s.pending}</TableCell>
                             <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>
-                            <TableCell className="text-center bg-indigo-50/30">
-                              {renderPriceTotal(s.priceIQD, s.priceUSD)}
+                            <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
+                              {s.priceIQD > 0 ? formatNumber(s.priceIQD) : "---"}
+                            </TableCell>
+                            <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
+                              {s.priceUSD > 0 ? formatNumber(s.priceUSD) : "---"}
                             </TableCell>
                           </TableRow>
                         ))
@@ -268,8 +264,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.reserved}</TableCell>
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-slate-800">{zoneData.totals.total}</TableCell>
-                        <TableCell className="text-center bg-indigo-900">
-                          {renderPriceTotal(zoneData.totals.priceIQD, zoneData.totals.priceUSD)}
+                        <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
+                          {zoneData.totals.priceIQD > 0 ? formatNumber(zoneData.totals.priceIQD) : "0"}
+                        </TableCell>
+                        <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
+                          {zoneData.totals.priceUSD > 0 ? formatNumber(zoneData.totals.priceUSD) : "0"}
                         </TableCell>
                       </TableRow>
                     </TableFooter>
@@ -297,7 +296,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableHead className="text-center font-black text-amber-600">محجوز</TableHead>
                         <TableHead className="text-center font-black text-blue-600">حجز أولي</TableHead>
                         <TableHead className="text-center font-black bg-slate-100">المجموع</TableHead>
-                        <TableHead className="text-center font-black bg-indigo-50 text-indigo-700">إجمالي المبالغ</TableHead>
+                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700">إجمالي (د.ع)</TableHead>
+                        <TableHead className="text-center font-black bg-blue-50 text-blue-700">إجمالي ($)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -316,8 +316,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           <TableCell className="text-center font-black">{floor.reserved}</TableCell>
                           <TableCell className="text-center font-black">{floor.pending}</TableCell>
                           <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>
-                          <TableCell className="text-center bg-indigo-50/30">
-                            {renderPriceTotal(floor.priceIQD, floor.priceUSD)}
+                          <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
+                            {floor.priceIQD > 0 ? formatNumber(floor.priceIQD) : "---"}
+                          </TableCell>
+                          <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
+                            {floor.priceUSD > 0 ? formatNumber(floor.priceUSD) : "---"}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -331,8 +334,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{tower.totals.reserved}</TableCell>
                         <TableCell className="text-center font-black text-lg">{tower.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-indigo-800">{tower.totals.total}</TableCell>
-                        <TableCell className="text-center bg-indigo-950">
-                          {renderPriceTotal(tower.totals.priceIQD, tower.totals.priceUSD)}
+                        <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
+                          {tower.totals.priceIQD > 0 ? formatNumber(tower.totals.priceIQD) : "0"}
+                        </TableCell>
+                        <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
+                          {tower.totals.priceUSD > 0 ? formatNumber(tower.totals.priceUSD) : "0"}
                         </TableCell>
                       </TableRow>
                     </TableFooter>
