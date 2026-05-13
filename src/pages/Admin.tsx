@@ -5,7 +5,7 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -55,7 +55,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     unitCol: 'I',
     nameCol: 'C',
     phoneCol: 'D',
-    dateCol: 'E'
+    dateCol: 'E',
+    priceCol: 'F',
+    currencyCol: 'G'
   });
   const [investmentNames, setInvestmentNames] = useState<string[]>([]);
   const [newInvestmentName, setNewInvestmentName] = useState('');
@@ -89,7 +91,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         if (settingsData) {
           const mapping = settingsData.find(s => s.key === 'excel_mapping');
-          if (mapping) setExcelMapping(mapping.value);
+          if (mapping) setExcelMapping(prev => ({ ...prev, ...mapping.value }));
           
           const update = settingsData.find(s => s.key === 'last_excel_update');
           if (update) setLastUpdate(update.value);
@@ -320,6 +322,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const nameIdx = colToIdx(excelMapping.nameCol);
         const phoneIdx = colToIdx(excelMapping.phoneCol);
         const dateIdx = colToIdx(excelMapping.dateCol);
+        const priceIdx = colToIdx(excelMapping.priceCol);
+        const currencyIdx = colToIdx(excelMapping.currencyCol);
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
@@ -349,7 +353,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           return;
         }
 
-        // 3. جلب تفاصيل المشاريع المطابقة (مشروع تلو الآخر لتجنب حجم البيانات الكبير)
+        // 3. جلب تفاصيل المشاريع المطابقة
         let projectsWithElements: any[] = [];
         addLog(`جاري جلب تفاصيل المخططات لـ ${matchedProjectIds.length} مشروع...`);
         
@@ -475,6 +479,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               }
             }
 
+            const price = row[priceIdx] ? String(row[priceIdx]) : '';
+            const currency = row[currencyIdx] ? String(row[currencyIdx]) : '';
+
             const newStatus = isInvestment ? 'investment' : 'sold';
             if (oldData.status !== newStatus) {
               notifications.push({ 
@@ -486,7 +493,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             updatesMap.set(foundTechKey, {
               unit_key: foundTechKey,
               project_id: projectId,
-              data: { ...oldData, name: newName, phone: String(row[phoneIdx] || ''), saleDate, status: newStatus }
+              data: { 
+                ...oldData, 
+                name: newName, 
+                phone: String(row[phoneIdx] || ''), 
+                saleDate, 
+                status: newStatus,
+                price,
+                currency
+              }
             });
           }
         });
@@ -505,7 +520,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 updatesMap.set(techKey, {
                   unit_key: techKey,
                   project_id: unitInfo.project_id,
-                  data: { status: 'available', name: '', phone: '', saleDate: '', details: 'تم التصفير تلقائياً لعدم وجودها في ملف الإكسل' }
+                  data: { status: 'available', name: '', phone: '', saleDate: '', price: '', currency: '', details: 'تم التصفير تلقائياً لعدم وجودها في ملف الإكسل' }
                 });
               }
             }
@@ -819,6 +834,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود الاسم</label><Input placeholder="C" value={excelMapping.nameCol} onChange={(e) => setExcelMapping({...excelMapping, nameCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
                   <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود الهاتف</label><Input placeholder="D" value={excelMapping.phoneCol} onChange={(e) => setExcelMapping({...excelMapping, phoneCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
                   <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود التاريخ</label><Input placeholder="E" value={excelMapping.dateCol} onChange={(e) => setExcelMapping({...excelMapping, dateCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                  <div className="space-y-2"><label className="text-xs font-bold text-emerald-700 flex items-center gap-2"><Banknote size={14} /> عمود سعر الوحدة</label><Input placeholder="F" value={excelMapping.priceCol} onChange={(e) => setExcelMapping({...excelMapping, priceCol: e.target.value.toUpperCase()})} className="rounded-xl h-10 border-emerald-200" /></div>
+                  <div className="space-y-2"><label className="text-xs font-bold text-emerald-700 flex items-center gap-2"><Coins size={14} /> عمود نوع العملة</label><Input placeholder="G" value={excelMapping.currencyCol} onChange={(e) => setExcelMapping({...excelMapping, currencyCol: e.target.value.toUpperCase()})} className="rounded-xl h-10 border-emerald-200" /></div>
                 </div>
 
                 <div className="bg-slate-50 p-6 rounded-2xl border border-dashed border-slate-300 text-center space-y-4">
