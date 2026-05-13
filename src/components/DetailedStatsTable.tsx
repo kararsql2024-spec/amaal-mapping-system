@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Home, BarChart3, Filter } from "lucide-react";
+import { Building2, Home, BarChart3, Filter, Banknote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -30,6 +30,10 @@ interface DetailedStatsTableProps {
 
 const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) => {
   const [selectedType, setSelectedType] = useState<string>("all");
+
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('en-US').format(num);
+  };
 
   // استخراج كافة الأصناف المتاحة للفلترة
   const availableTypes = useMemo(() => {
@@ -49,7 +53,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     const stats: any[] = [];
     elements.filter(el => el.type === 'tower').forEach(tower => {
       const floorsData: any[] = [];
-      const towerTotal = { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0 };
+      const towerTotal = { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0 };
       
       for (let f = 1; f <= (tower.floors || 1); f++) {
         const floorStats = { 
@@ -59,7 +63,9 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           investment: 0, 
           pending: 0,
           reserved: 0,
-          total: 0 
+          total: 0,
+          priceIQD: 0,
+          priceUSD: 0
         };
         
         for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
@@ -75,6 +81,13 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           else if (data.status === 'available') floorStats.available++;
           
           if (data.status !== 'frozen_uncounted') floorStats.total++;
+
+          // جمع المبالغ
+          const price = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
+          if (!isNaN(price)) {
+            if (data.currency === 'دينار') floorStats.priceIQD += price;
+            else if (data.currency === 'دولار') floorStats.priceUSD += price;
+          }
         }
         
         floorsData.push(floorStats);
@@ -84,6 +97,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
         towerTotal.pending += floorStats.pending;
         towerTotal.reserved += floorStats.reserved;
         towerTotal.total += floorStats.total;
+        towerTotal.priceIQD += floorStats.priceIQD;
+        towerTotal.priceUSD += floorStats.priceUSD;
       }
       stats.push({ name: tower.label, floors: floorsData, totals: towerTotal });
     });
@@ -112,13 +127,13 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       if (!stats[zone]) {
         stats[zone] = { 
           blocks: {}, 
-          totals: { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0 } 
+          totals: { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0 } 
         };
       }
       
       if (!stats[zone].blocks[block]) stats[zone].blocks[block] = {};
       if (!stats[zone].blocks[block][type]) {
-        stats[zone].blocks[block][type] = { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0 };
+        stats[zone].blocks[block][type] = { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0 };
       }
 
       const s = stats[zone].blocks[block][type];
@@ -131,10 +146,32 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       else if (data.status === 'available') { s.available++; zt.available++; }
       
       if (data.status !== 'frozen_uncounted') { s.total++; zt.total++; }
+
+      // جمع المبالغ
+      const price = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
+      if (!isNaN(price)) {
+        if (data.currency === 'دينار') {
+          s.priceIQD += price;
+          zt.priceIQD += price;
+        } else if (data.currency === 'دولار') {
+          s.priceUSD += price;
+          zt.priceUSD += price;
+        }
+      }
     });
 
     return stats;
   }, [elements, housesData, selectedType]);
+
+  const renderPriceTotal = (iqd: number, usd: number) => {
+    if (iqd === 0 && usd === 0) return "---";
+    return (
+      <div className="flex flex-col gap-1 text-[10px] leading-tight">
+        {iqd > 0 && <div className="text-emerald-700 font-black">{formatNumber(iqd)} د.ع</div>}
+        {usd > 0 && <div className="text-blue-700 font-black">{formatNumber(usd)} $</div>}
+      </div>
+    );
+  };
 
   return (
     <Card className="rounded-[2rem] border-slate-100 shadow-lg overflow-hidden bg-white">
@@ -192,6 +229,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableHead className="text-center font-black text-amber-600">محجوز</TableHead>
                         <TableHead className="text-center font-black text-blue-600">حجز أولي</TableHead>
                         <TableHead className="text-center font-black bg-slate-100">المجموع</TableHead>
+                        <TableHead className="text-center font-black bg-indigo-50 text-indigo-700">إجمالي المبالغ</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -214,6 +252,9 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                             <TableCell className="text-center font-black">{s.reserved}</TableCell>
                             <TableCell className="text-center font-black">{s.pending}</TableCell>
                             <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>
+                            <TableCell className="text-center bg-indigo-50/30">
+                              {renderPriceTotal(s.priceIQD, s.priceUSD)}
+                            </TableCell>
                           </TableRow>
                         ))
                       ))}
@@ -227,6 +268,9 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.reserved}</TableCell>
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-slate-800">{zoneData.totals.total}</TableCell>
+                        <TableCell className="text-center bg-indigo-900">
+                          {renderPriceTotal(zoneData.totals.priceIQD, zoneData.totals.priceUSD)}
+                        </TableCell>
                       </TableRow>
                     </TableFooter>
                   </Table>
@@ -253,6 +297,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableHead className="text-center font-black text-amber-600">محجوز</TableHead>
                         <TableHead className="text-center font-black text-blue-600">حجز أولي</TableHead>
                         <TableHead className="text-center font-black bg-slate-100">المجموع</TableHead>
+                        <TableHead className="text-center font-black bg-indigo-50 text-indigo-700">إجمالي المبالغ</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -271,6 +316,9 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           <TableCell className="text-center font-black">{floor.reserved}</TableCell>
                           <TableCell className="text-center font-black">{floor.pending}</TableCell>
                           <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>
+                          <TableCell className="text-center bg-indigo-50/30">
+                            {renderPriceTotal(floor.priceIQD, floor.priceUSD)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -283,6 +331,9 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{tower.totals.reserved}</TableCell>
                         <TableCell className="text-center font-black text-lg">{tower.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-indigo-800">{tower.totals.total}</TableCell>
+                        <TableCell className="text-center bg-indigo-950">
+                          {renderPriceTotal(tower.totals.priceIQD, tower.totals.priceUSD)}
+                        </TableCell>
                       </TableRow>
                     </TableFooter>
                   </Table>

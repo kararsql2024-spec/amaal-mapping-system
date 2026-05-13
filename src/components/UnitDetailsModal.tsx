@@ -74,6 +74,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   const isFrozen = formData.status.startsWith('frozen');
   const showSaleFields = formData.status === 'sold' || formData.status === 'reserved' || formData.status === 'pending' || formData.status === 'investment';
 
+  // تنسيق السعر بفواصل الآلاف
+  const formatPrice = (price: string) => {
+    if (!price) return '---';
+    const cleanPrice = price.toString().replace(/,/g, '');
+    return cleanPrice.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  };
+
   // تحويل مسمى العملة إلى رمز
   const getCurrencySymbol = (currency: string) => {
     if (currency === 'دولار') return '$';
@@ -134,8 +141,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                   <Label className="text-right block font-bold text-slate-600">سعر الوحدة</Label>
                   <div className="relative">
                     <Banknote className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700">
-                      {formData.price || '---'}
+                    <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700 overflow-hidden text-ellipsis whitespace-nowrap px-2">
+                      {formatPrice(formData.price)}
                     </div>
                   </div>
                 </div>
