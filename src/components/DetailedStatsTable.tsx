@@ -32,8 +32,16 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
   const [selectedType, setSelectedType] = useState<string>("all");
 
   const formatNumber = (num: number) => {
-    if (num === 0) return "0";
-    return new Intl.NumberFormat('en-US').format(num);
+    return new Intl.NumberFormat('en-US').format(Math.round(num));
+  };
+
+  // وظيفة لتوحيد مسمى العملة لضمان المطابقة مع بيانات الإكسل
+  const getCurrencyType = (curr: string) => {
+    if (!curr) return '';
+    const c = curr.toString().trim();
+    if (c.includes('دينار') || c.includes('IQD') || c.includes('د.ع')) return 'IQD';
+    if (c.includes('دولار') || c.includes('USD') || c.includes('$')) return 'USD';
+    return '';
   };
 
   // استخراج كافة الأصناف المتاحة للفلترة
@@ -83,12 +91,12 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           
           if (data.status !== 'frozen_uncounted') floorStats.total++;
 
-          // جمع المبالغ
-          const priceStr = data.price?.toString().replace(/,/g, '') || '0';
-          const price = parseFloat(priceStr);
-          if (!isNaN(price)) {
-            if (data.currency === 'دينار') floorStats.priceIQD += price;
-            else if (data.currency === 'دولار') floorStats.priceUSD += price;
+          // جمع المبالغ مع تنظيف النص من الفواصل
+          const priceValue = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
+          if (!isNaN(priceValue) && priceValue > 0) {
+            const cType = getCurrencyType(data.currency);
+            if (cType === 'IQD') floorStats.priceIQD += priceValue;
+            else if (cType === 'USD') floorStats.priceUSD += priceValue;
           }
         }
         
@@ -120,7 +128,6 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       const typeMatch = parts[2].match(/[a-zA-Z]+/);
       const type = typeMatch ? typeMatch[0] : 'غير محدد';
 
-      // تطبيق الفلتر
       if (selectedType !== "all" && type !== selectedType) return;
 
       const data = housesData[house.id] || { status: 'available' };
@@ -149,16 +156,16 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       
       if (data.status !== 'frozen_uncounted') { s.total++; zt.total++; }
 
-      // جمع المبالغ
-      const priceStr = data.price?.toString().replace(/,/g, '') || '0';
-      const price = parseFloat(priceStr);
-      if (!isNaN(price)) {
-        if (data.currency === 'دينار') {
-          s.priceIQD += price;
-          zt.priceIQD += price;
-        } else if (data.currency === 'دولار') {
-          s.priceUSD += price;
-          zt.priceUSD += price;
+      // جمع المبالغ مع تنظيف النص من الفواصل
+      const priceValue = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
+      if (!isNaN(priceValue) && priceValue > 0) {
+        const cType = getCurrencyType(data.currency);
+        if (cType === 'IQD') {
+          s.priceIQD += priceValue;
+          zt.priceIQD += priceValue;
+        } else if (cType === 'USD') {
+          s.priceUSD += priceValue;
+          zt.priceUSD += priceValue;
         }
       }
     });
@@ -246,10 +253,10 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                             <TableCell className="text-center font-black">{s.pending}</TableCell>
                             <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>
                             <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
-                              {s.priceIQD > 0 ? formatNumber(s.priceIQD) : "---"}
+                              {formatNumber(s.priceIQD)}
                             </TableCell>
                             <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
-                              {s.priceUSD > 0 ? formatNumber(s.priceUSD) : "---"}
+                              {formatNumber(s.priceUSD)}
                             </TableCell>
                           </TableRow>
                         ))
@@ -265,10 +272,10 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-slate-800">{zoneData.totals.total}</TableCell>
                         <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
-                          {zoneData.totals.priceIQD > 0 ? formatNumber(zoneData.totals.priceIQD) : "0"}
+                          {formatNumber(zoneData.totals.priceIQD)}
                         </TableCell>
                         <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
-                          {zoneData.totals.priceUSD > 0 ? formatNumber(zoneData.totals.priceUSD) : "0"}
+                          {formatNumber(zoneData.totals.priceUSD)}
                         </TableCell>
                       </TableRow>
                     </TableFooter>
@@ -317,10 +324,10 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           <TableCell className="text-center font-black">{floor.pending}</TableCell>
                           <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>
                           <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
-                            {floor.priceIQD > 0 ? formatNumber(floor.priceIQD) : "---"}
+                            {formatNumber(floor.priceIQD)}
                           </TableCell>
                           <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
-                            {floor.priceUSD > 0 ? formatNumber(floor.priceUSD) : "---"}
+                            {formatNumber(floor.priceUSD)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -335,10 +342,10 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{tower.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-indigo-800">{tower.totals.total}</TableCell>
                         <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
-                          {tower.totals.priceIQD > 0 ? formatNumber(tower.totals.priceIQD) : "0"}
+                          {formatNumber(tower.totals.priceIQD)}
                         </TableCell>
                         <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
-                          {tower.totals.priceUSD > 0 ? formatNumber(tower.totals.priceUSD) : "0"}
+                          {formatNumber(tower.totals.priceUSD)}
                         </TableCell>
                       </TableRow>
                     </TableFooter>
