@@ -64,7 +64,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isResetting, setIsResetting] = useState(false);
 
   // Backup States
-  const [generatedSQL, setGeneratedSQL] = useState<string>("");
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
 
   useEffect(() => {
@@ -615,8 +614,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) { showError("فشل في تحميل تفاصيل المخطط"); }
   };
 
-  // Backup Logic
-  const generateBackupSQL = async () => {
+  // Combined Backup & Download Logic
+  const handleDownloadBackup = async () => {
     setIsGeneratingBackup(true);
     try {
       const { data: projectsData } = await supabase.from('projects').select('*');
@@ -635,7 +634,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       sql += `-- 4. Table: settings\nCREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB);\n\n`;
       sql += `-- 5. Table: notifications\nCREATE TABLE IF NOT EXISTS notifications (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), project_id TEXT, message TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
 
-      // Data Inserts
       const escape = (val: any) => {
         if (val === null || val === undefined) return 'NULL';
         if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
@@ -682,32 +680,24 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         });
       }
 
-      setGeneratedSQL(sql);
-      showSuccess("تم توليد النسخة الاحتياطية بنجاح");
+      // Trigger Download
+      const blob = new Blob([sql], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `full_backup_${new Date().toISOString().split('T')[0]}.sql`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showSuccess("تم توليد وتحميل النسخة الاحتياطية بنجاح");
     } catch (error) {
+      console.error(error);
       showError("فشل في توليد النسخة الاحتياطية");
     } finally {
       setIsGeneratingBackup(false);
     }
-  };
-
-  const downloadSQL = () => {
-    if (!generatedSQL) return;
-    const blob = new Blob([generatedSQL], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup_${new Date().toISOString().split('T')[0]}.sql`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const copyToClipboard = () => {
-    if (!generatedSQL) return;
-    navigator.clipboard.writeText(generatedSQL);
-    showSuccess("تم نسخ الكود إلى الحافظة");
   };
 
   if (editingMapProject) {
@@ -747,44 +737,40 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center justify-between border-b pb-4">
                   <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><Database className="text-blue-600" /></div><h2 className="text-xl font-black text-slate-800">النسخ الاحتياطي وقاعدة البيانات</h2></div>
-                  <div className="flex gap-2">
-                    <Button onClick={generateBackupSQL} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2">
-                      {isGeneratingBackup ? <RefreshCcw className="animate-spin" size={18} /> : <FileCode size={18} />}
-                      توليد نسخة SQL
-                    </Button>
-                    {generatedSQL && (
-                      <>
-                        <Button onClick={downloadSQL} variant="outline" className="rounded-xl gap-2 border-emerald-200 text-emerald-600 hover:bg-emerald-50"><Download size={18} /> تحميل الملف</Button>
-                        <Button onClick={copyToClipboard} variant="outline" className="rounded-xl gap-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"><Copy size={18} /> نسخ الكود</Button>
-                      </>
-                    )}
-                  </div>
+                  <Button onClick={handleDownloadBackup} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl h-12 px-8 font-black gap-2 shadow-lg shadow-blue-100">
+                    {isGeneratingBackup ? <RefreshCcw className="animate-spin" size={20} /> : <Download size={20} />}
+                    تحميل نسخة احتياطية كاملة (SQL)
+                  </Button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
-                    <h3 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><AlertCircle size={18} /> تعليمات النقل</h3>
+                    <h3 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><AlertCircle size={18} /> تعليمات النقل والاستعادة</h3>
                     <p className="text-sm text-blue-700 leading-relaxed">
-                      عند الانتقال إلى استضافة جديدة، قم بإنشاء الجداول أولاً باستخدام الكود أدناه، ثم قم بتنفيذ أوامر الإدخال (INSERT). 
-                      هذا الكود يتضمن كافة المشاريع، المخططات، بيانات الوحدات، والمراكز التسويقية.
+                      عند الانتقال إلى استضافة جديدة، قم بتحميل ملف SQL أعلاه. يحتوي الملف على كافة البيانات (المشاريع، المخططات، الوحدات، المراكز التسويقية). 
+                      يمكنك تنفيذ محتوى هذا الملف في واجهة SQL الخاصة بقاعدة البيانات الجديدة لاستعادة كافة البيانات بضغطة واحدة.
                     </p>
                   </div>
 
-                  {generatedSQL ? (
-                    <div className="space-y-2">
-                      <Label className="font-black text-slate-700">كود SQL للنسخة الاحتياطية:</Label>
-                      <div className="bg-slate-900 rounded-2xl p-6 font-mono text-xs text-emerald-400 border border-slate-800 shadow-inner relative group">
-                        <ScrollArea className="h-[400px] w-full">
-                          <pre className="whitespace-pre-wrap">{generatedSQL}</pre>
-                        </ScrollArea>
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                      <h4 className="font-bold text-slate-700 mb-2">لماذا التحميل كملف؟</h4>
+                      <ul className="text-xs text-slate-500 space-y-2 list-disc list-inside">
+                        <li>تجنب ثقل المتصفح عند التعامل مع آلاف الوحدات.</li>
+                        <li>سهولة النقل عبر البريد أو وسائط التخزين.</li>
+                        <li>ضمان عدم ضياع أي جزء من الكود أثناء النسخ اليدوي.</li>
+                      </ul>
                     </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
-                      <Database size={48} className="opacity-20 mb-4" />
-                      <p className="font-bold">اضغط على "توليد نسخة SQL" لبدء عملية النسخ الاحتياطي</p>
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                      <h4 className="font-bold text-slate-700 mb-2">محتويات النسخة</h4>
+                      <ul className="text-xs text-slate-500 space-y-2 list-disc list-inside">
+                        <li>هيكل الجداول (Schema).</li>
+                        <li>بيانات المشاريع والمخططات الهندسية.</li>
+                        <li>حالات الوحدات (مباع، متاح، استثمار).</li>
+                        <li>بيانات المراكز التسويقية والإعدادات.</li>
+                      </ul>
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             ) : showMarketingCenters ? (
