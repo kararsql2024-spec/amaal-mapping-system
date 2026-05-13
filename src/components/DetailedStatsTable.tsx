@@ -35,8 +35,8 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     return new Intl.NumberFormat('en-US').format(Math.round(num));
   };
 
-  // وظيفة لتوحيد مسمى العملة لضمان المطابقة مع بيانات الإكسل
-  const getCurrencyType = (curr: string) => {
+  // وظيفة لتوحيد مسمى العملة لضمان المطابقة مع بيانات الإكسل أو الإدخال اليدوي
+  const getCurrencyType = (curr: any) => {
     if (!curr) return '';
     const c = curr.toString().trim();
     if (c.includes('دينار') || c.includes('IQD') || c.includes('د.ع')) return 'IQD';
@@ -91,7 +91,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           
           if (data.status !== 'frozen_uncounted') floorStats.total++;
 
-          // جمع المبالغ مع تنظيف النص من الفواصل
+          // جمع المبالغ مع تنظيف النص من الفواصل واستخدام الموحد للعملة
           const priceValue = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
           if (!isNaN(priceValue) && priceValue > 0) {
             const cType = getCurrencyType(data.currency);
@@ -156,7 +156,7 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       
       if (data.status !== 'frozen_uncounted') { s.total++; zt.total++; }
 
-      // جمع المبالغ مع تنظيف النص من الفواصل
+      // جمع المبالغ مع تنظيف النص من الفواصل واستخدام الموحد للعملة
       const priceValue = parseFloat(data.price?.toString().replace(/,/g, '') || '0');
       if (!isNaN(priceValue) && priceValue > 0) {
         const cType = getCurrencyType(data.currency);
