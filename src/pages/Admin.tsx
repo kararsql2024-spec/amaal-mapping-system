@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+} from "@/AlertDialog";
 
 interface AdminProps {
   projects: Project[];
@@ -61,6 +61,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+
+  // Backup States
+  const [generatedSQL, setGeneratedSQL] = useState<string>("");
+  const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -610,6 +614,101 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) { showError("فشل في تحميل تفاصيل المخطط"); }
   };
 
+  // Backup Logic
+  const generateBackupSQL = async () => {
+    setIsGeneratingBackup(true);
+    try {
+      const { data: projectsData } = await supabase.from('projects').select('*');
+      const { data: housesData } = await supabase.from('houses_data').select('*');
+      const { data: centersData } = await supabase.from('marketing_centers').select('*');
+      const { data: settingsData } = await supabase.from('settings').select('*');
+      const { data: notificationsData } = await supabase.from('notifications').select('*');
+
+      let sql = `-- SQL Backup Generated on ${new Date().toLocaleString('ar-EG')}\n`;
+      sql += `-- Database: Real Estate Management System\n\n`;
+
+      // Schema
+      sql += `-- 1. Table: projects\nCREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, description TEXT, elements JSONB, map_width INTEGER, map_height INTEGER, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
+      sql += `-- 2. Table: houses_data\nCREATE TABLE IF NOT EXISTS houses_data (unit_key TEXT PRIMARY KEY, project_id TEXT, data JSONB, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
+      sql += `-- 3. Table: marketing_centers\nCREATE TABLE IF NOT EXISTS marketing_centers (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT, password TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
+      sql += `-- 4. Table: settings\nCREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB);\n\n`;
+      sql += `-- 5. Table: notifications\nCREATE TABLE IF NOT EXISTS notifications (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), project_id TEXT, message TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
+
+      // Data Inserts
+      const escape = (val: any) => {
+        if (val === null || val === undefined) return 'NULL';
+        if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+        if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+        return val;
+      };
+
+      if (projectsData) {
+        sql += `-- Data for projects\n`;
+        projectsData.forEach(p => {
+          sql += `INSERT INTO projects (id, name, description, elements, map_width, map_height, created_at) VALUES (${escape(p.id)}, ${escape(p.name)}, ${escape(p.description)}, ${escape(p.elements)}, ${escape(p.map_width)}, ${escape(p.map_height)}, ${escape(p.created_at)}) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, elements=EXCLUDED.elements, map_width=EXCLUDED.map_width, map_height=EXCLUDED.map_height;\n`;
+        });
+        sql += `\n`;
+      }
+
+      if (housesData) {
+        sql += `-- Data for houses_data\n`;
+        housesData.forEach(h => {
+          sql += `INSERT INTO houses_data (unit_key, project_id, data) VALUES (${escape(h.unit_key)}, ${escape(h.project_id)}, ${escape(h.data)}) ON CONFLICT (unit_key) DO UPDATE SET data=EXCLUDED.data;\n`;
+        });
+        sql += `\n`;
+      }
+
+      if (centersData) {
+        sql += `-- Data for marketing_centers\n`;
+        centersData.forEach(c => {
+          sql += `INSERT INTO marketing_centers (id, name, password, created_at) VALUES (${escape(c.id)}, ${escape(c.name)}, ${escape(c.password)}, ${escape(c.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
+        });
+        sql += `\n`;
+      }
+
+      if (settingsData) {
+        sql += `-- Data for settings\n`;
+        settingsData.forEach(s => {
+          sql += `INSERT INTO settings (key, value) VALUES (${escape(s.key)}, ${escape(s.value)}) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;\n`;
+        });
+        sql += `\n`;
+      }
+
+      if (notificationsData) {
+        sql += `-- Data for notifications\n`;
+        notificationsData.forEach(n => {
+          sql += `INSERT INTO notifications (id, project_id, message, created_at) VALUES (${escape(n.id)}, ${escape(n.project_id)}, ${escape(n.message)}, ${escape(n.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
+        });
+      }
+
+      setGeneratedSQL(sql);
+      showSuccess("تم توليد النسخة الاحتياطية بنجاح");
+    } catch (error) {
+      showError("فشل في توليد النسخة الاحتياطية");
+    } finally {
+      setIsGeneratingBackup(false);
+    }
+  };
+
+  const downloadSQL = () => {
+    if (!generatedSQL) return;
+    const blob = new Blob([generatedSQL], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup_${new Date().toISOString().split('T')[0]}.sql`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const copyToClipboard = () => {
+    if (!generatedSQL) return;
+    navigator.clipboard.writeText(generatedSQL);
+    showSuccess("تم نسخ الكود إلى الحافظة");
+  };
+
   if (editingMapProject) {
     return (
       <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
@@ -633,7 +732,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             <div><h1 className="text-2xl font-black text-slate-800">لوحة الإدارة</h1><p className="text-slate-500 font-medium">إدارة المشاريع والمخططات</p></div>
           </div>
           <div className="flex gap-2">
-            <Button variant={showDatabaseInspector ? "default" : "outline"} onClick={() => { setShowDatabaseInspector(!showDatabaseInspector); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showDatabaseInspector && "bg-blue-600 hover:bg-blue-700")}><Database size={18} /> مفتش البيانات</Button>
+            <Button variant={showDatabaseInspector ? "default" : "outline"} onClick={() => { setShowDatabaseInspector(!showDatabaseInspector); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showDatabaseInspector && "bg-blue-600 hover:bg-blue-700")}><Database size={18} /> النسخ الاحتياطي</Button>
             <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowDatabaseInspector(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> المراكز التسويقية</Button>
             <Button variant={showSalesUpdate ? "default" : "outline"} onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowDatabaseInspector(false); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}><FileSpreadsheet size={18} /> تحديث المبيعات</Button>
             <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
@@ -646,7 +745,45 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             {showDatabaseInspector ? (
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center justify-between border-b pb-4">
-                  <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><Database className="text-blue-600" /></div><h2 className="text-xl font-black text-slate-800">مفتش قاعدة البيانات</h2></div>
+                  <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center"><Database className="text-blue-600" /></div><h2 className="text-xl font-black text-slate-800">النسخ الاحتياطي وقاعدة البيانات</h2></div>
+                  <div className="flex gap-2">
+                    <Button onClick={generateBackupSQL} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2">
+                      {isGeneratingBackup ? <RefreshCcw className="animate-spin" size={18} /> : <FileCode size={18} />}
+                      توليد نسخة SQL
+                    </Button>
+                    {generatedSQL && (
+                      <>
+                        <Button onClick={downloadSQL} variant="outline" className="rounded-xl gap-2 border-emerald-200 text-emerald-600 hover:bg-emerald-50"><Download size={18} /> تحميل الملف</Button>
+                        <Button onClick={copyToClipboard} variant="outline" className="rounded-xl gap-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"><Copy size={18} /> نسخ الكود</Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                    <h3 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><AlertCircle size={18} /> تعليمات النقل</h3>
+                    <p className="text-sm text-blue-700 leading-relaxed">
+                      عند الانتقال إلى استضافة جديدة، قم بإنشاء الجداول أولاً باستخدام الكود أدناه، ثم قم بتنفيذ أوامر الإدخال (INSERT). 
+                      هذا الكود يتضمن كافة المشاريع، المخططات، بيانات الوحدات، والمراكز التسويقية.
+                    </p>
+                  </div>
+
+                  {generatedSQL ? (
+                    <div className="space-y-2">
+                      <Label className="font-black text-slate-700">كود SQL للنسخة الاحتياطية:</Label>
+                      <div className="bg-slate-900 rounded-2xl p-6 font-mono text-xs text-emerald-400 border border-slate-800 shadow-inner relative group">
+                        <ScrollArea className="h-[400px] w-full">
+                          <pre className="whitespace-pre-wrap">{generatedSQL}</pre>
+                        </ScrollArea>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                      <Database size={48} className="opacity-20 mb-4" />
+                      <p className="font-bold">اضغط على "توليد نسخة SQL" لبدء عملية النسخ الاحتياطي</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : showMarketingCenters ? (
