@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, User, Phone, Info, Building2, Calendar } from "lucide-react";
+import { Home, User, Phone, Info, Building2, Calendar, Banknote, Coins } from "lucide-react";
 
 interface UnitDetailsModalProps {
   isOpen: boolean;
@@ -37,6 +37,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     phone: '',
     details: '',
     saleDate: '',
+    price: '',
+    currency: 'دينار',
   });
 
   React.useEffect(() => {
@@ -47,6 +49,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         phone: initialData.phone || '',
         details: initialData.details || '',
         saleDate: initialData.saleDate || '',
+        price: initialData.price || '',
+        currency: initialData.currency || 'دينار',
       });
     } else {
       setFormData({
@@ -55,6 +59,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         phone: '',
         details: '',
         saleDate: '',
+        price: '',
+        currency: 'دينار',
       });
     }
   }, [initialData, isOpen]);
@@ -113,6 +119,39 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-right block font-bold text-slate-600">سعر الوحدة</Label>
+                  <div className="relative">
+                    <Banknote className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Input 
+                      className="pr-10 rounded-xl h-12 border-slate-200"
+                      placeholder="السعر..."
+                      value={formData.price}
+                      onChange={(e) => setFormData({...formData, price: e.target.value})}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-right block font-bold text-slate-600">العملة</Label>
+                  <div className="relative">
+                    <Coins className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Select 
+                      value={formData.currency} 
+                      onValueChange={(v) => setFormData({...formData, currency: v})}
+                    >
+                      <SelectTrigger className="pr-10 rounded-xl h-12 border-slate-200 font-bold">
+                        <SelectValue placeholder="العملة" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="دينار">دينار</SelectItem>
+                        <SelectItem value="دولار">دولار</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
