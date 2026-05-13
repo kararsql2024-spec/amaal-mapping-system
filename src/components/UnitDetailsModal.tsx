@@ -74,6 +74,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   const isFrozen = formData.status.startsWith('frozen');
   const showSaleFields = formData.status === 'sold' || formData.status === 'reserved' || formData.status === 'pending' || formData.status === 'investment';
 
+  // تحويل مسمى العملة إلى رمز
+  const getCurrencySymbol = (currency: string) => {
+    if (currency === 'دولار') return '$';
+    if (currency === 'دينار') return 'د.ع';
+    return currency;
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px] rounded-3xl" dir="rtl">
@@ -127,30 +134,18 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                   <Label className="text-right block font-bold text-slate-600">سعر الوحدة</Label>
                   <div className="relative">
                     <Banknote className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <Input 
-                      className="pr-10 rounded-xl h-12 border-slate-200"
-                      placeholder="السعر..."
-                      value={formData.price}
-                      onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    />
+                    <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700">
+                      {formData.price || '---'}
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-right block font-bold text-slate-600">العملة</Label>
                   <div className="relative">
                     <Coins className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <Select 
-                      value={formData.currency} 
-                      onValueChange={(v) => setFormData({...formData, currency: v})}
-                    >
-                      <SelectTrigger className="pr-10 rounded-xl h-12 border-slate-200 font-bold">
-                        <SelectValue placeholder="العملة" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="دينار">دينار</SelectItem>
-                        <SelectItem value="دولار">دولار</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700">
+                      {getCurrencySymbol(formData.currency)}
+                    </div>
                   </div>
                 </div>
               </div>
