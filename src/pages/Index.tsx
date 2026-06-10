@@ -357,8 +357,19 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           <div className="flex items-center gap-4">
             {projects.length > 0 && (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">{activeProject?.name || "اختر المشروع"}<ChevronDown size={16} /></Button></DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl">{projects.map(p => (<DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">{p.name}</DropdownMenuItem>))}</DropdownMenuItem>))}</DropdownMenuContent>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">
+                    {activeProject?.name || "اختر المشروع"}
+                    <ChevronDown size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="rounded-xl">
+                  {projects.map(p => (
+                    <DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">
+                      {p.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
               </DropdownMenu>
             )}
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
