@@ -306,8 +306,24 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showPrice: true,
       showCustomerName: true,
       showCustomerPhone: true,
-      showTaboInfo: true,
+      showSaleDate: true,
+      showTaboNum: true,
+      showTaboStatus: true,
       showHandoverInfo: true,
+      showStatsAvailable: true,
+      showStatsSold: true,
+      showStatsInvestment: true,
+      showStatsReserved: true,
+      showStatsPending: true,
+      showStatsTotal: true,
+      showStatsPromoted: true,
+      showStatsNotPromoted: true,
+      showStatsReceivedTabo: true,
+      showStatsReceivedUnit: true,
+      showStatsNotReceivedUnit: true,
+      showStatsPriceIQD: true,
+      showStatsPriceUSD: true,
+      showGeneralStats: true,
       showStatsTable: true
     };
     
@@ -917,28 +933,80 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         showPrice: true,
                         showCustomerName: true,
                         showCustomerPhone: true,
-                        showTaboInfo: true,
+                        showSaleDate: true,
+                        showTaboNum: true,
+                        showTaboStatus: true,
                         showHandoverInfo: true,
+                        showStatsAvailable: true,
+                        showStatsSold: true,
+                        showStatsInvestment: true,
+                        showStatsReserved: true,
+                        showStatsPending: true,
+                        showStatsTotal: true,
+                        showStatsPromoted: true,
+                        showStatsNotPromoted: true,
+                        showStatsReceivedTabo: true,
+                        showStatsReceivedUnit: true,
+                        showStatsNotReceivedUnit: true,
+                        showStatsPriceIQD: true,
+                        showStatsPriceUSD: true,
+                        showGeneralStats: true,
                         showStatsTable: true
                       };
                       
                       return (
-                        <div key={idx} className="bg-white border border-indigo-100 p-4 rounded-2xl shadow-sm space-y-4">
-                          <div className="flex items-center justify-between border-b pb-2">
+                        <div key={idx} className="bg-white border border-indigo-100 p-6 rounded-2xl shadow-sm space-y-6">
+                          <div className="flex items-center justify-between border-b pb-4">
                             <div className="flex items-center gap-2">
-                              <ShieldCheck className="text-indigo-600" size={18} />
-                              <span className="text-lg font-black text-slate-800">{type}</span>
+                              <ShieldCheck className="text-indigo-600" size={20} />
+                              <span className="text-xl font-black text-slate-800">{type}</span>
                             </div>
-                            <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700 p-2 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                            <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700 p-2 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={20} /></button>
                           </div>
                           
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                            <PermissionToggle label="السعر" checked={perms.showPrice} onChange={() => togglePermission(type, 'showPrice')} />
-                            <PermissionToggle label="اسم الزبون" checked={perms.showCustomerName} onChange={() => togglePermission(type, 'showCustomerName')} />
-                            <PermissionToggle label="رقم الهاتف" checked={perms.showCustomerPhone} onChange={() => togglePermission(type, 'showCustomerPhone')} />
-                            <PermissionToggle label="حالة الطابو" checked={perms.showTaboInfo} onChange={() => togglePermission(type, 'showTaboInfo')} />
-                            <PermissionToggle label="تاريخ الاستلام" checked={perms.showHandoverInfo} onChange={() => togglePermission(type, 'showHandoverInfo')} />
-                            <PermissionToggle label="جدول الإحصائيات" checked={perms.showStatsTable} onChange={() => togglePermission(type, 'showStatsTable')} />
+                          <div className="space-y-6">
+                            {/* نافذة تفاصيل الوحدة */}
+                            <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><HomeIcon size={16} className="text-blue-600" /> نافذة تفاصيل الوحدة (Modal)</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <PermissionToggle label="اسم الزبون" checked={perms.showCustomerName} onChange={() => togglePermission(type, 'showCustomerName')} />
+                                <PermissionToggle label="رقم الهاتف" checked={perms.showCustomerPhone} onChange={() => togglePermission(type, 'showCustomerPhone')} />
+                                <PermissionToggle label="السعر" checked={perms.showPrice} onChange={() => togglePermission(type, 'showPrice')} />
+                                <PermissionToggle label="تاريخ البيع" checked={perms.showSaleDate} onChange={() => togglePermission(type, 'showSaleDate')} />
+                                <PermissionToggle label="رقم الطابو" checked={perms.showTaboNum} onChange={() => togglePermission(type, 'showTaboNum')} />
+                                <PermissionToggle label="حالة الطابو" checked={perms.showTaboStatus} onChange={() => togglePermission(type, 'showTaboStatus')} />
+                                <PermissionToggle label="تاريخ الاستلام" checked={perms.showHandoverInfo} onChange={() => togglePermission(type, 'showHandoverInfo')} />
+                              </div>
+                            </div>
+
+                            {/* جدول الإحصائيات المفصلة */}
+                            <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><FileSpreadsheet size={16} className="text-emerald-600" /> جدول الإحصائيات المفصلة (أعمدة)</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <PermissionToggle label="المتاح" checked={perms.showStatsAvailable} onChange={() => togglePermission(type, 'showStatsAvailable')} />
+                                <PermissionToggle label="المباع" checked={perms.showStatsSold} onChange={() => togglePermission(type, 'showStatsSold')} />
+                                <PermissionToggle label="الاستثمار" checked={perms.showStatsInvestment} onChange={() => togglePermission(type, 'showStatsInvestment')} />
+                                <PermissionToggle label="المحجوز" checked={perms.showStatsReserved} onChange={() => togglePermission(type, 'showStatsReserved')} />
+                                <PermissionToggle label="الحجز الأولي" checked={perms.showStatsPending} onChange={() => togglePermission(type, 'showStatsPending')} />
+                                <PermissionToggle label="المجموع" checked={perms.showStatsTotal} onChange={() => togglePermission(type, 'showStatsTotal')} />
+                                <PermissionToggle label="مروج" checked={perms.showStatsPromoted} onChange={() => togglePermission(type, 'showStatsPromoted')} />
+                                <PermissionToggle label="غير مروج" checked={perms.showStatsNotPromoted} onChange={() => togglePermission(type, 'showStatsNotPromoted')} />
+                                <PermissionToggle label="مستلم الطابو" checked={perms.showStatsReceivedTabo} onChange={() => togglePermission(type, 'showStatsReceivedTabo')} />
+                                <PermissionToggle label="مستلم الوحدة" checked={perms.showStatsReceivedUnit} onChange={() => togglePermission(type, 'showStatsReceivedUnit')} />
+                                <PermissionToggle label="غير مستلم الوحدة" checked={perms.showStatsNotReceivedUnit} onChange={() => togglePermission(type, 'showStatsNotReceivedUnit')} />
+                                <PermissionToggle label="إجمالي (د.ع)" checked={perms.showStatsPriceIQD} onChange={() => togglePermission(type, 'showStatsPriceIQD')} />
+                                <PermissionToggle label="إجمالي ($)" checked={perms.showStatsPriceUSD} onChange={() => togglePermission(type, 'showStatsPriceUSD')} />
+                              </div>
+                            </div>
+
+                            {/* الإحصائيات العامة */}
+                            <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><BarChart3 size={16} className="text-indigo-600" /> الإحصائيات العامة (Sidebar)</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <PermissionToggle label="إظهار القائمة الجانبية" checked={perms.showGeneralStats} onChange={() => togglePermission(type, 'showGeneralStats')} />
+                                <PermissionToggle label="إظهار الجدول المفصل" checked={perms.showStatsTable} onChange={() => togglePermission(type, 'showStatsTable')} />
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1109,7 +1177,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
 const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
   <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer" onClick={onChange}>
-    <span className="text-xs font-bold text-slate-600">{label}</span>
+    <span className="text-[10px] font-black text-slate-600">{label}</span>
     <div className={cn(
       "w-8 h-4 rounded-full relative transition-colors",
       checked ? "bg-indigo-600" : "bg-slate-300"
