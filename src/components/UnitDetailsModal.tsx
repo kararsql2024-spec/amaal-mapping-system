@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Home, User, Phone, Info, Building2, Calendar, Banknote, Coins } from "lucide-react";
+import { Home, User, Phone, Info, Building2, Calendar, Banknote, Coins, FileText } from "lucide-react";
 
 interface UnitDetailsModalProps {
   isOpen: boolean;
@@ -39,6 +39,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     saleDate: '',
     price: '',
     currency: 'دينار',
+    taboNum: '',
+    taboStatus: '',
+    handoverDate: '',
   });
 
   React.useEffect(() => {
@@ -51,6 +54,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         saleDate: initialData.saleDate || '',
         price: initialData.price || '',
         currency: initialData.currency || 'دينار',
+        taboNum: initialData.taboNum || '',
+        taboStatus: initialData.taboStatus || '',
+        handoverDate: initialData.handoverDate || '',
       });
     } else {
       setFormData({
@@ -61,6 +67,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         saleDate: '',
         price: '',
         currency: 'دينار',
+        taboNum: '',
+        taboStatus: '',
+        handoverDate: '',
       });
     }
   }, [initialData, isOpen]);
@@ -90,7 +99,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] rounded-3xl" dir="rtl">
+      <DialogContent className="sm:max-w-[425px] rounded-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black text-right flex items-center gap-2">
             {isApartment ? <Building2 className="w-6 h-6 text-indigo-600" /> : <Home className="w-6 h-6 text-blue-600" />}
@@ -183,12 +192,52 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-right block font-bold text-slate-600">رقم الطابو</Label>
+                  <div className="relative">
+                    <FileText className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Input 
+                      className="pr-10 rounded-xl h-12 border-slate-200"
+                      placeholder="رقم الطابو..."
+                      value={formData.taboNum}
+                      onChange={(e) => setFormData({...formData, taboNum: e.target.value})}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-right block font-bold text-slate-600">حالة الطابو</Label>
+                  <div className="relative">
+                    <Info className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Input 
+                      className="pr-10 rounded-xl h-12 border-slate-200"
+                      placeholder="حالة الطابو..."
+                      value={formData.taboStatus}
+                      onChange={(e) => setFormData({...formData, taboStatus: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-right block font-bold text-slate-600">تاريخ الاستلام</Label>
+                <div className="relative">
+                  <Calendar className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                  <Input 
+                    type="date"
+                    className="pr-10 rounded-xl h-12 border-slate-200"
+                    value={formData.handoverDate}
+                    onChange={(e) => setFormData({...formData, handoverDate: e.target.value})}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
           {(isFrozen || !isAvailable) && (
             <div className="space-y-2">
-              <Label className="text-right block font-bold text-slate-600">ملاحظات / سبب التجميد</Label>
+              <Label className="text-right block font-bold text-slate-600">ملاحظات</Label>
               <div className="relative">
                 <Info className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
                 <Input 
