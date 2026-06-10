@@ -205,14 +205,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleAddCenter = async () => {
-    if (!newCenter.name || !newCenter.password) {
-      showError("يرجى إكمال كافة البيانات");
+    if (!newCenter.name || !newCenter.password || !newCenter.type) {
+      showError("يرجى إكمال كافة البيانات واختيار نوع القسم");
       return;
     }
     try {
       const payload = {
         name: newCenter.name,
-        password: newCenter.password
+        password: newCenter.password,
+        type: newCenter.type
       };
 
       if (editingCenterId) {
