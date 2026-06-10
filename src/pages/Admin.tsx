@@ -5,7 +5,7 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags, X } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags, X, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -57,6 +58,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
   const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
   const [newDeptType, setNewDeptType] = useState('');
+  const [deptPermissions, setDeptPermissions] = useState<Record<string, any>>({});
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
 
@@ -114,6 +116,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           const deptTypes = settingsData.find(s => s.key === 'department_types');
           if (deptTypes) setDepartmentTypes(deptTypes.value || []);
+
+          const permissions = settingsData.find(s => s.key === 'dept_permissions');
+          if (permissions) setDeptPermissions(permissions.value || {});
         }
 
         const { data: centersData } = await supabase
@@ -280,13 +285,46 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleDeleteDeptType = async (idx: number) => {
+    const typeToDelete = departmentTypes[idx];
     const updated = departmentTypes.filter((_, i) => i !== idx);
+    const updatedPerms = { ...deptPermissions };
+    delete updatedPerms[typeToDelete];
+
     try {
       await supabase.from('settings').upsert({ key: 'department_types', value: updated });
+      await supabase.from('settings').upsert({ key: 'dept_permissions', value: updatedPerms });
       setDepartmentTypes(updated);
-      showSuccess("تم حذف النوع");
+      setDeptPermissions(updatedPerms);
+      showSuccess("تم حذف النوع وصلاحياته");
     } catch (error) {
       showError("فشل في التحديث");
+    }
+  };
+
+  const togglePermission = async (type: string, permission: string) => {
+    const current = deptPermissions[type] || {
+      showPrice: true,
+      showCustomerName: true,
+      showCustomerPhone: true,
+      showTaboInfo: true,
+      showHandoverInfo: true,
+      showStatsTable: true
+    };
+    
+    const updated = {
+      ...deptPermissions,
+      [type]: {
+        ...current,
+        [permission]: !current[permission]
+      }
+    };
+
+    try {
+      await supabase.from('settings').upsert({ key: 'dept_permissions', value: updated });
+      setDeptPermissions(updated);
+      showSuccess("تم تحديث الصلاحية");
+    } catch (error) {
+      showError("فشل في تحديث الصلاحية");
     }
   };
 
@@ -866,19 +904,45 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 <div className="flex items-center gap-3 border-b pb-4"><div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center"><Store className="text-indigo-600" /></div><h2 className="text-xl font-black text-slate-800">إدارة الأقسام</h2></div>
                 
                 {/* إدارة أنواع الأقسام */}
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                  <h3 className="font-bold text-slate-700 flex items-center gap-2"><Tags size={18} /> إدارة أنواع الأقسام</h3>
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-6">
+                  <h3 className="font-bold text-slate-700 flex items-center gap-2"><Tags size={18} /> إدارة أنواع الأقسام وصلاحيات العرض</h3>
                   <div className="flex gap-2">
                     <Input placeholder="أدخل نوع قسم جديد (مثلاً: مركز تسويقي)..." value={newDeptType} onChange={(e) => setNewDeptType(e.target.value)} className="rounded-xl h-12" />
                     <Button onClick={handleAddDeptType} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 px-6 font-bold">إضافة نوع</Button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {departmentTypes.map((type, idx) => (
-                      <div key={idx} className="bg-white border border-indigo-100 px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm">
-                        <span className="text-sm font-bold text-slate-600">{type}</span>
-                        <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
-                      </div>
-                    ))}
+                  
+                  <div className="space-y-4">
+                    {departmentTypes.map((type, idx) => {
+                      const perms = deptPermissions[type] || {
+                        showPrice: true,
+                        showCustomerName: true,
+                        showCustomerPhone: true,
+                        showTaboInfo: true,
+                        showHandoverInfo: true,
+                        showStatsTable: true
+                      };
+                      
+                      return (
+                        <div key={idx} className="bg-white border border-indigo-100 p-4 rounded-2xl shadow-sm space-y-4">
+                          <div className="flex items-center justify-between border-b pb-2">
+                            <div className="flex items-center gap-2">
+                              <ShieldCheck className="text-indigo-600" size={18} />
+                              <span className="text-lg font-black text-slate-800">{type}</span>
+                            </div>
+                            <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700 p-2 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                            <PermissionToggle label="السعر" checked={perms.showPrice} onChange={() => togglePermission(type, 'showPrice')} />
+                            <PermissionToggle label="اسم الزبون" checked={perms.showCustomerName} onChange={() => togglePermission(type, 'showCustomerName')} />
+                            <PermissionToggle label="رقم الهاتف" checked={perms.showCustomerPhone} onChange={() => togglePermission(type, 'showCustomerPhone')} />
+                            <PermissionToggle label="حالة الطابو" checked={perms.showTaboInfo} onChange={() => togglePermission(type, 'showTaboInfo')} />
+                            <PermissionToggle label="تاريخ الاستلام" checked={perms.showHandoverInfo} onChange={() => togglePermission(type, 'showHandoverInfo')} />
+                            <PermissionToggle label="جدول الإحصائيات" checked={perms.showStatsTable} onChange={() => togglePermission(type, 'showStatsTable')} />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1042,5 +1106,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     </div>
   );
 };
+
+const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
+  <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer" onClick={onChange}>
+    <span className="text-xs font-bold text-slate-600">{label}</span>
+    <div className={cn(
+      "w-8 h-4 rounded-full relative transition-colors",
+      checked ? "bg-indigo-600" : "bg-slate-300"
+    )}>
+      <div className={cn(
+        "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+        checked ? "right-4.5" : "right-0.5"
+      )} />
+    </div>
+  </div>
+);
 
 export default Admin;
