@@ -46,28 +46,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
-  const [departmentTypes, setDepartmentTypes] = useState<any[]>([]);
   const [loginData, setLoginData] = useState({ centerId: '', password: '' });
-  const [userPermissions, setUserPermissions] = useState<any>({
-    showPrice: true, showName: true, showPhone: true, showTabo: true, showHandover: true
-  });
 
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: centers } = await supabase.from('marketing_centers').select('*');
-      if (centers) setMarketingCenters(centers);
-
-      const { data: settings } = await supabase.from('settings').select('*').eq('key', 'department_types').single();
-      if (settings) setDepartmentTypes(settings.value || []);
+    const fetchCenters = async () => {
+      const { data } = await supabase.from('marketing_centers').select('*');
+      if (data) setMarketingCenters(data);
     };
-    fetchData();
+    fetchCenters();
 
-    const savedSession = localStorage.getItem('marketing_center_session');
-    const savedPerms = localStorage.getItem('marketing_center_permissions');
-    if (savedSession) {
-      setIsLoggedIn(true);
-      if (savedPerms) setUserPermissions(JSON.parse(savedPerms));
-    }
+    const savedCenter = localStorage.getItem('marketing_center_session');
+    if (savedCenter) setIsLoggedIn(true);
   }, []);
 
   useEffect(() => {
@@ -183,13 +172,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const handleLogin = () => {
     const center = marketingCenters.find(c => c.id === loginData.centerId);
     if (center && center.password === loginData.password) {
-      const typeConfig = departmentTypes.find(t => t.name === center.type);
-      const perms = typeConfig?.permissions || { showPrice: true, showName: true, showPhone: true, showTabo: true, showHandover: true };
-      
       setIsLoggedIn(true);
-      setUserPermissions(perms);
       localStorage.setItem('marketing_center_session', center.id);
-      localStorage.setItem('marketing_center_permissions', JSON.stringify(perms));
       showSuccess(`مرحباً بك في مركز ${center.name}`);
     } else {
       showError("بيانات الدخول غير صحيحة");
@@ -199,7 +183,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const handleLogout = () => {
     setIsLoggedIn(false);
     localStorage.removeItem('marketing_center_session');
-    localStorage.removeItem('marketing_center_permissions');
   };
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
@@ -313,7 +296,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             {projects.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild><Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">{activeProject?.name || "اختر المشروع"}<ChevronDown size={16} /></Button></DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl">{projects.map(p => (<DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">{p.name}</DropdownMenuItem>))}</DropdownMenuItem>
+                <DropdownMenuContent align="end" className="rounded-xl">{projects.map(p => (<DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">{p.name}</DropdownMenuItem>))}</DropdownMenuContent>
               </DropdownMenu>
             )}
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
@@ -330,7 +313,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             ) : activeProject ? (
               <>
                 <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} />
-                <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={userPermissions} />
+                <DetailedStatsTable elements={activeElements} housesData={housesData} />
               </>
             ) : (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">يرجى إنشاء مشروع أولاً</h2></div>
@@ -346,22 +329,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-purple-500" />
                 <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold - stats.investment).toString()} color="bg-emerald-500" />
                 
-                {userPermissions.showTabo && (
-                  <>
-                    <div className="h-px bg-slate-100 my-4" />
-                    <StatItem label="مروج" value={stats.promoted.toString()} color="bg-indigo-500" icon={<FileCheck size={16} />} />
-                    <StatItem label="غير مروج" value={stats.notPromoted.toString()} color="bg-slate-400" icon={<FileX size={16} />} />
-                    <StatItem label="مستلم الطابو" value={stats.receivedTabo.toString()} color="bg-amber-500" icon={<CheckCircle size={16} />} />
-                  </>
-                )}
+                <div className="h-px bg-slate-100 my-4" />
                 
-                {userPermissions.showHandover && (
-                  <>
-                    <div className="h-px bg-slate-100 my-4" />
-                    <StatItem label="مستلم الوحدة" value={stats.receivedUnit.toString()} color="bg-sky-500" icon={<HomeIcon size={16} />} />
-                    <StatItem label="غير مستلم الوحدة" value={stats.notReceivedUnit.toString()} color="bg-rose-300" icon={<XCircle size={16} />} />
-                  </>
-                )}
+                <StatItem label="مروج" value={stats.promoted.toString()} color="bg-indigo-500" icon={<FileCheck size={16} />} />
+                <StatItem label="غير مروج" value={stats.notPromoted.toString()} color="bg-slate-400" icon={<FileX size={16} />} />
+                <StatItem label="مستلم الطابو" value={stats.receivedTabo.toString()} color="bg-amber-500" icon={<CheckCircle size={16} />} />
+                
+                <div className="h-px bg-slate-100 my-4" />
+                
+                <StatItem label="مستلم الوحدة" value={stats.receivedUnit.toString()} color="bg-sky-500" icon={<HomeIcon size={16} />} />
+                <StatItem label="غير مستلم الوحدة" value={stats.notReceivedUnit.toString()} color="bg-rose-300" icon={<XCircle size={16} />} />
               </div>
             </div>
 
@@ -410,8 +387,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         </main>
 
-        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} permissions={userPermissions} />
-        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={activeElements.find(el => el.id === selectedElementId)} housesData={housesData} onSaveApartment={handleSaveData} permissions={userPermissions} />
+        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} />
+        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={activeElements.find(el => el.id === selectedElementId)} housesData={housesData} onSaveApartment={handleSaveData} />
         <MadeWithDyad />
       </div>
     </div>
