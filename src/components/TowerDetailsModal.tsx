@@ -17,9 +17,10 @@ interface TowerDetailsModalProps {
   tower: any;
   housesData: Record<string, any>;
   onSaveApartment: (apartmentKey: string, data: any) => void;
+  permissions?: any;
 }
 
-const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment }: TowerDetailsModalProps) => {
+const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment, permissions }: TowerDetailsModalProps) => {
   const [selectedFloor, setSelectedFloor] = useState(1);
   const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
 
@@ -174,6 +175,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
         unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
         initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
         isApartment
+        permissions={permissions}
       />
     </>
   );
