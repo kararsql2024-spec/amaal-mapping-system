@@ -159,18 +159,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 input: 'rounded-xl h-12 border-slate-200',
               }
             }}
-            localization={{
-              variables: {
-                sign_in: {
-                  email_label: 'البريد الإلكتروني',
-                  password_label: 'كلمة المرور',
-                  button_label: 'تسجيل الدخول',
-                  loading_button_label: 'جاري تسجيل الدخول...',
-                  email_input_placeholder: 'بريدك الإلكتروني',
-                  password_input_placeholder: 'كلمة المرور الخاصة بك',
-                },
-              },
-            }}
             theme="light"
           />
         </div>
@@ -217,15 +205,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleAddCenter = async () => {
-    if (!newCenter.name || !newCenter.password || !newCenter.type) {
-      showError("يرجى إكمال كافة البيانات واختيار نوع القسم");
+    if (!newCenter.name || !newCenter.password) {
+      showError("يرجى إكمال كافة البيانات");
       return;
     }
     try {
       const payload = {
         name: newCenter.name,
-        password: newCenter.password,
-        type: newCenter.type
+        password: newCenter.password
       };
 
       if (editingCenterId) {
