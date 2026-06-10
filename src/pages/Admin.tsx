@@ -67,7 +67,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     phoneCol: 'D',
     dateCol: 'E',
     priceCol: 'F',
-    currencyCol: 'G'
+    currencyCol: 'G',
+    taboNumCol: 'J',
+    taboStatusCol: 'K',
+    handoverDateCol: 'L'
   });
   const [investmentNames, setInvestmentNames] = useState<string[]>([]);
   const [newInvestmentName, setNewInvestmentName] = useState('');
@@ -339,6 +342,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const colToIdx = (col: string) => {
+    if (!col) return -1;
     let res = 0;
     const cleanCol = col.trim().toUpperCase();
     for (let i = 0; i < cleanCol.length; i++) {
@@ -376,6 +380,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const dateIdx = colToIdx(excelMapping.dateCol);
         const priceIdx = colToIdx(excelMapping.priceCol);
         const currencyIdx = colToIdx(excelMapping.currencyCol);
+        const taboNumIdx = colToIdx(excelMapping.taboNumCol);
+        const taboStatusIdx = colToIdx(excelMapping.taboStatusCol);
+        const handoverDateIdx = colToIdx(excelMapping.handoverDateCol);
 
         const normInvestmentNames = investmentNames.map(n => normalizeForMatch(n));
 
@@ -533,6 +540,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
             const price = row[priceIdx] ? String(row[priceIdx]) : '';
             const currency = row[currencyIdx] ? String(row[currencyIdx]) : '';
+            const taboNum = taboNumIdx !== -1 && row[taboNumIdx] ? String(row[taboNumIdx]) : '';
+            const taboStatus = taboStatusIdx !== -1 && row[taboStatusIdx] ? String(row[taboStatusIdx]) : '';
+            
+            let handoverDate = '';
+            if (handoverDateIdx !== -1 && row[handoverDateIdx]) {
+              if (typeof row[handoverDateIdx] === 'number') {
+                handoverDate = new Date((row[handoverDateIdx] - (25567 + 1)) * 86400 * 1000).toISOString().split('T')[0];
+              } else {
+                handoverDate = String(row[handoverDateIdx]);
+              }
+            }
 
             const newStatus = isInvestment ? 'investment' : 'sold';
             if (oldData.status !== newStatus) {
@@ -552,7 +570,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 saleDate, 
                 status: newStatus,
                 price,
-                currency
+                currency,
+                taboNum,
+                taboStatus,
+                handoverDate
               }
             });
           }
@@ -572,7 +593,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 updatesMap.set(techKey, {
                   unit_key: techKey,
                   project_id: unitInfo.project_id,
-                  data: { status: 'available', name: '', phone: '', saleDate: '', price: '', currency: '', details: 'تم التصفير تلقائياً لعدم وجودها في ملف الإكسل' }
+                  data: { status: 'available', name: '', phone: '', saleDate: '', price: '', currency: '', taboNum: '', taboStatus: '', handoverDate: '', details: 'تم التصفير تلقائياً لعدم وجودها في ملف الإكسل' }
                 });
               }
             }
@@ -944,6 +965,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود الاسم</label><Input placeholder="C" value={excelMapping.nameCol} onChange={(e) => setExcelMapping({...excelMapping, nameCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
                   <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود الهاتف</label><Input placeholder="D" value={excelMapping.phoneCol} onChange={(e) => setExcelMapping({...excelMapping, phoneCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
                   <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود التاريخ</label><Input placeholder="E" value={excelMapping.dateCol} onChange={(e) => setExcelMapping({...excelMapping, dateCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود رقم الطابو</label><Input placeholder="J" value={excelMapping.taboNumCol} onChange={(e) => setExcelMapping({...excelMapping, taboNumCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود حالة الطابو</label><Input placeholder="K" value={excelMapping.taboStatusCol} onChange={(e) => setExcelMapping({...excelMapping, taboStatusCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
+                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود تاريخ الاستلام</label><Input placeholder="L" value={excelMapping.handoverDateCol} onChange={(e) => setExcelMapping({...excelMapping, handoverDateCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
