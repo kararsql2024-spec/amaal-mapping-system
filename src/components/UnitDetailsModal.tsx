@@ -28,9 +28,10 @@ interface UnitDetailsModalProps {
   unitLabel?: string;
   initialData?: any;
   isApartment?: boolean;
+  permissions?: any;
 }
 
-const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, isApartment }: UnitDetailsModalProps) => {
+const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, isApartment, permissions = { showPrice: true, showName: true, showPhone: true, showTabo: true, showHandover: true } }: UnitDetailsModalProps) => {
   const [formData, setFormData] = React.useState({
     status: 'available',
     name: '',
@@ -132,53 +133,59 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
           {showSaleFields && (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="space-y-2">
-                <Label className="text-right block font-bold text-slate-600">الاسم الكامل</Label>
-                <div className="relative">
-                  <User className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                  <Input 
-                    className="pr-10 rounded-xl h-12 border-slate-200"
-                    placeholder="اسم العميل..."
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              {permissions.showName && (
                 <div className="space-y-2">
-                  <Label className="text-right block font-bold text-slate-600">سعر الوحدة</Label>
+                  <Label className="text-right block font-bold text-slate-600">الاسم الكامل</Label>
                   <div className="relative">
-                    <Banknote className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700 overflow-hidden text-ellipsis whitespace-nowrap px-2">
-                      {formatPrice(formData.price)}
+                    <User className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Input 
+                      className="pr-10 rounded-xl h-12 border-slate-200"
+                      placeholder="اسم العميل..."
+                      value={formData.name}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {permissions.showPrice && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-right block font-bold text-slate-600">سعر الوحدة</Label>
+                    <div className="relative">
+                      <Banknote className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                      <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700 overflow-hidden text-ellipsis whitespace-nowrap px-2">
+                        {formatPrice(formData.price)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-right block font-bold text-slate-600">العملة</Label>
+                    <div className="relative">
+                      <Coins className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                      <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700">
+                        {getCurrencySymbol(formData.currency)}
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
+
+              {permissions.showPhone && (
                 <div className="space-y-2">
-                  <Label className="text-right block font-bold text-slate-600">العملة</Label>
+                  <Label className="text-right block font-bold text-slate-600">رقم الهاتف</Label>
                   <div className="relative">
-                    <Coins className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <div className="pr-10 rounded-xl h-12 border border-slate-200 bg-slate-50 flex items-center font-black text-slate-700">
-                      {getCurrencySymbol(formData.currency)}
-                    </div>
+                    <Phone className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Input 
+                      type="tel"
+                      className="pr-10 rounded-xl h-12 border-slate-200"
+                      placeholder="05xxxxxxxx"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    />
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-right block font-bold text-slate-600">رقم الهاتف</Label>
-                <div className="relative">
-                  <Phone className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                  <Input 
-                    type="tel"
-                    className="pr-10 rounded-xl h-12 border-slate-200"
-                    placeholder="05xxxxxxxx"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  />
-                </div>
-              </div>
+              )}
 
               <div className="space-y-2">
                 <Label className="text-right block font-bold text-slate-600">تاريخ {formData.status === 'sold' ? 'البيع' : 'الحجز'}</Label>
@@ -193,45 +200,49 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-right block font-bold text-slate-600">رقم الطابو</Label>
-                  <div className="relative">
-                    <FileText className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <Input 
-                      className="pr-10 rounded-xl h-12 border-slate-200"
-                      placeholder="رقم الطابو..."
-                      value={formData.taboNum}
-                      onChange={(e) => setFormData({...formData, taboNum: e.target.value})}
-                    />
+              {permissions.showTabo && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-right block font-bold text-slate-600">رقم الطابو</Label>
+                    <div className="relative">
+                      <FileText className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                      <Input 
+                        className="pr-10 rounded-xl h-12 border-slate-200"
+                        placeholder="رقم الطابو..."
+                        value={formData.taboNum}
+                        onChange={(e) => setFormData({...formData, taboNum: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-right block font-bold text-slate-600">حالة الطابو</Label>
+                    <div className="relative">
+                      <Info className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                      <Input 
+                        className="pr-10 rounded-xl h-12 border-slate-200"
+                        placeholder="حالة الطابو..."
+                        value={formData.taboStatus}
+                        onChange={(e) => setFormData({...formData, taboStatus: e.target.value})}
+                      />
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-right block font-bold text-slate-600">حالة الطابو</Label>
-                  <div className="relative">
-                    <Info className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                    <Input 
-                      className="pr-10 rounded-xl h-12 border-slate-200"
-                      placeholder="حالة الطابو..."
-                      value={formData.taboStatus}
-                      onChange={(e) => setFormData({...formData, taboStatus: e.target.value})}
-                    />
-                  </div>
-                </div>
-              </div>
+              )}
 
-              <div className="space-y-2">
-                <Label className="text-right block font-bold text-slate-600">تاريخ الاستلام</Label>
-                <div className="relative">
-                  <Calendar className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
-                  <Input 
-                    type="date"
-                    className="pr-10 rounded-xl h-12 border-slate-200"
-                    value={formData.handoverDate}
-                    onChange={(e) => setFormData({...formData, handoverDate: e.target.value})}
-                  />
+              {permissions.showHandover && (
+                <div className="space-y-2">
+                  <Label className="text-right block font-bold text-slate-600">تاريخ الاستلام</Label>
+                  <div className="relative">
+                    <Calendar className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                    <Input 
+                      type="date"
+                      className="pr-10 rounded-xl h-12 border-slate-200"
+                      value={formData.handoverDate}
+                      onChange={(e) => setFormData({...formData, handoverDate: e.target.value})}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

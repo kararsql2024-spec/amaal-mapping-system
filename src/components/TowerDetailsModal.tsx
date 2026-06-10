@@ -7,173 +7,178 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Building2, LayoutGrid, Snowflake } from "lucide-react";
+import { Building2, ChevronRight, Home, Info, User, Phone, Calendar, Banknote, Coins } from "lucide-react";
+import { MapElement } from '@/types/project';
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import UnitDetailsModal from './UnitDetailsModal';
 
 interface TowerDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  tower: any;
+  tower: MapElement | undefined;
   housesData: Record<string, any>;
-  onSaveApartment: (apartmentKey: string, data: any) => void;
+  onSaveApartment: (key: string, data: any) => void;
+  permissions?: any;
 }
 
-const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment }: TowerDetailsModalProps) => {
-  const [selectedFloor, setSelectedFloor] = useState(1);
-  const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
+const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment, permissions }: TowerDetailsModalProps) => {
+  const [selectedApartmentKey, setSelectedApartmentKey] = useState<string | null>(null);
+  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
 
   if (!tower) return null;
 
-  const floors = Array.from({ length: tower.floors || 1 }, (_, i) => i + 1);
-  const aptsPerFloor = tower.apartmentsPerFloor || 1;
-  const apts = Array.from({ length: aptsPerFloor }, (_, i) => i + 1);
+  const floors = tower.floors || 1;
+  const apartmentsPerFloor = tower.apartmentsPerFloor || 1;
 
-  const reorderedApts = [];
-  for (let i = 0; i < apts.length; i += 2) {
-    if (i + 1 < apts.length) {
-      reorderedApts.push(apts[i + 1]);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'sold': return 'bg-rose-500';
+      case 'investment': return 'bg-purple-500';
+      case 'reserved': return 'bg-amber-500';
+      case 'pending': return 'bg-blue-500';
+      case 'frozen_counted':
+      case 'frozen_uncounted':
+      case 'frozen_hidden': return 'bg-slate-400';
+      default: return 'bg-emerald-500';
     }
-    reorderedApts.push(apts[i]);
-  }
+  };
 
-  const getAptKey = (floor: number, aptNum: number) => `${tower.id}_F${floor}_A${aptNum}`;
-  
-  const getFloorCode = (floor: number) => floor === 1 ? "FG" : `F${floor - 1}`;
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'sold': return 'مباع';
+      case 'investment': return 'استثمار';
+      case 'reserved': return 'محجوز';
+      case 'pending': return 'حجز أولي';
+      case 'frozen_counted':
+      case 'frozen_uncounted':
+      case 'frozen_hidden': return 'مجمدة';
+      default: return 'متوفر';
+    }
+  };
 
-  const getAptFullLabel = (floor: number, aptNum: number) => {
+  const handleApartmentClick = (floor: number, apt: number) => {
+    const key = `${tower.id}_F${floor}_A${apt}`;
+    setSelectedApartmentKey(key);
+    setIsUnitModalOpen(true);
+  };
+
+  const getApartmentLabel = (floor: number, apt: number) => {
+    const floorCode = floor === 1 ? "FG" : `F${floor - 1}`;
+    
+    // حساب رقم الشقة التسلسلي (P1, P2...) مع استثناء المجمدة
     let pCounter = 0;
-    const floorCode = getFloorCode(floor);
-
-    for (let f = 1; f <= (tower.floors || 1); f++) {
-      for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
-        const key = getAptKey(f, a);
-        const data = housesData[key];
-        // إذا كانت الشقة مجمدة (بأي نوع من أنواع التجميد التي تستبعدها من العد)، لا نزيد العداد
-        const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
+    for (let f = 1; f <= floors; f++) {
+      for (let a = 1; a <= apartmentsPerFloor; a++) {
+        const techKey = `${tower.id}_F${f}_A${a}`;
+        const unitData = housesData[techKey];
+        const isFrozenSequence = unitData?.status === 'frozen_uncounted' || unitData?.status === 'frozen_hidden';
         
-        if (!isFrozenSequence) {
-          pCounter++;
-        }
-
-        if (f === floor && a === aptNum) {
+        if (!isFrozenSequence) pCounter++;
+        
+        if (f === floor && a === apt) {
           const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
-          return `${tower.label}-${getFloorCode(f)}-${aptCode}`;
+          return `${tower.label}-${floorCode}-${aptCode}`;
         }
       }
     }
-    return "";
+    return `${tower.label}-F${floor}-A${apt}`;
   };
-
-  const getAptShortLabel = (fullLabel: string) => {
-    if (!fullLabel) return "";
-    const parts = fullLabel.split('-');
-    return parts[parts.length - 1];
-  };
-
-  const getStatusColor = (status: string) => {
-    if (status?.startsWith('frozen')) return 'bg-slate-200 text-slate-600 border-slate-300';
-    switch (status) {
-      case 'sold': return 'bg-rose-500 text-white border-rose-600';
-      case 'pending': return 'bg-blue-500 text-white border-blue-600';
-      case 'reserved': return 'bg-amber-400 text-white border-amber-500';
-      case 'investment': return 'bg-purple-400 text-white border-purple-500';
-      default: return 'bg-emerald-500 text-white border-emerald-600';
-    }
-  };
-
-  const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor - 1}`;
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
-          <div className="flex h-[600px]">
-            <div className="w-56 bg-slate-50 border-l border-slate-100 p-6 overflow-y-auto">
-              <h3 className="font-black text-slate-400 text-xs uppercase mb-4 tracking-wider">قائمة الطوابق</h3>
-              <div className="space-y-2">
-                {[...floors].reverse().map((floor) => (
-                  <button
-                    key={floor}
-                    onClick={() => setSelectedFloor(floor)}
-                    className={cn(
-                      "w-full p-4 rounded-2xl font-bold transition-all text-right flex items-center justify-between",
-                      selectedFloor === floor 
-                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105" 
-                        : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-100"
-                    )}
-                  >
-                    <span className="text-sm">{getFloorLabel(floor)}</span>
-                    {selectedFloor === floor && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </button>
-                ))}
+        <DialogContent className="sm:max-w-[800px] rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl" dir="rtl">
+          <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+              <Building2 size={300} className="absolute -bottom-20 -left-20 rotate-12" />
+            </div>
+            <div className="relative z-10 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20">
+                  <Building2 size={32} className="text-blue-400" />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black">{tower.label}</h2>
+                  <p className="text-blue-300 font-bold mt-1 flex items-center gap-2">
+                    <Info size={16} /> {floors} طوابق • {apartmentsPerFloor} شقق لكل طابق
+                  </p>
+                </div>
               </div>
             </div>
+          </div>
 
-            <div className="flex-1 p-8 bg-white overflow-y-auto">
-              <DialogHeader className="mb-8">
-                <DialogTitle className="text-3xl font-black flex items-center gap-3">
-                  <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center">
-                    <Building2 className="text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-400 font-bold">برج: {tower.label}</p>
-                    <p>{getFloorLabel(selectedFloor)}</p>
-                  </div>
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="grid grid-rows-2 grid-flow-col gap-4" dir="ltr">
-                {reorderedApts.map((aptNum) => {
-                  const key = getAptKey(selectedFloor, aptNum);
-                  const fullLabel = getAptFullLabel(selectedFloor, aptNum);
-                  const shortLabel = getAptShortLabel(fullLabel);
-                  const data = housesData[key] || { status: 'available' };
-                  const isFrozen = data.status?.startsWith('frozen');
-                  
+          <div className="p-8 bg-slate-50">
+            <ScrollArea className="h-[500px] pr-4">
+              <div className="space-y-8">
+                {Array.from({ length: floors }).map((_, fIdx) => {
+                  const floorNum = floors - fIdx;
                   return (
-                    <div 
-                      key={key}
-                      className={cn(
-                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full",
-                        getStatusColor(data.status)
-                      )}
-                      onClick={() => setSelectedAptKey(key)}
-                    >
-                      <div className="relative z-10">
-                        <div className="flex justify-between items-start">
-                          <p className="text-3xl font-black">{shortLabel}</p>
-                          {isFrozen && <Snowflake size={18} className="opacity-50" />}
-                        </div>
-                        <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
-                          {data.status === 'frozen_uncounted' ? 'مجمدة (خارج المجموع)' : 
-                           data.status === 'frozen_counted' ? 'مجمدة (داخل المجموع)' : 
-                           data.status === 'frozen_hidden' ? 'مجمدة (مخفي من العدد)' :
-                           data.status === 'investment' ? 'استثمار' :
-                           data.status}
-                        </p>
+                    <div key={floorNum} className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-px flex-1 bg-slate-200" />
+                        <span className="bg-white px-4 py-1.5 rounded-full border border-slate-200 text-sm font-black text-slate-500 shadow-sm">
+                          {floorNum === 1 ? "الطابق الأرضي" : `الطابق ${floorNum - 1}`}
+                        </span>
+                        <div className="h-px flex-1 bg-slate-200" />
                       </div>
-                      <LayoutGrid className="absolute -bottom-4 -right-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {Array.from({ length: apartmentsPerFloor }).map((_, aIdx) => {
+                          const aptNum = aIdx + 1;
+                          const key = `${tower.id}_F${floorNum}_A${aptNum}`;
+                          const data = housesData[key] || { status: 'available' };
+                          const label = getApartmentLabel(floorNum, aptNum);
+                          
+                          if (data.status === 'frozen_hidden') return null;
+
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => handleApartmentClick(floorNum, aptNum)}
+                              className="group relative bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-400 transition-all text-right overflow-hidden"
+                            >
+                              <div className={cn("absolute top-0 right-0 w-1.5 h-full", getStatusColor(data.status))} />
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">شقة {aptNum}</span>
+                                <span className="font-black text-slate-800 text-sm truncate">{label}</span>
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full text-white", getStatusColor(data.status))}>
+                                    {getStatusLabel(data.status)}
+                                  </span>
+                                  <ChevronRight size={14} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-[-2px] transition-all" />
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            </ScrollArea>
           </div>
         </DialogContent>
       </Dialog>
 
-      <UnitDetailsModal 
-        isOpen={!!selectedAptKey}
-        onClose={() => setSelectedAptKey(null)}
+      <UnitDetailsModal
+        isOpen={isUnitModalOpen}
+        onClose={() => setIsUnitModalOpen(false)}
         onSave={(data) => {
-          if (selectedAptKey) onSaveApartment(selectedAptKey, data);
-          setSelectedAptKey(null);
+          if (selectedApartmentKey) {
+            onSaveApartment(selectedApartmentKey, data);
+            setIsUnitModalOpen(false);
+          }
         }}
-        unitId={selectedAptKey}
-        unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
-        initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
-        isApartment
+        unitId={selectedApartmentKey}
+        unitLabel={selectedApartmentKey ? getApartmentLabel(
+          parseInt(selectedApartmentKey.split('_F')[1].split('_A')[0]),
+          parseInt(selectedApartmentKey.split('_A')[1])
+        ) : ''}
+        initialData={selectedApartmentKey ? housesData[selectedApartmentKey] : undefined}
+        isApartment={true}
+        permissions={permissions}
       />
     </>
   );

@@ -5,7 +5,7 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags, X } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags, X, ShieldCheck } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -55,7 +56,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '' });
   const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
-  const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
+  const [departmentTypes, setDepartmentTypes] = useState<any[]>([]);
   const [newDeptType, setNewDeptType] = useState('');
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
@@ -113,7 +114,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           if (investments) setInvestmentNames(investments.value || []);
 
           const deptTypes = settingsData.find(s => s.key === 'department_types');
-          if (deptTypes) setDepartmentTypes(deptTypes.value || []);
+          if (deptTypes) {
+            // تحويل البيانات القديمة (نصوص) إلى الهيكل الجديد (كائنات) إذا لزم الأمر
+            const formatted = (deptTypes.value || []).map((t: any) => 
+              typeof t === 'string' ? { 
+                name: t, 
+                permissions: { showPrice: true, showName: true, showPhone: true, showTabo: true, showHandover: true } 
+              } : t
+            );
+            setDepartmentTypes(formatted);
+          }
         }
 
         const { data: centersData } = await supabase
@@ -268,7 +278,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const handleAddDeptType = async () => {
     if (!newDeptType) return;
-    const updated = [...departmentTypes, newDeptType];
+    const newEntry = {
+      name: newDeptType,
+      permissions: {
+        showPrice: true,
+        showName: true,
+        showPhone: true,
+        showTabo: true,
+        showHandover: true
+      }
+    };
+    const updated = [...departmentTypes, newEntry];
     try {
       await supabase.from('settings').upsert({ key: 'department_types', value: updated });
       setDepartmentTypes(updated);
@@ -287,6 +307,18 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showSuccess("تم حذف النوع");
     } catch (error) {
       showError("فشل في التحديث");
+    }
+  };
+
+  const updatePermission = async (idx: number, field: string, value: boolean) => {
+    const updated = [...departmentTypes];
+    updated[idx].permissions[field] = value;
+    try {
+      await supabase.from('settings').upsert({ key: 'department_types', value: updated });
+      setDepartmentTypes(updated);
+      showSuccess("تم تحديث الصلاحيات");
+    } catch (error) {
+      showError("فشل في تحديث الصلاحيات");
     }
   };
 
@@ -872,11 +904,40 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <Input placeholder="أدخل نوع قسم جديد (مثلاً: مركز تسويقي)..." value={newDeptType} onChange={(e) => setNewDeptType(e.target.value)} className="rounded-xl h-12" />
                     <Button onClick={handleAddDeptType} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 px-6 font-bold">إضافة نوع</Button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {departmentTypes.map((type, idx) => (
-                      <div key={idx} className="bg-white border border-indigo-100 px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm">
-                        <span className="text-sm font-bold text-slate-600">{type}</span>
-                        <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
+                      <div key={idx} className="bg-white border border-indigo-100 p-6 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex items-center justify-between border-b pb-3">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="text-indigo-600" size={20} />
+                            <span className="text-lg font-black text-slate-800">{type.name}</span>
+                          </div>
+                          <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700 transition-colors"><Trash2 size={18} /></button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-3">
+                          <p className="text-xs font-black text-slate-400 mb-1">صلاحيات العرض لهذا القسم:</p>
+                          <div className="flex items-center space-x-2 space-x-reverse">
+                            <Checkbox id={`price-${idx}`} checked={type.permissions?.showPrice} onCheckedChange={(val) => updatePermission(idx, 'showPrice', !!val)} />
+                            <label htmlFor={`price-${idx}`} className="text-sm font-bold text-slate-600 cursor-pointer">عرض السعر</label>
+                          </div>
+                          <div className="flex items-center space-x-2 space-x-reverse">
+                            <Checkbox id={`name-${idx}`} checked={type.permissions?.showName} onCheckedChange={(val) => updatePermission(idx, 'showName', !!val)} />
+                            <label htmlFor={`name-${idx}`} className="text-sm font-bold text-slate-600 cursor-pointer">اسم الزبون</label>
+                          </div>
+                          <div className="flex items-center space-x-2 space-x-reverse">
+                            <Checkbox id={`phone-${idx}`} checked={type.permissions?.showPhone} onCheckedChange={(val) => updatePermission(idx, 'showPhone', !!val)} />
+                            <label htmlFor={`phone-${idx}`} className="text-sm font-bold text-slate-600 cursor-pointer">رقم الهاتف</label>
+                          </div>
+                          <div className="flex items-center space-x-2 space-x-reverse">
+                            <Checkbox id={`tabo-${idx}`} checked={type.permissions?.showTabo} onCheckedChange={(val) => updatePermission(idx, 'showTabo', !!val)} />
+                            <label htmlFor={`tabo-${idx}`} className="text-sm font-bold text-slate-600 cursor-pointer">بيانات الطابو (مروج/مستلم)</label>
+                          </div>
+                          <div className="flex items-center space-x-2 space-x-reverse">
+                            <Checkbox id={`handover-${idx}`} checked={type.permissions?.showHandover} onCheckedChange={(val) => updatePermission(idx, 'showHandover', !!val)} />
+                            <label htmlFor={`handover-${idx}`} className="text-sm font-bold text-slate-600 cursor-pointer">بيانات الاستلام</label>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -899,7 +960,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       </SelectTrigger>
                       <SelectContent className="rounded-xl">
                         {departmentTypes.map((type, idx) => (
-                          <SelectItem key={idx} value={type} className="font-bold">{type}</SelectItem>
+                          <SelectItem key={idx} value={type.name} className="font-bold">{type.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
