@@ -47,16 +47,38 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [loginData, setLoginData] = useState({ centerId: '', password: '' });
+  const [currentCenter, setCurrentCenter] = useState<any>(null);
+  const [permissions, setPermissions] = useState<any>({
+    showPrice: true,
+    showCustomerName: true,
+    showCustomerPhone: true,
+    showTaboInfo: true,
+    showHandoverInfo: true,
+    showStatsTable: true
+  });
 
   useEffect(() => {
-    const fetchCenters = async () => {
-      const { data } = await supabase.from('marketing_centers').select('*');
-      if (data) setMarketingCenters(data);
-    };
-    fetchCenters();
+    const fetchCentersAndPermissions = async () => {
+      const { data: centers } = await supabase.from('marketing_centers').select('*');
+      if (centers) setMarketingCenters(centers);
 
-    const savedCenter = localStorage.getItem('marketing_center_session');
-    if (savedCenter) setIsLoggedIn(true);
+      const savedCenterId = localStorage.getItem('marketing_center_session');
+      if (savedCenterId && centers) {
+        const center = centers.find(c => c.id === savedCenterId);
+        if (center) {
+          setCurrentCenter(center);
+          setIsLoggedIn(true);
+          
+          // جلب الصلاحيات
+          const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
+          if (settings && settings.value && center.type) {
+            const deptPerms = settings.value[center.type];
+            if (deptPerms) setPermissions(deptPerms);
+          }
+        }
+      }
+    };
+    fetchCentersAndPermissions();
   }, []);
 
   useEffect(() => {
@@ -169,11 +191,20 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     const center = marketingCenters.find(c => c.id === loginData.centerId);
     if (center && center.password === loginData.password) {
       setIsLoggedIn(true);
+      setCurrentCenter(center);
       localStorage.setItem('marketing_center_session', center.id);
+      
+      // جلب الصلاحيات عند تسجيل الدخول
+      const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
+      if (settings && settings.value && center.type) {
+        const deptPerms = settings.value[center.type];
+        if (deptPerms) setPermissions(deptPerms);
+      }
+      
       showSuccess(`مرحباً بك في مركز ${center.name}`);
     } else {
       showError("بيانات الدخول غير صحيحة");
@@ -182,7 +213,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setCurrentCenter(null);
     localStorage.removeItem('marketing_center_session');
+    setPermissions({
+      showPrice: true,
+      showCustomerName: true,
+      showCustomerPhone: true,
+      showTaboInfo: true,
+      showHandoverInfo: true,
+      showStatsTable: true
+    });
   };
 
   const activeProject = projects.find(p => p.id === selectedProjectId);
@@ -313,7 +353,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             ) : activeProject ? (
               <>
                 <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} />
-                <DetailedStatsTable elements={activeElements} housesData={housesData} />
+                {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} />}
               </>
             ) : (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">يرجى إنشاء مشروع أولاً</h2></div>
@@ -387,8 +427,23 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         </main>
 
-        <UnitDetailsModal isOpen={isUnitModalOpen} onClose={() => setIsUnitModalOpen(false)} onSave={(data) => handleSaveData(selectedElementId!, data)} unitId={selectedElementId} unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} initialData={selectedElementId ? housesData[selectedElementId] : undefined} />
-        <TowerDetailsModal isOpen={isTowerModalOpen} onClose={() => setIsTowerModalOpen(false)} tower={activeElements.find(el => el.id === selectedElementId)} housesData={housesData} onSaveApartment={handleSaveData} />
+        <UnitDetailsModal 
+          isOpen={isUnitModalOpen} 
+          onClose={() => setIsUnitModalOpen(false)} 
+          onSave={(data) => handleSaveData(selectedElementId!, data)} 
+          unitId={selectedElementId} 
+          unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} 
+          initialData={selectedElementId ? housesData[selectedElementId] : undefined}
+          permissions={permissions}
+        />
+        <TowerDetailsModal 
+          isOpen={isTowerModalOpen} 
+          onClose={() => setIsTowerModalOpen(false)} 
+          tower={activeElements.find(el => el.id === selectedElementId)} 
+          housesData={housesData} 
+          onSaveApartment={handleSaveData}
+          permissions={permissions}
+        />
         <MadeWithDyad />
       </div>
     </div>
