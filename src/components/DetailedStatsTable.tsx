@@ -26,10 +26,28 @@ import {
 interface DetailedStatsTableProps {
   elements: MapElement[];
   housesData: Record<string, any>;
+  permissions?: any;
 }
 
-const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) => {
+const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStatsTableProps) => {
   const [selectedType, setSelectedType] = useState<string>("all");
+
+  // الصلاحيات الافتراضية
+  const perms = permissions || {
+    showStatsAvailable: true,
+    showStatsSold: true,
+    showStatsInvestment: true,
+    showStatsReserved: true,
+    showStatsPending: true,
+    showStatsTotal: true,
+    showStatsPromoted: true,
+    showStatsNotPromoted: true,
+    showStatsReceivedTabo: true,
+    showStatsReceivedUnit: true,
+    showStatsNotReceivedUnit: true,
+    showStatsPriceIQD: true,
+    showStatsPriceUSD: true
+  };
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('en-US').format(Math.round(num));
@@ -255,19 +273,19 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                       <TableRow>
                         <TableHead className="text-right font-black whitespace-nowrap">البلوك</TableHead>
                         <TableHead className="text-right font-black whitespace-nowrap">الصنف</TableHead>
-                        <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>
-                        <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>
-                        <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>
-                        <TableHead className="text-center font-black text-amber-600 whitespace-nowrap">محجوز</TableHead>
-                        <TableHead className="text-center font-black text-blue-600 whitespace-nowrap">حجز أولي</TableHead>
-                        <TableHead className="text-center font-black bg-slate-100 whitespace-nowrap">المجموع</TableHead>
-                        <TableHead className="text-center font-black text-indigo-600 whitespace-nowrap">مروج</TableHead>
-                        <TableHead className="text-center font-black text-slate-500 whitespace-nowrap">غير مروج</TableHead>
-                        <TableHead className="text-center font-black text-amber-700 whitespace-nowrap">مستلم</TableHead>
-                        <TableHead className="text-center font-black text-sky-600 whitespace-nowrap">مستلم الوحدة</TableHead>
-                        <TableHead className="text-center font-black text-rose-400 whitespace-nowrap">غير مستلم الوحدة</TableHead>
-                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700 whitespace-nowrap">إجمالي (د.ع)</TableHead>
-                        <TableHead className="text-center font-black bg-blue-50 text-blue-700 whitespace-nowrap">إجمالي ($)</TableHead>
+                        {perms.showStatsAvailable && <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>}
+                        {perms.showStatsSold && <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>}
+                        {perms.showStatsInvestment && <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>}
+                        {perms.showStatsReserved && <TableHead className="text-center font-black text-amber-600 whitespace-nowrap">محجوز</TableHead>}
+                        {perms.showStatsPending && <TableHead className="text-center font-black text-blue-600 whitespace-nowrap">حجز أولي</TableHead>}
+                        {perms.showStatsTotal && <TableHead className="text-center font-black bg-slate-100 whitespace-nowrap">المجموع</TableHead>}
+                        {perms.showStatsPromoted && <TableHead className="text-center font-black text-indigo-600 whitespace-nowrap">مروج</TableHead>}
+                        {perms.showStatsNotPromoted && <TableHead className="text-center font-black text-slate-500 whitespace-nowrap">غير مروج</TableHead>}
+                        {perms.showStatsReceivedTabo && <TableHead className="text-center font-black text-amber-700 whitespace-nowrap">مستلم</TableHead>}
+                        {perms.showStatsReceivedUnit && <TableHead className="text-center font-black text-sky-600 whitespace-nowrap">مستلم الوحدة</TableHead>}
+                        {perms.showStatsNotReceivedUnit && <TableHead className="text-center font-black text-rose-400 whitespace-nowrap">غير مستلم الوحدة</TableHead>}
+                        {perms.showStatsPriceIQD && <TableHead className="text-center font-black bg-emerald-50 text-emerald-700 whitespace-nowrap">إجمالي (د.ع)</TableHead>}
+                        {perms.showStatsPriceUSD && <TableHead className="text-center font-black bg-blue-50 text-blue-700 whitespace-nowrap">إجمالي ($)</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -284,23 +302,27 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                               {tIdx === 0 ? block : ""}
                             </TableCell>
                             <TableCell className="font-bold text-slate-600">{type}</TableCell>
-                            <TableCell className="text-center font-black">{s.available}</TableCell>
-                            <TableCell className="text-center font-black">{s.sold}</TableCell>
-                            <TableCell className="text-center font-black">{s.investment}</TableCell>
-                            <TableCell className="text-center font-black">{s.reserved}</TableCell>
-                            <TableCell className="text-center font-black">{s.pending}</TableCell>
-                            <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>
-                            <TableCell className="text-center font-black text-indigo-600">{s.promoted}</TableCell>
-                            <TableCell className="text-center font-black text-slate-500">{s.notPromoted}</TableCell>
-                            <TableCell className="text-center font-black text-amber-700">{s.receivedTabo}</TableCell>
-                            <TableCell className="text-center font-black text-sky-600">{s.receivedUnit}</TableCell>
-                            <TableCell className="text-center font-black text-rose-400">{s.notReceivedUnit}</TableCell>
-                            <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
-                              {formatNumber(s.priceIQD)}
-                            </TableCell>
-                            <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
-                              {formatNumber(s.priceUSD)}
-                            </TableCell>
+                            {perms.showStatsAvailable && <TableCell className="text-center font-black">{s.available}</TableCell>}
+                            {perms.showStatsSold && <TableCell className="text-center font-black">{s.sold}</TableCell>}
+                            {perms.showStatsInvestment && <TableCell className="text-center font-black">{s.investment}</TableCell>}
+                            {perms.showStatsReserved && <TableCell className="text-center font-black">{s.reserved}</TableCell>}
+                            {perms.showStatsPending && <TableCell className="text-center font-black">{s.pending}</TableCell>}
+                            {perms.showStatsTotal && <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>}
+                            {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-600">{s.promoted}</TableCell>}
+                            {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-500">{s.notPromoted}</TableCell>}
+                            {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-700">{s.receivedTabo}</TableCell>}
+                            {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-600">{s.receivedUnit}</TableCell>}
+                            {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-400">{s.notReceivedUnit}</TableCell>}
+                            {perms.showStatsPriceIQD && (
+                              <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
+                                {formatNumber(s.priceIQD)}
+                              </TableCell>
+                            )}
+                            {perms.showStatsPriceUSD && (
+                              <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
+                                {formatNumber(s.priceUSD)}
+                              </TableCell>
+                            )}
                           </TableRow>
                         ))
                       ))}
@@ -308,23 +330,27 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                     <TableFooter className="bg-slate-900 text-white">
                       <TableRow>
                         <TableCell colSpan={2} className="font-black text-right text-lg">المجموع الكلي للزون {zone}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{zoneData.totals.available}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{zoneData.totals.sold}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{zoneData.totals.investment}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{zoneData.totals.reserved}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{zoneData.totals.pending}</TableCell>
-                        <TableCell className="text-center font-black text-lg bg-slate-800">{zoneData.totals.total}</TableCell>
-                        <TableCell className="text-center font-black text-indigo-400">{zoneData.totals.promoted}</TableCell>
-                        <TableCell className="text-center font-black text-slate-400">{zoneData.totals.notPromoted}</TableCell>
-                        <TableCell className="text-center font-black text-amber-400">{zoneData.totals.receivedTabo}</TableCell>
-                        <TableCell className="text-center font-black text-sky-400">{zoneData.totals.receivedUnit}</TableCell>
-                        <TableCell className="text-center font-black text-rose-300">{zoneData.totals.notReceivedUnit}</TableCell>
-                        <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
-                          {formatNumber(zoneData.totals.priceIQD)}
-                        </TableCell>
-                        <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
-                          {formatNumber(zoneData.totals.priceUSD)}
-                        </TableCell>
+                        {perms.showStatsAvailable && <TableCell className="text-center font-black text-lg">{zoneData.totals.available}</TableCell>}
+                        {perms.showStatsSold && <TableCell className="text-center font-black text-lg">{zoneData.totals.sold}</TableCell>}
+                        {perms.showStatsInvestment && <TableCell className="text-center font-black text-lg">{zoneData.totals.investment}</TableCell>}
+                        {perms.showStatsReserved && <TableCell className="text-center font-black text-lg">{zoneData.totals.reserved}</TableCell>}
+                        {perms.showStatsPending && <TableCell className="text-center font-black text-lg">{zoneData.totals.pending}</TableCell>}
+                        {perms.showStatsTotal && <TableCell className="text-center font-black text-lg bg-slate-800">{zoneData.totals.total}</TableCell>}
+                        {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-400">{zoneData.totals.promoted}</TableCell>}
+                        {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-400">{zoneData.totals.notPromoted}</TableCell>}
+                        {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-400">{zoneData.totals.receivedTabo}</TableCell>}
+                        {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-400">{zoneData.totals.receivedUnit}</TableCell>}
+                        {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-300">{zoneData.totals.notReceivedUnit}</TableCell>}
+                        {perms.showStatsPriceIQD && (
+                          <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
+                            {formatNumber(zoneData.totals.priceIQD)}
+                          </TableCell>
+                        )}
+                        {perms.showStatsPriceUSD && (
+                          <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
+                            {formatNumber(zoneData.totals.priceUSD)}
+                          </TableCell>
+                        )}
                       </TableRow>
                     </TableFooter>
                   </Table>
@@ -345,19 +371,19 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                     <TableHeader className="bg-slate-50">
                       <TableRow>
                         <TableHead className="text-right font-black whitespace-nowrap">الطابق</TableHead>
-                        <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>
-                        <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>
-                        <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>
-                        <TableHead className="text-center font-black text-amber-600 whitespace-nowrap">محجوز</TableHead>
-                        <TableHead className="text-center font-black text-blue-600 whitespace-nowrap">حجز أولي</TableHead>
-                        <TableHead className="text-center font-black bg-slate-100 whitespace-nowrap">المجموع</TableHead>
-                        <TableHead className="text-center font-black text-indigo-600 whitespace-nowrap">مروج</TableHead>
-                        <TableHead className="text-center font-black text-slate-500 whitespace-nowrap">غير مروج</TableHead>
-                        <TableHead className="text-center font-black text-amber-700 whitespace-nowrap">مستلم</TableHead>
-                        <TableHead className="text-center font-black text-sky-600 whitespace-nowrap">مستلم الوحدة</TableHead>
-                        <TableHead className="text-center font-black text-rose-400 whitespace-nowrap">غير مستلم الوحدة</TableHead>
-                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700 whitespace-nowrap">إجمالي (د.ع)</TableHead>
-                        <TableHead className="text-center font-black bg-blue-50 text-blue-700 whitespace-nowrap">إجمالي ($)</TableHead>
+                        {perms.showStatsAvailable && <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>}
+                        {perms.showStatsSold && <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>}
+                        {perms.showStatsInvestment && <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>}
+                        {perms.showStatsReserved && <TableHead className="text-center font-black text-amber-600 whitespace-nowrap">محجوز</TableHead>}
+                        {perms.showStatsPending && <TableHead className="text-center font-black text-blue-600 whitespace-nowrap">حجز أولي</TableHead>}
+                        {perms.showStatsTotal && <TableHead className="text-center font-black bg-slate-100 whitespace-nowrap">المجموع</TableHead>}
+                        {perms.showStatsPromoted && <TableHead className="text-center font-black text-indigo-600 whitespace-nowrap">مروج</TableHead>}
+                        {perms.showStatsNotPromoted && <TableHead className="text-center font-black text-slate-500 whitespace-nowrap">غير مروج</TableHead>}
+                        {perms.showStatsReceivedTabo && <TableHead className="text-center font-black text-amber-700 whitespace-nowrap">مستلم</TableHead>}
+                        {perms.showStatsReceivedUnit && <TableHead className="text-center font-black text-sky-600 whitespace-nowrap">مستلم الوحدة</TableHead>}
+                        {perms.showStatsNotReceivedUnit && <TableHead className="text-center font-black text-rose-400 whitespace-nowrap">غير مستلم الوحدة</TableHead>}
+                        {perms.showStatsPriceIQD && <TableHead className="text-center font-black bg-emerald-50 text-emerald-700 whitespace-nowrap">إجمالي (د.ع)</TableHead>}
+                        {perms.showStatsPriceUSD && <TableHead className="text-center font-black bg-blue-50 text-blue-700 whitespace-nowrap">إجمالي ($)</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -370,46 +396,54 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           )}
                         >
                           <TableCell className="font-bold border-l">{floor.label}</TableCell>
-                          <TableCell className="text-center font-black">{floor.available}</TableCell>
-                          <TableCell className="text-center font-black">{floor.sold}</TableCell>
-                          <TableCell className="text-center font-black">{floor.investment}</TableCell>
-                          <TableCell className="text-center font-black">{floor.reserved}</TableCell>
-                          <TableCell className="text-center font-black">{floor.pending}</TableCell>
-                          <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>
-                          <TableCell className="text-center font-black text-indigo-600">{floor.promoted}</TableCell>
-                          <TableCell className="text-center font-black text-slate-500">{floor.notPromoted}</TableCell>
-                          <TableCell className="text-center font-black text-amber-700">{floor.receivedTabo}</TableCell>
-                          <TableCell className="text-center font-black text-sky-600">{floor.receivedUnit}</TableCell>
-                          <TableCell className="text-center font-black text-rose-400">{floor.notReceivedUnit}</TableCell>
-                          <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
-                            {formatNumber(floor.priceIQD)}
-                          </TableCell>
-                          <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
-                            {formatNumber(floor.priceUSD)}
-                          </TableCell>
+                          {perms.showStatsAvailable && <TableCell className="text-center font-black">{floor.available}</TableCell>}
+                          {perms.showStatsSold && <TableCell className="text-center font-black">{floor.sold}</TableCell>}
+                          {perms.showStatsInvestment && <TableCell className="text-center font-black">{floor.investment}</TableCell>}
+                          {perms.showStatsReserved && <TableCell className="text-center font-black">{floor.reserved}</TableCell>}
+                          {perms.showStatsPending && <TableCell className="text-center font-black">{floor.pending}</TableCell>}
+                          {perms.showStatsTotal && <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>}
+                          {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-600">{floor.promoted}</TableCell>}
+                          {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-500">{floor.notPromoted}</TableCell>}
+                          {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-700">{floor.receivedTabo}</TableCell>}
+                          {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-600">{floor.receivedUnit}</TableCell>}
+                          {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-400">{floor.notReceivedUnit}</TableCell>}
+                          {perms.showStatsPriceIQD && (
+                            <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
+                              {formatNumber(floor.priceIQD)}
+                            </TableCell>
+                          )}
+                          {perms.showStatsPriceUSD && (
+                            <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
+                              {formatNumber(floor.priceUSD)}
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
                     <TableFooter className="bg-indigo-900 text-white">
                       <TableRow>
                         <TableCell className="font-black text-right text-lg">المجموع الكلي للعمارة {tower.name}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{tower.totals.available}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{tower.totals.sold}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{tower.totals.investment}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{tower.totals.reserved}</TableCell>
-                        <TableCell className="text-center font-black text-lg">{tower.totals.pending}</TableCell>
-                        <TableCell className="text-center font-black text-lg bg-indigo-800">{tower.totals.total}</TableCell>
-                        <TableCell className="text-center font-black text-indigo-400">{tower.totals.promoted}</TableCell>
-                        <TableCell className="text-center font-black text-slate-400">{tower.totals.notPromoted}</TableCell>
-                        <TableCell className="text-center font-black text-amber-400">{tower.totals.receivedTabo}</TableCell>
-                        <TableCell className="text-center font-black text-sky-400">{tower.totals.receivedUnit}</TableCell>
-                        <TableCell className="text-center font-black text-rose-300">{tower.totals.notReceivedUnit}</TableCell>
-                        <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
-                          {formatNumber(tower.totals.priceIQD)}
-                        </TableCell>
-                        <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
-                          {formatNumber(tower.totals.priceUSD)}
-                        </TableCell>
+                        {perms.showStatsAvailable && <TableCell className="text-center font-black text-lg">{tower.totals.available}</TableCell>}
+                        {perms.showStatsSold && <TableCell className="text-center font-black text-lg">{tower.totals.sold}</TableCell>}
+                        {perms.showStatsInvestment && <TableCell className="text-center font-black text-lg">{tower.totals.investment}</TableCell>}
+                        {perms.showStatsReserved && <TableCell className="text-center font-black text-lg">{tower.totals.reserved}</TableCell>}
+                        {perms.showStatsPending && <TableCell className="text-center font-black text-lg">{tower.totals.pending}</TableCell>}
+                        {perms.showStatsTotal && <TableCell className="text-center font-black text-lg bg-indigo-800">{tower.totals.total}</TableCell>}
+                        {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-400">{tower.totals.promoted}</TableCell>}
+                        {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-400">{tower.totals.notPromoted}</TableCell>}
+                        {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-400">{tower.totals.receivedTabo}</TableCell>}
+                        {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-400">{tower.totals.receivedUnit}</TableCell>}
+                        {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-300">{tower.totals.notReceivedUnit}</TableCell>}
+                        {perms.showStatsPriceIQD && (
+                          <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
+                            {formatNumber(tower.totals.priceIQD)}
+                          </TableCell>
+                        )}
+                        {perms.showStatsPriceUSD && (
+                          <TableCell className="text-center font-black text-blue-400 bg-blue-950/50">
+                            {formatNumber(tower.totals.priceUSD)}
+                          </TableCell>
+                        )}
                       </TableRow>
                     </TableFooter>
                   </Table>
