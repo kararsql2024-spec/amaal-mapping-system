@@ -5,7 +5,7 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -15,6 +15,13 @@ import { cn } from '@/lib/utils';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,7 +53,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isSavingMap, setIsSavingMap] = useState(false);
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
-  const [newCenter, setNewCenter] = useState({ name: '', password: '' });
+  const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '' });
+  const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
+  const [newDeptType, setNewDeptType] = useState('');
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
 
@@ -98,6 +107,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           const investments = settingsData.find(s => s.key === 'investment_names');
           if (investments) setInvestmentNames(investments.value || []);
+
+          const deptTypes = settingsData.find(s => s.key === 'department_types');
+          if (deptTypes) setDepartmentTypes(deptTypes.value || []);
         }
 
         const { data: centersData } = await supabase
@@ -204,7 +216,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleAddCenter = async () => {
-    if (!newCenter.name || !newCenter.password) return;
+    if (!newCenter.name || !newCenter.password || !newCenter.type) {
+      showError("يرجى إكمال كافة البيانات واختيار نوع القسم");
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from('marketing_centers')
@@ -213,10 +228,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       
       if (error) throw error;
       setMarketingCenters([data[0], ...marketingCenters]);
-      setNewCenter({ name: '', password: '' });
-      showSuccess("تم إضافة المركز التسويقي بنجاح");
+      setNewCenter({ name: '', password: '', type: '' });
+      showSuccess("تم إضافة القسم بنجاح");
     } catch (error) {
-      showError("فشل في إضافة المركز");
+      showError("فشل في إضافة القسم");
     }
   };
 
@@ -229,9 +244,33 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       
       if (error) throw error;
       setMarketingCenters(marketingCenters.filter(c => c.id !== id));
-      showSuccess("تم حذف المركز");
+      showSuccess("تم حذف القسم");
     } catch (error) {
-      showError("فشل في حذف المركز");
+      showError("فشل في حذف القسم");
+    }
+  };
+
+  const handleAddDeptType = async () => {
+    if (!newDeptType) return;
+    const updated = [...departmentTypes, newDeptType];
+    try {
+      await supabase.from('settings').upsert({ key: 'department_types', value: updated });
+      setDepartmentTypes(updated);
+      setNewDeptType('');
+      showSuccess("تم إضافة نوع القسم");
+    } catch (error) {
+      showError("فشل في الحفظ");
+    }
+  };
+
+  const handleDeleteDeptType = async (idx: number) => {
+    const updated = departmentTypes.filter((_, i) => i !== idx);
+    try {
+      await supabase.from('settings').upsert({ key: 'department_types', value: updated });
+      setDepartmentTypes(updated);
+      showSuccess("تم حذف النوع");
+    } catch (error) {
+      showError("فشل في التحديث");
     }
   };
 
@@ -645,7 +684,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       // Schema
       sql += `-- 1. Table: projects\nCREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, description TEXT, elements JSONB, map_width INTEGER, map_height INTEGER, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
       sql += `-- 2. Table: houses_data\nCREATE TABLE IF NOT EXISTS houses_data (unit_key TEXT PRIMARY KEY, project_id TEXT, data JSONB, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
-      sql += `-- 3. Table: marketing_centers\nCREATE TABLE IF NOT EXISTS marketing_centers (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT, password TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
+      sql += `-- 3. Table: marketing_centers\nCREATE TABLE IF NOT EXISTS marketing_centers (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT, password TEXT, type TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
       sql += `-- 4. Table: settings\nCREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB);\n\n`;
       sql += `-- 5. Table: notifications\nCREATE TABLE IF NOT EXISTS notifications (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), project_id TEXT, message TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
 
@@ -675,7 +714,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (centersData) {
         sql += `-- Data for marketing_centers\n`;
         centersData.forEach(c => {
-          sql += `INSERT INTO marketing_centers (id, name, password, created_at) VALUES (${escape(c.id)}, ${escape(c.name)}, ${escape(c.password)}, ${escape(c.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
+          sql += `INSERT INTO marketing_centers (id, name, password, type, created_at) VALUES (${escape(c.id)}, ${escape(c.name)}, ${escape(c.password)}, ${escape(c.type)}, ${escape(c.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
         });
         sql += `\n`;
       }
@@ -739,7 +778,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           </div>
           <div className="flex gap-2">
             <Button variant={showDatabaseInspector ? "default" : "outline"} onClick={() => { setShowDatabaseInspector(!showDatabaseInspector); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showDatabaseInspector && "bg-blue-600 hover:bg-blue-700")}><Database size={18} /> النسخ الاحتياطي</Button>
-            <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowDatabaseInspector(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> المراكز التسويقية</Button>
+            <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowDatabaseInspector(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> الأقسام</Button>
             <Button variant={showSalesUpdate ? "default" : "outline"} onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowDatabaseInspector(false); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}><FileSpreadsheet size={18} /> تحديث المبيعات</Button>
             <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
@@ -790,17 +829,59 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               </div>
             ) : showMarketingCenters ? (
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
-                <div className="flex items-center gap-3 border-b pb-4"><div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center"><Store className="text-indigo-600" /></div><h2 className="text-xl font-black text-slate-800">إدارة المراكز التسويقية</h2></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">اسم المركز</label><Input placeholder="اسم المركز التسويقي..." value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12" /></div>
-                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">كلمة المرور</label><Input type="password" placeholder="كلمة مرور المركز..." value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12" /></div>
-                  <Button onClick={handleAddCenter} className="md:col-span-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 font-bold gap-2"><Plus size={18} /> إضافة مركز جديد</Button>
+                <div className="flex items-center gap-3 border-b pb-4"><div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center"><Store className="text-indigo-600" /></div><h2 className="text-xl font-black text-slate-800">إدارة الأقسام</h2></div>
+                
+                {/* إدارة أنواع الأقسام */}
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                  <h3 className="font-bold text-slate-700 flex items-center gap-2"><Tags size={18} /> إدارة أنواع الأقسام</h3>
+                  <div className="flex gap-2">
+                    <Input placeholder="أدخل نوع قسم جديد (مثلاً: مركز تسويقي)..." value={newDeptType} onChange={(e) => setNewDeptType(e.target.value)} className="rounded-xl h-12" />
+                    <Button onClick={handleAddDeptType} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 px-6 font-bold">إضافة نوع</Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {departmentTypes.map((type, idx) => (
+                      <div key={idx} className="bg-white border border-indigo-100 px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm">
+                        <span className="text-sm font-bold text-slate-600">{type}</span>
+                        <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+
+                {/* إضافة قسم جديد */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">اسم القسم</label><Input placeholder="اسم القسم..." value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12" /></div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-600">نوع القسم</label>
+                    <Select value={newCenter.type} onValueChange={(val) => setNewCenter({...newCenter, type: val})}>
+                      <SelectTrigger className="rounded-xl h-12 bg-white">
+                        <SelectValue placeholder="اختر النوع..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {departmentTypes.map((type, idx) => (
+                          <SelectItem key={idx} value={type} className="font-bold">{type}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">كلمة المرور</label><Input type="password" placeholder="كلمة مرور القسم..." value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12" /></div>
+                  <Button onClick={handleAddCenter} className="md:col-span-3 bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 font-bold gap-2"><Plus size={18} /> إضافة قسم جديد</Button>
+                </div>
+
                 <div className="space-y-3">
-                  <h3 className="font-bold text-slate-700">قائمة المراكز الحالية</h3>
+                  <h3 className="font-bold text-slate-700">قائمة الأقسام الحالية</h3>
                   {marketingCenters.map(center => (
                     <div key={center.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl shadow-sm">
-                      <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center"><Store className="text-slate-400" size={20} /></div><div><p className="font-bold text-slate-800">{center.name}</p><p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={10} /> {center.password}</p></div></div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center"><Store className="text-slate-400" size={20} /></div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-slate-800">{center.name}</p>
+                            <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-black border border-indigo-100">{center.type || 'غير محدد'}</span>
+                          </div>
+                          <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={10} /> {center.password}</p>
+                        </div>
+                      </div>
                       <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={18} /></Button>
                     </div>
                   ))}
