@@ -35,16 +35,14 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     return new Intl.NumberFormat('en-US').format(Math.round(num));
   };
 
-  // وظيفة ذكية لتوحيد مسمى العملة
   const getCurrencyType = (curr: any) => {
-    if (!curr) return 'IQD'; // افتراضي دينار إذا وجد سعر بدون عملة
+    if (!curr) return 'IQD';
     const c = curr.toString().trim().toLowerCase();
     if (c.includes('دينار') || c.includes('iqd') || c.includes('د.ع') || c.includes('عراقي')) return 'IQD';
     if (c.includes('دولار') || c.includes('usd') || c.includes('$')) return 'USD';
     return 'IQD'; 
   };
 
-  // وظيفة لتنظيف وتحويل السعر إلى رقم
   const parsePrice = (price: any) => {
     if (price === null || price === undefined) return 0;
     const cleaned = price.toString().replace(/,/g, '').replace(/[^\d.]/g, '');
@@ -68,12 +66,16 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
     const stats: any[] = [];
     elements.filter(el => el.type === 'tower').forEach(tower => {
       const floorsData: any[] = [];
-      const towerTotal = { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0 };
+      const towerTotal = { 
+        available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0,
+        promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0
+      };
       
       for (let f = 1; f <= (tower.floors || 1); f++) {
         const floorStats = { 
           label: f === 1 ? "الأرضي" : `الطابق ${f - 1}`, 
-          available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0
+          available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0,
+          promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0
         };
         
         for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
@@ -89,6 +91,16 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
           else if (data.status === 'available') floorStats.available++;
           
           if (data.status !== 'frozen_uncounted') floorStats.total++;
+
+          // منطق الطابو
+          const tabo = data.taboStatus?.trim();
+          if (tabo === 'مروج') floorStats.promoted++;
+          else if (tabo === 'مستلم') floorStats.receivedTabo++;
+          else floorStats.notPromoted++;
+
+          // منطق استلام الوحدة
+          if (data.handoverDate) floorStats.receivedUnit++;
+          else floorStats.notReceivedUnit++;
 
           const priceValue = parsePrice(data.price);
           if (priceValue > 0) {
@@ -107,6 +119,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
         towerTotal.total += floorStats.total;
         towerTotal.priceIQD += floorStats.priceIQD;
         towerTotal.priceUSD += floorStats.priceUSD;
+        towerTotal.promoted += floorStats.promoted;
+        towerTotal.notPromoted += floorStats.notPromoted;
+        towerTotal.receivedTabo += floorStats.receivedTabo;
+        towerTotal.receivedUnit += floorStats.receivedUnit;
+        towerTotal.notReceivedUnit += floorStats.notReceivedUnit;
       }
       stats.push({ name: tower.label, floors: floorsData, totals: towerTotal });
     });
@@ -137,13 +154,19 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       if (!stats[zone]) {
         stats[zone] = { 
           blocks: {}, 
-          totals: { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0 } 
+          totals: { 
+            available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0,
+            promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0
+          } 
         };
       }
       
       if (!stats[zone].blocks[block]) stats[zone].blocks[block] = {};
       if (!stats[zone].blocks[block][type]) {
-        stats[zone].blocks[block][type] = { available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0 };
+        stats[zone].blocks[block][type] = { 
+          available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0,
+          promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0
+        };
       }
 
       const s = stats[zone].blocks[block][type];
@@ -156,6 +179,16 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
       else if (data.status === 'available') { s.available++; zt.available++; }
       
       if (data.status !== 'frozen_uncounted') { s.total++; zt.total++; }
+
+      // منطق الطابو
+      const tabo = data.taboStatus?.trim();
+      if (tabo === 'مروج') { s.promoted++; zt.promoted++; }
+      else if (tabo === 'مستلم') { s.receivedTabo++; zt.receivedTabo++; }
+      else { s.notPromoted++; zt.notPromoted++; }
+
+      // منطق استلام الوحدة
+      if (data.handoverDate) { s.receivedUnit++; zt.receivedUnit++; }
+      else { s.notReceivedUnit++; zt.notReceivedUnit++; }
 
       const priceValue = parsePrice(data.price);
       if (priceValue > 0) {
@@ -216,20 +249,25 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                   <div className="w-2 h-6 bg-blue-600 rounded-full" />
                   الزون: {zone}
                 </h3>
-                <div className="border rounded-2xl overflow-hidden shadow-sm">
+                <div className="border rounded-2xl overflow-x-auto shadow-sm">
                   <Table>
                     <TableHeader className="bg-slate-50">
                       <TableRow>
-                        <TableHead className="text-right font-black">البلوك</TableHead>
-                        <TableHead className="text-right font-black">الصنف</TableHead>
-                        <TableHead className="text-center font-black text-emerald-600">المتاح</TableHead>
-                        <TableHead className="text-center font-black text-rose-600">المباع</TableHead>
-                        <TableHead className="text-center font-black text-purple-600">الاستثمار</TableHead>
-                        <TableHead className="text-center font-black text-amber-600">محجوز</TableHead>
-                        <TableHead className="text-center font-black text-blue-600">حجز أولي</TableHead>
-                        <TableHead className="text-center font-black bg-slate-100">المجموع</TableHead>
-                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700">إجمالي (د.ع)</TableHead>
-                        <TableHead className="text-center font-black bg-blue-50 text-blue-700">إجمالي ($)</TableHead>
+                        <TableHead className="text-right font-black whitespace-nowrap">البلوك</TableHead>
+                        <TableHead className="text-right font-black whitespace-nowrap">الصنف</TableHead>
+                        <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>
+                        <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>
+                        <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>
+                        <TableHead className="text-center font-black text-amber-600 whitespace-nowrap">محجوز</TableHead>
+                        <TableHead className="text-center font-black text-blue-600 whitespace-nowrap">حجز أولي</TableHead>
+                        <TableHead className="text-center font-black bg-slate-100 whitespace-nowrap">المجموع</TableHead>
+                        <TableHead className="text-center font-black text-indigo-600 whitespace-nowrap">مروج</TableHead>
+                        <TableHead className="text-center font-black text-slate-500 whitespace-nowrap">غير مروج</TableHead>
+                        <TableHead className="text-center font-black text-amber-700 whitespace-nowrap">مستلم</TableHead>
+                        <TableHead className="text-center font-black text-sky-600 whitespace-nowrap">مستلم الوحدة</TableHead>
+                        <TableHead className="text-center font-black text-rose-400 whitespace-nowrap">غير مستلم الوحدة</TableHead>
+                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700 whitespace-nowrap">إجمالي (د.ع)</TableHead>
+                        <TableHead className="text-center font-black bg-blue-50 text-blue-700 whitespace-nowrap">إجمالي ($)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -252,6 +290,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                             <TableCell className="text-center font-black">{s.reserved}</TableCell>
                             <TableCell className="text-center font-black">{s.pending}</TableCell>
                             <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>
+                            <TableCell className="text-center font-black text-indigo-600">{s.promoted}</TableCell>
+                            <TableCell className="text-center font-black text-slate-500">{s.notPromoted}</TableCell>
+                            <TableCell className="text-center font-black text-amber-700">{s.receivedTabo}</TableCell>
+                            <TableCell className="text-center font-black text-sky-600">{s.receivedUnit}</TableCell>
+                            <TableCell className="text-center font-black text-rose-400">{s.notReceivedUnit}</TableCell>
                             <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
                               {formatNumber(s.priceIQD)}
                             </TableCell>
@@ -271,6 +314,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.reserved}</TableCell>
                         <TableCell className="text-center font-black text-lg">{zoneData.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-slate-800">{zoneData.totals.total}</TableCell>
+                        <TableCell className="text-center font-black text-indigo-400">{zoneData.totals.promoted}</TableCell>
+                        <TableCell className="text-center font-black text-slate-400">{zoneData.totals.notPromoted}</TableCell>
+                        <TableCell className="text-center font-black text-amber-400">{zoneData.totals.receivedTabo}</TableCell>
+                        <TableCell className="text-center font-black text-sky-400">{zoneData.totals.receivedUnit}</TableCell>
+                        <TableCell className="text-center font-black text-rose-300">{zoneData.totals.notReceivedUnit}</TableCell>
                         <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
                           {formatNumber(zoneData.totals.priceIQD)}
                         </TableCell>
@@ -292,19 +340,24 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                   <div className="w-2 h-6 bg-indigo-600 rounded-full" />
                   العمارة: {tower.name}
                 </h3>
-                <div className="border rounded-2xl overflow-hidden shadow-sm">
+                <div className="border rounded-2xl overflow-x-auto shadow-sm">
                   <Table>
                     <TableHeader className="bg-slate-50">
                       <TableRow>
-                        <TableHead className="text-right font-black">الطابق</TableHead>
-                        <TableHead className="text-center font-black text-emerald-600">المتاح</TableHead>
-                        <TableHead className="text-center font-black text-rose-600">المباع</TableHead>
-                        <TableHead className="text-center font-black text-purple-600">الاستثمار</TableHead>
-                        <TableHead className="text-center font-black text-amber-600">محجوز</TableHead>
-                        <TableHead className="text-center font-black text-blue-600">حجز أولي</TableHead>
-                        <TableHead className="text-center font-black bg-slate-100">المجموع</TableHead>
-                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700">إجمالي (د.ع)</TableHead>
-                        <TableHead className="text-center font-black bg-blue-50 text-blue-700">إجمالي ($)</TableHead>
+                        <TableHead className="text-right font-black whitespace-nowrap">الطابق</TableHead>
+                        <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>
+                        <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>
+                        <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>
+                        <TableHead className="text-center font-black text-amber-600 whitespace-nowrap">محجوز</TableHead>
+                        <TableHead className="text-center font-black text-blue-600 whitespace-nowrap">حجز أولي</TableHead>
+                        <TableHead className="text-center font-black bg-slate-100 whitespace-nowrap">المجموع</TableHead>
+                        <TableHead className="text-center font-black text-indigo-600 whitespace-nowrap">مروج</TableHead>
+                        <TableHead className="text-center font-black text-slate-500 whitespace-nowrap">غير مروج</TableHead>
+                        <TableHead className="text-center font-black text-amber-700 whitespace-nowrap">مستلم</TableHead>
+                        <TableHead className="text-center font-black text-sky-600 whitespace-nowrap">مستلم الوحدة</TableHead>
+                        <TableHead className="text-center font-black text-rose-400 whitespace-nowrap">غير مستلم الوحدة</TableHead>
+                        <TableHead className="text-center font-black bg-emerald-50 text-emerald-700 whitespace-nowrap">إجمالي (د.ع)</TableHead>
+                        <TableHead className="text-center font-black bg-blue-50 text-blue-700 whitespace-nowrap">إجمالي ($)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -323,6 +376,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                           <TableCell className="text-center font-black">{floor.reserved}</TableCell>
                           <TableCell className="text-center font-black">{floor.pending}</TableCell>
                           <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>
+                          <TableCell className="text-center font-black text-indigo-600">{floor.promoted}</TableCell>
+                          <TableCell className="text-center font-black text-slate-500">{floor.notPromoted}</TableCell>
+                          <TableCell className="text-center font-black text-amber-700">{floor.receivedTabo}</TableCell>
+                          <TableCell className="text-center font-black text-sky-600">{floor.receivedUnit}</TableCell>
+                          <TableCell className="text-center font-black text-rose-400">{floor.notReceivedUnit}</TableCell>
                           <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
                             {formatNumber(floor.priceIQD)}
                           </TableCell>
@@ -341,6 +399,11 @@ const DetailedStatsTable = ({ elements, housesData }: DetailedStatsTableProps) =
                         <TableCell className="text-center font-black text-lg">{tower.totals.reserved}</TableCell>
                         <TableCell className="text-center font-black text-lg">{tower.totals.pending}</TableCell>
                         <TableCell className="text-center font-black text-lg bg-indigo-800">{tower.totals.total}</TableCell>
+                        <TableCell className="text-center font-black text-indigo-400">{tower.totals.promoted}</TableCell>
+                        <TableCell className="text-center font-black text-slate-400">{tower.totals.notPromoted}</TableCell>
+                        <TableCell className="text-center font-black text-amber-400">{tower.totals.receivedTabo}</TableCell>
+                        <TableCell className="text-center font-black text-sky-400">{tower.totals.receivedUnit}</TableCell>
+                        <TableCell className="text-center font-black text-rose-300">{tower.totals.notReceivedUnit}</TableCell>
                         <TableCell className="text-center font-black text-emerald-400 bg-emerald-950/50">
                           {formatNumber(tower.totals.priceIQD)}
                         </TableCell>

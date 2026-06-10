@@ -6,7 +6,7 @@ import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -205,29 +205,43 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const calculateStats = () => {
-    if (!activeProject || !activeElements) return { total: 0, sold: 0, investment: 0 };
+    if (!activeProject || !activeElements) return { total: 0, sold: 0, investment: 0, promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0 };
     let total = 0; let sold = 0; let investment = 0;
+    let promoted = 0; let notPromoted = 0; let receivedTabo = 0;
+    let receivedUnit = 0; let notReceivedUnit = 0;
+
+    const processUnit = (data: any) => {
+      if (data?.status === 'frozen_hidden') return;
+      
+      if (data?.status !== 'frozen_uncounted') total++;
+      if (data?.status === 'sold') sold++;
+      if (data?.status === 'investment') investment++;
+
+      // منطق الطابو
+      const tabo = data?.taboStatus?.trim();
+      if (tabo === 'مروج') promoted++;
+      else if (tabo === 'مستلم') receivedTabo++;
+      else notPromoted++;
+
+      // منطق استلام الوحدة
+      if (data?.handoverDate) receivedUnit++;
+      else notReceivedUnit++;
+    };
+
     activeElements.forEach(el => {
       if (el.type === 'house') {
-        const data = housesData[el.id];
-        if (data?.status !== 'frozen_uncounted' && data?.status !== 'frozen_hidden') total++;
-        if (data?.status === 'sold') sold++;
-        if (data?.status === 'investment') investment++;
+        processUnit(housesData[el.id]);
       } else if (el.type === 'tower') {
         const floors = el.floors || 0;
         const aptsPerFloor = el.apartmentsPerFloor || 0;
         for (let f = 1; f <= floors; f++) {
           for (let a = 1; a <= aptsPerFloor; a++) {
-            const key = `${el.id}_F${f}_A${a}`;
-            const data = housesData[key];
-            if (data?.status !== 'frozen_uncounted' && data?.status !== 'frozen_hidden') total++;
-            if (data?.status === 'sold') sold++;
-            if (data?.status === 'investment') investment++;
+            processUnit(housesData[`${el.id}_F${f}_A${a}`]);
           }
         }
       }
     });
-    return { total, sold, investment };
+    return { total, sold, investment, promoted, notPromoted, receivedTabo, receivedUnit, notReceivedUnit };
   };
 
   const stats = calculateStats();
@@ -314,6 +328,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 <StatItem label="الوحدات المباعة" value={stats.sold.toString()} color="bg-rose-500" />
                 <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-purple-500" />
                 <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold - stats.investment).toString()} color="bg-emerald-500" />
+                
+                <div className="h-px bg-slate-100 my-4" />
+                
+                <StatItem label="مروج" value={stats.promoted.toString()} color="bg-indigo-500" icon={<FileCheck size={16} />} />
+                <StatItem label="غير مروج" value={stats.notPromoted.toString()} color="bg-slate-400" icon={<FileX size={16} />} />
+                <StatItem label="مستلم الطابو" value={stats.receivedTabo.toString()} color="bg-amber-500" icon={<CheckCircle size={16} />} />
+                
+                <div className="h-px bg-slate-100 my-4" />
+                
+                <StatItem label="مستلم الوحدة" value={stats.receivedUnit.toString()} color="bg-sky-500" icon={<HomeIcon size={16} />} />
+                <StatItem label="غير مستلم الوحدة" value={stats.notReceivedUnit.toString()} color="bg-rose-300" icon={<XCircle size={16} />} />
               </div>
             </div>
 
@@ -370,10 +395,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   );
 };
 
-const StatItem = ({ label, value, color }: { label: string, value: string, color: string }) => (
+const StatItem = ({ label, value, color, icon }: { label: string, value: string, color: string, icon?: React.ReactNode }) => (
   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-    <div className="flex items-center gap-3"><div className={`w-2 h-8 rounded-full ${color}`} /><span className="font-bold text-slate-600">{label}</span></div>
-    <span className="text-2xl font-black text-slate-800">{value}</span>
+    <div className="flex items-center gap-3">
+      <div className={`w-2 h-8 rounded-full ${color}`} />
+      <div className="flex flex-col">
+        <span className="font-bold text-slate-600 text-xs flex items-center gap-1">
+          {icon} {label}
+        </span>
+      </div>
+    </div>
+    <span className="text-xl font-black text-slate-800">{value}</span>
   </div>
 );
 
