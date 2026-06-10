@@ -45,13 +45,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     handoverDate: '',
   });
 
-  // الصلاحيات الافتراضية في حال عدم تمريرها
   const perms = permissions || {
     showPrice: true,
     showCustomerName: true,
     showCustomerPhone: true,
     showTaboInfo: true,
-    showHandoverInfo: true
+    showHandoverInfo: true,
+    showStatusField: true
   };
 
   React.useEffect(() => {
@@ -93,14 +93,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   const isFrozen = formData.status.startsWith('frozen');
   const showSaleFields = formData.status === 'sold' || formData.status === 'reserved' || formData.status === 'pending' || formData.status === 'investment';
 
-  // تنسيق السعر بفواصل الآلاف
   const formatPrice = (price: string) => {
     if (!price) return '---';
     const cleanPrice = price.toString().replace(/,/g, '');
     return cleanPrice.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-  // تحويل مسمى العملة إلى رمز
   const getCurrencySymbol = (currency: string) => {
     if (currency === 'دولار') return '$';
     if (currency === 'دينار') return 'د.ع';
@@ -118,27 +116,29 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-6 py-4">
-          <div className="space-y-2">
-            <Label className="text-right block font-bold text-slate-600">حالة الوحدة</Label>
-            <Select 
-              value={formData.status} 
-              onValueChange={(v) => setFormData({...formData, status: v})}
-            >
-              <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold">
-                <SelectValue placeholder="اختر الحالة" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="available">متوفر</SelectItem>
-                <SelectItem value="pending">حجز أولي</SelectItem>
-                <SelectItem value="reserved">محجوز</SelectItem>
-                <SelectItem value="sold">مباع</SelectItem>
-                <SelectItem value="investment">استثمار</SelectItem>
-                <SelectItem value="frozen_counted">تجميد (محسوب في المجموع)</SelectItem>
-                <SelectItem value="frozen_uncounted">تجميد (غير محسوب في المجموع)</SelectItem>
-                <SelectItem value="frozen_hidden">تجميد (مخفي من العدد والمجموع)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {perms.showStatusField && (
+            <div className="space-y-2">
+              <Label className="text-right block font-bold text-slate-600">حالة الوحدة</Label>
+              <Select 
+                value={formData.status} 
+                onValueChange={(v) => setFormData({...formData, status: v})}
+              >
+                <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold">
+                  <SelectValue placeholder="اختر الحالة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">متوفر</SelectItem>
+                  <SelectItem value="pending">حجز أولي</SelectItem>
+                  <SelectItem value="reserved">محجوز</SelectItem>
+                  <SelectItem value="sold">مباع</SelectItem>
+                  <SelectItem value="investment">استثمار</SelectItem>
+                  <SelectItem value="frozen_counted">تجميد (محسوب في المجموع)</SelectItem>
+                  <SelectItem value="frozen_uncounted">تجميد (غير محسوب في المجموع)</SelectItem>
+                  <SelectItem value="frozen_hidden">تجميد (مخفي من العدد والمجموع)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {showSaleFields && (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">

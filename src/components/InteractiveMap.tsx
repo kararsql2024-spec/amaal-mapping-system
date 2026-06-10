@@ -16,9 +16,10 @@ interface InteractiveMapProps {
   housesData: Record<string, any>;
   mapWidth: number;
   mapHeight: number;
+  permissions?: any;
 }
 
-const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, mapWidth, mapHeight }: InteractiveMapProps) => {
+const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, mapWidth, mapHeight, permissions }: InteractiveMapProps) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -28,7 +29,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // وظيفة لتوسيط الخريطة تلقائياً بناءً على الأبعاد المحددة
   const autoFit = () => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -38,7 +38,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
 
     const scaleW = availableW / mapWidth;
     const scaleH = availableH / mapHeight;
-    const newScale = Math.min(scaleW, scaleH, 1.5); // لا نتجاوز 1.5 في التقريب التلقائي
+    const newScale = Math.min(scaleW, scaleH, 1.5);
 
     const newX = (rect.width - mapWidth * newScale) / 2;
     const newY = (rect.height - mapHeight * newScale) / 2;
@@ -47,7 +47,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     setPosition({ x: newX, y: newY });
   };
 
-  // تنفيذ التوسيط عند تحميل المشروع أو تغيير الأبعاد أو تغيير وضع ملء الشاشة
   useEffect(() => {
     const timer = setTimeout(autoFit, 100);
     return () => clearTimeout(timer);
@@ -154,6 +153,23 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     
     if (el.type === 'house') {
       const baseStroke = el.hasBorder ? (el.borderColor || '#94a3b8') : '#94a3b8';
+      const colorMode = permissions?.colorMode || 'default';
+
+      // نمط تلوين الطابو
+      if (colorMode === 'tabo') {
+        const tabo = data?.taboStatus?.trim();
+        if (tabo === 'مستلم') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; // أخضر
+        if (tabo === 'مروج') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 }; // برتقالي
+        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; // أحمر (غير مروج)
+      }
+
+      // نمط تلوين الاستلام
+      if (colorMode === 'handover') {
+        if (data?.handoverDate) return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; // أخضر (مستلم)
+        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; // أحمر (غير مستلم)
+      }
+
+      // النمط الافتراضي (حالة الوحدة)
       if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: baseStroke, opacity: 1, strokeWidth: 2 };
       if (data?.status === 'investment') return { fill: '#d8b4fe', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : '#a855f7', opacity: 1, strokeWidth: 2 };
       if (!data || data.status === 'available') return { fill: el.color || '#10b981', stroke: el.hasBorder ? (el.borderColor || '#059669') : '#059669', opacity: 1, strokeWidth: 2 };

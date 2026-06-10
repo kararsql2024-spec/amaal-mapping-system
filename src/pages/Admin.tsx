@@ -10,7 +10,8 @@ import {
   FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
-  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell
+  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
+  Palette
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -340,14 +341,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showSideReceivedTabo: true,
       showSideReceivedUnit: true,
       showSideNotReceivedUnit: true,
-      showNotifications: true
+      showNotifications: true,
+      colorMode: 'default',
+      showStatusField: true
     };
     
     const updated = {
       ...deptPermissions,
       [type]: {
         ...current,
-        [permission]: !current[permission]
+        [permission]: typeof current[permission] === 'boolean' ? !current[permission] : permission
       }
     };
 
@@ -357,6 +360,24 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showSuccess("تم تحديث الصلاحية");
     } catch (error) {
       showError("فشل في تحديث الصلاحية");
+    }
+  };
+
+  const setColorMode = async (type: string, mode: string) => {
+    const current = deptPermissions[type] || {};
+    const updated = {
+      ...deptPermissions,
+      [type]: {
+        ...current,
+        colorMode: mode
+      }
+    };
+    try {
+      await supabase.from('settings').upsert({ key: 'dept_permissions', value: updated });
+      setDeptPermissions(updated);
+      showSuccess("تم تحديث نمط التلوين");
+    } catch (error) {
+      showError("فشل في التحديث");
     }
   };
 
@@ -977,7 +998,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         showSideReceivedTabo: true,
                         showSideReceivedUnit: true,
                         showSideNotReceivedUnit: true,
-                        showNotifications: true
+                        showNotifications: true,
+                        colorMode: 'default',
+                        showStatusField: true
                       };
                       
                       return (
@@ -992,8 +1015,42 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           
                           <div className="space-y-6">
                             <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><Palette size={16} className="text-indigo-600" /> نمط تلوين الخريطة</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <button 
+                                  onClick={() => setColorMode(type, 'default')}
+                                  className={cn(
+                                    "p-3 rounded-xl border-2 font-bold text-xs transition-all",
+                                    perms.colorMode === 'default' ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-100 bg-slate-50 text-slate-500"
+                                  )}
+                                >
+                                  النمط الافتراضي (حالة الوحدة)
+                                </button>
+                                <button 
+                                  onClick={() => setColorMode(type, 'tabo')}
+                                  className={cn(
+                                    "p-3 rounded-xl border-2 font-bold text-xs transition-all",
+                                    perms.colorMode === 'tabo' ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-100 bg-slate-50 text-slate-500"
+                                  )}
+                                >
+                                  نمط الطابو (مروج/مستلم)
+                                </button>
+                                <button 
+                                  onClick={() => setColorMode(type, 'handover')}
+                                  className={cn(
+                                    "p-3 rounded-xl border-2 font-bold text-xs transition-all",
+                                    perms.colorMode === 'handover' ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-100 bg-slate-50 text-slate-500"
+                                  )}
+                                >
+                                  نمط الاستلام (مستلم/غير مستلم)
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
                               <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><HomeIcon size={16} className="text-blue-600" /> نافذة تفاصيل الوحدة (Modal)</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <PermissionToggle label="إظهار حقل الحالة" checked={perms.showStatusField} onChange={() => togglePermission(type, 'showStatusField')} />
                                 <PermissionToggle label="اسم الزبون" checked={perms.showCustomerName} onChange={() => togglePermission(type, 'showCustomerName')} />
                                 <PermissionToggle label="رقم الهاتف" checked={perms.showCustomerPhone} onChange={() => togglePermission(type, 'showCustomerPhone')} />
                                 <PermissionToggle label="السعر" checked={perms.showPrice} onChange={() => togglePermission(type, 'showPrice')} />
