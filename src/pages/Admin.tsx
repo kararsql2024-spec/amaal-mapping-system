@@ -222,29 +222,40 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       return;
     }
     try {
+      const payload = {
+        name: newCenter.name,
+        password: newCenter.password,
+        type: newCenter.type
+      };
+
       if (editingCenterId) {
         const { data, error } = await supabase
           .from('marketing_centers')
-          .update(newCenter)
+          .update(payload)
           .eq('id', editingCenterId)
           .select();
         
         if (error) throw error;
-        setMarketingCenters(marketingCenters.map(c => c.id === editingCenterId ? data[0] : c));
-        setEditingCenterId(null);
-        showSuccess("تم تحديث القسم بنجاح");
+        if (data && data.length > 0) {
+          setMarketingCenters(marketingCenters.map(c => c.id === editingCenterId ? data[0] : c));
+          setEditingCenterId(null);
+          showSuccess("تم تحديث القسم بنجاح");
+        }
       } else {
         const { data, error } = await supabase
           .from('marketing_centers')
-          .insert([newCenter])
+          .insert([payload])
           .select();
         
         if (error) throw error;
-        setMarketingCenters([data[0], ...marketingCenters]);
-        showSuccess("تم إضافة القسم بنجاح");
+        if (data && data.length > 0) {
+          setMarketingCenters([data[0], ...marketingCenters]);
+          showSuccess("تم إضافة القسم بنجاح");
+        }
       }
       setNewCenter({ name: '', password: '', type: '' });
     } catch (error) {
+      console.error("Error in handleAddCenter:", error);
       showError(editingCenterId ? "فشل في تحديث القسم" : "فشل في إضافة القسم");
     }
   };
