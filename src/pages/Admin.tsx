@@ -5,7 +5,13 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags, X, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { 
+  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
+  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
+  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
+  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
+  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3 
+} from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
@@ -842,19 +848,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  if (editingMapProject) {
-    return (
-      <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => setEditingMapProject(null)} className="rounded-xl" disabled={isSavingMap}><ArrowRight className="ml-2" />العودة</Button>
-            <h1 className="text-2xl font-black">تعديل مخطط: {editingMapProject.name}</h1>
-          </div>
-          <MapEditor initialElements={editingMapProject.elements} onSave={handleSaveMap} mapWidth={editingMapProject.mapWidth} mapHeight={editingMapProject.mapHeight} isSaving={isSavingMap} />
-        </div>
+  const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
+    <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer" onClick={onChange}>
+      <span className="text-[10px] font-black text-slate-600">{label}</span>
+      <div className={cn(
+        "w-8 h-4 rounded-full relative transition-colors",
+        checked ? "bg-indigo-600" : "bg-slate-300"
+      )}>
+        <div className={cn(
+          "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+          checked ? "right-4.5" : "right-0.5"
+        )} />
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
@@ -919,7 +926,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
                 <div className="flex items-center gap-3 border-b pb-4"><div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center"><Store className="text-indigo-600" /></div><h2 className="text-xl font-black text-slate-800">إدارة الأقسام</h2></div>
                 
-                {/* إدارة أنواع الأقسام */}
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-6">
                   <h3 className="font-bold text-slate-700 flex items-center gap-2"><Tags size={18} /> إدارة أنواع الأقسام وصلاحيات العرض</h3>
                   <div className="flex gap-2">
@@ -965,7 +971,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           </div>
                           
                           <div className="space-y-6">
-                            {/* نافذة تفاصيل الوحدة */}
                             <div className="space-y-3">
                               <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><HomeIcon size={16} className="text-blue-600" /> نافذة تفاصيل الوحدة (Modal)</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -979,7 +984,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </div>
                             </div>
 
-                            {/* جدول الإحصائيات المفصلة */}
                             <div className="space-y-3">
                               <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><FileSpreadsheet size={16} className="text-emerald-600" /> جدول الإحصائيات المفصلة (أعمدة)</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -999,7 +1003,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </div>
                             </div>
 
-                            {/* الإحصائيات العامة */}
                             <div className="space-y-3">
                               <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><BarChart3 size={16} className="text-indigo-600" /> الإحصائيات العامة (Sidebar)</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1014,7 +1017,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   </div>
                 </div>
 
-                {/* إضافة/تعديل قسم جديد */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100 relative">
                   {editingCenterId && (
                     <div className="md:col-span-3 flex items-center justify-between bg-indigo-50 p-2 rounded-lg border border-indigo-100 mb-2">
@@ -1174,20 +1176,5 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     </div>
   );
 };
-
-const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
-  <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer" onClick={onChange}>
-    <span className="text-[10px] font-black text-slate-600">{label}</span>
-    <div className={cn(
-      "w-8 h-4 rounded-full relative transition-colors",
-      checked ? "bg-indigo-600" : "bg-slate-300"
-    )}>
-      <div className={cn(
-        "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
-        checked ? "right-4.5" : "right-0.5"
-      )} />
-    </div>
-  </div>
-);
 
 export default Admin;
