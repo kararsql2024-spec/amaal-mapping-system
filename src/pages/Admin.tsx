@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
-  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3 
+  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -330,7 +330,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showStatsPriceIQD: true,
       showStatsPriceUSD: true,
       showGeneralStats: true,
-      showStatsTable: true
+      showStatsTable: true,
+      showSideTotal: true,
+      showSideSold: true,
+      showSideInvestment: true,
+      showSideAvailable: true,
+      showSidePromoted: true,
+      showSideNotPromoted: true,
+      showSideReceivedTabo: true,
+      showSideReceivedUnit: true,
+      showSideNotReceivedUnit: true,
+      showNotifications: true
     };
     
     const updated = {
@@ -957,7 +967,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         showStatsPriceIQD: true,
                         showStatsPriceUSD: true,
                         showGeneralStats: true,
-                        showStatsTable: true
+                        showStatsTable: true,
+                        showSideTotal: true,
+                        showSideSold: true,
+                        showSideInvestment: true,
+                        showSideAvailable: true,
+                        showSidePromoted: true,
+                        showSideNotPromoted: true,
+                        showSideReceivedTabo: true,
+                        showSideReceivedUnit: true,
+                        showSideNotReceivedUnit: true,
+                        showNotifications: true
                       };
                       
                       return (
@@ -1004,9 +1024,31 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             </div>
 
                             <div className="space-y-3">
-                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><BarChart3 size={16} className="text-indigo-600" /> الإحصائيات العامة (Sidebar)</h4>
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><BarChart3 size={16} className="text-indigo-600" /> الإحصائيات الجانبية (Sidebar)</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <PermissionToggle label="إظهار القائمة الجانبية" checked={perms.showGeneralStats} onChange={() => togglePermission(type, 'showGeneralStats')} />
+                                <PermissionToggle label="إجمالي الوحدات" checked={perms.showSideTotal} onChange={() => togglePermission(type, 'showSideTotal')} />
+                                <PermissionToggle label="الوحدات المباعة" checked={perms.showSideSold} onChange={() => togglePermission(type, 'showSideSold')} />
+                                <PermissionToggle label="وحدات الاستثمار" checked={perms.showSideInvestment} onChange={() => togglePermission(type, 'showSideInvestment')} />
+                                <PermissionToggle label="الوحدات المتاحة" checked={perms.showSideAvailable} onChange={() => togglePermission(type, 'showSideAvailable')} />
+                                <PermissionToggle label="مروج" checked={perms.showSidePromoted} onChange={() => togglePermission(type, 'showSidePromoted')} />
+                                <PermissionToggle label="غير مروج" checked={perms.showSideNotPromoted} onChange={() => togglePermission(type, 'showSideNotPromoted')} />
+                                <PermissionToggle label="مستلم الطابو" checked={perms.showSideReceivedTabo} onChange={() => togglePermission(type, 'showSideReceivedTabo')} />
+                                <PermissionToggle label="مستلم الوحدة" checked={perms.showSideReceivedUnit} onChange={() => togglePermission(type, 'showSideReceivedUnit')} />
+                                <PermissionToggle label="غير مستلم الوحدة" checked={perms.showSideNotReceivedUnit} onChange={() => togglePermission(type, 'showSideNotReceivedUnit')} />
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><Bell size={16} className="text-rose-600" /> قسم الإشعارات</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <PermissionToggle label="إظهار الإشعارات" checked={perms.showNotifications} onChange={() => togglePermission(type, 'showNotifications')} />
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><FileSpreadsheet size={16} className="text-slate-600" /> إعدادات إضافية</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <PermissionToggle label="إظهار الجدول المفصل" checked={perms.showStatsTable} onChange={() => togglePermission(type, 'showStatsTable')} />
                               </div>
                             </div>

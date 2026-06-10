@@ -55,7 +55,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showTaboInfo: true,
     showHandoverInfo: true,
     showStatsTable: true,
-    showGeneralStats: true
+    showGeneralStats: true,
+    showSideTotal: true,
+    showSideSold: true,
+    showSideInvestment: true,
+    showSideAvailable: true,
+    showSidePromoted: true,
+    showSideNotPromoted: true,
+    showSideReceivedTabo: true,
+    showSideReceivedUnit: true,
+    showSideNotReceivedUnit: true,
+    showNotifications: true
   });
 
   useEffect(() => {
@@ -223,7 +233,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       showTaboInfo: true,
       showHandoverInfo: true,
       showStatsTable: true,
-      showGeneralStats: true
+      showGeneralStats: true,
+      showSideTotal: true,
+      showSideSold: true,
+      showSideInvestment: true,
+      showSideAvailable: true,
+      showSidePromoted: true,
+      showSideNotPromoted: true,
+      showSideReceivedTabo: true,
+      showSideReceivedUnit: true,
+      showSideNotReceivedUnit: true,
+      showNotifications: true
     });
   };
 
@@ -338,7 +358,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             {projects.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild><Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">{activeProject?.name || "اختر المشروع"}<ChevronDown size={16} /></Button></DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl">{projects.map(p => (<DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">{p.name}</DropdownMenuItem>))}</DropdownMenuContent>
+                <DropdownMenuContent align="end" className="rounded-xl">{projects.map(p => (<DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">{p.name}</DropdownMenuItem>))}</DropdownMenuItem>))}</DropdownMenuContent>
               </DropdownMenu>
             )}
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
@@ -346,7 +366,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         </header>
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className={cn("space-y-8", permissions.showGeneralStats ? "lg:col-span-2" : "lg:col-span-3")}>
+          <div className={cn("space-y-8", (permissions.showGeneralStats || permissions.showNotifications) ? "lg:col-span-2" : "lg:col-span-3")}>
             {isProjectLoading ? (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4">
                 <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -362,71 +382,75 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             )}
           </div>
 
-          {permissions.showGeneralStats && (
+          {(permissions.showGeneralStats || permissions.showNotifications) && (
             <div className="space-y-6">
-              <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
-                <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات {activeProject?.name}</h3>
-                <div className="space-y-4">
-                  <StatItem label="إجمالي الوحدات" value={stats.total.toString()} color="bg-blue-500" />
-                  <StatItem label="الوحدات المباعة" value={stats.sold.toString()} color="bg-rose-500" />
-                  <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-purple-500" />
-                  <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold - stats.investment).toString()} color="bg-emerald-500" />
-                  
-                  <div className="h-px bg-slate-100 my-4" />
-                  
-                  <StatItem label="مروج" value={stats.promoted.toString()} color="bg-indigo-500" icon={<FileCheck size={16} />} />
-                  <StatItem label="غير مروج" value={stats.notPromoted.toString()} color="bg-slate-400" icon={<FileX size={16} />} />
-                  <StatItem label="مستلم الطابو" value={stats.receivedTabo.toString()} color="bg-amber-500" icon={<CheckCircle size={16} />} />
-                  
-                  <div className="h-px bg-slate-100 my-4" />
-                  
-                  <StatItem label="مستلم الوحدة" value={stats.receivedUnit.toString()} color="bg-sky-500" icon={<HomeIcon size={16} />} />
-                  <StatItem label="غير مستلم الوحدة" value={stats.notReceivedUnit.toString()} color="bg-rose-300" icon={<XCircle size={16} />} />
+              {permissions.showGeneralStats && (
+                <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
+                  <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات {activeProject?.name}</h3>
+                  <div className="space-y-4">
+                    {permissions.showSideTotal && <StatItem label="إجمالي الوحدات" value={stats.total.toString()} color="bg-blue-500" />}
+                    {permissions.showSideSold && <StatItem label="الوحدات المباعة" value={stats.sold.toString()} color="bg-rose-500" />}
+                    {permissions.showSideInvestment && <StatItem label="وحدات الاستثمار" value={stats.investment.toString()} color="bg-purple-500" />}
+                    {permissions.showSideAvailable && <StatItem label="الوحدات المتاحة" value={(stats.total - stats.sold - stats.investment).toString()} color="bg-emerald-500" />}
+                    
+                    {(permissions.showSidePromoted || permissions.showSideNotPromoted || permissions.showSideReceivedTabo) && <div className="h-px bg-slate-100 my-4" />}
+                    
+                    {permissions.showSidePromoted && <StatItem label="مروج" value={stats.promoted.toString()} color="bg-indigo-500" icon={<FileCheck size={16} />} />}
+                    {permissions.showSideNotPromoted && <StatItem label="غير مروج" value={stats.notPromoted.toString()} color="bg-slate-400" icon={<FileX size={16} />} />}
+                    {permissions.showSideReceivedTabo && <StatItem label="مستلم الطابو" value={stats.receivedTabo.toString()} color="bg-amber-500" icon={<CheckCircle size={16} />} />}
+                    
+                    {(permissions.showSideReceivedUnit || permissions.showSideNotReceivedUnit) && <div className="h-px bg-slate-100 my-4" />}
+                    
+                    {permissions.showSideReceivedUnit && <StatItem label="مستلم الوحدة" value={stats.receivedUnit.toString()} color="bg-sky-500" icon={<HomeIcon size={16} />} />}
+                    {permissions.showSideNotReceivedUnit && <StatItem label="غير مستلم الوحدة" value={stats.notReceivedUnit.toString()} color="bg-rose-300" icon={<XCircle size={16} />} />}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className={cn(
-                "bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 flex flex-col transition-all duration-500 ease-in-out overflow-hidden",
-                isNotificationsOpen ? "h-[500px]" : "h-[88px]"
-              )}>
-                <div 
-                  className="flex items-center justify-between mb-6 cursor-pointer select-none shrink-0"
-                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                >
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                      <Bell className="text-blue-600" size={20} /> الإشعارات
-                    </h3>
-                    <span className="bg-blue-50 text-blue-600 text-xs font-black px-3 py-1 rounded-full">{notifications.length}</span>
-                  </div>
-                  <div className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
-                    {isNotificationsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </div>
-                </div>
-                
+              {permissions.showNotifications && (
                 <div className={cn(
-                  "flex-1 min-h-0 transition-opacity duration-300",
-                  isNotificationsOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+                  "bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 flex flex-col transition-all duration-500 ease-in-out overflow-hidden",
+                  isNotificationsOpen ? "h-[500px]" : "h-[88px]"
                 )}>
-                  <ScrollArea className="h-full w-full">
-                    <div className="space-y-4 pr-4">
-                      {notifications.length > 0 ? notifications.map((notif) => (
-                        <div key={notif.id} className={cn("p-4 rounded-2xl border space-y-2 animate-in fade-in slide-in-from-right-2", getNotificationColor(notif.message))}>
-                          <p className="text-sm font-bold leading-relaxed">{notif.message}</p>
-                          <div className="flex items-center gap-2 text-[10px] font-black opacity-60 uppercase">
-                            <Clock size={12} /> {new Date(notif.created_at).toLocaleString('ar-EG')}
-                          </div>
-                        </div>
-                      )) : (
-                        <div className="flex flex-col items-center justify-center h-40 text-slate-400 space-y-2">
-                          <Info size={40} className="opacity-20" />
-                          <p className="font-bold">لا توجد إشعارات حالياً</p>
-                        </div>
-                      )}
+                  <div 
+                    className="flex items-center justify-between mb-6 cursor-pointer select-none shrink-0"
+                    onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Bell className="text-blue-600" size={20} /> الإشعارات
+                      </h3>
+                      <span className="bg-blue-50 text-blue-600 text-xs font-black px-3 py-1 rounded-full">{notifications.length}</span>
                     </div>
-                  </ScrollArea>
+                    <div className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                      {isNotificationsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </div>
+                  </div>
+                  
+                  <div className={cn(
+                    "flex-1 min-h-0 transition-opacity duration-300",
+                    isNotificationsOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+                  )}>
+                    <ScrollArea className="h-full w-full">
+                      <div className="space-y-4 pr-4">
+                        {notifications.length > 0 ? notifications.map((notif) => (
+                          <div key={notif.id} className={cn("p-4 rounded-2xl border space-y-2 animate-in fade-in slide-in-from-right-2", getNotificationColor(notif.message))}>
+                            <p className="text-sm font-bold leading-relaxed">{notif.message}</p>
+                            <div className="flex items-center gap-2 text-[10px] font-black opacity-60 uppercase">
+                              <Clock size={12} /> {new Date(notif.created_at).toLocaleString('ar-EG')}
+                            </div>
+                          </div>
+                        )) : (
+                          <div className="flex flex-col items-center justify-center h-40 text-slate-400 space-y-2">
+                            <Info size={40} className="opacity-20" />
+                            <p className="font-bold">لا توجد إشعارات حالياً</p>
+                          </div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </main>
