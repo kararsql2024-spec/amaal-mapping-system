@@ -5,13 +5,13 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags } from 'lucide-react';
+import { Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, Tags, X } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
-import { cn } from '@/lib/utils';
+import { cn } from '@/utils/cn';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,6 +54,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '' });
+  const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
   const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
   const [newDeptType, setNewDeptType] = useState('');
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
@@ -221,17 +222,30 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       return;
     }
     try {
-      const { data, error } = await supabase
-        .from('marketing_centers')
-        .insert([newCenter])
-        .select();
-      
-      if (error) throw error;
-      setMarketingCenters([data[0], ...marketingCenters]);
+      if (editingCenterId) {
+        const { data, error } = await supabase
+          .from('marketing_centers')
+          .update(newCenter)
+          .eq('id', editingCenterId)
+          .select();
+        
+        if (error) throw error;
+        setMarketingCenters(marketingCenters.map(c => c.id === editingCenterId ? data[0] : c));
+        setEditingCenterId(null);
+        showSuccess("تم تحديث القسم بنجاح");
+      } else {
+        const { data, error } = await supabase
+          .from('marketing_centers')
+          .insert([newCenter])
+          .select();
+        
+        if (error) throw error;
+        setMarketingCenters([data[0], ...marketingCenters]);
+        showSuccess("تم إضافة القسم بنجاح");
+      }
       setNewCenter({ name: '', password: '', type: '' });
-      showSuccess("تم إضافة القسم بنجاح");
     } catch (error) {
-      showError("فشل في إضافة القسم");
+      showError(editingCenterId ? "فشل في تحديث القسم" : "فشل في إضافة القسم");
     }
   };
 
@@ -848,8 +862,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   </div>
                 </div>
 
-                {/* إضافة قسم جديد */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                {/* إضافة/تعديل قسم جديد */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-6 rounded-2xl border border-slate-100 relative">
+                  {editingCenterId && (
+                    <div className="md:col-span-3 flex items-center justify-between bg-indigo-50 p-2 rounded-lg border border-indigo-100 mb-2">
+                      <span className="text-xs font-bold text-indigo-600 flex items-center gap-2"><Edit2 size={14} /> أنت الآن في وضع تعديل بيانات القسم</span>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '' }); }} className="h-7 text-xs text-rose-500 hover:bg-rose-50"><X size={14} /> إلغاء التعديل</Button>
+                    </div>
+                  )}
                   <div className="space-y-2"><label className="text-sm font-bold text-slate-600">اسم القسم</label><Input placeholder="اسم القسم..." value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12" /></div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-600">نوع القسم</label>
@@ -865,13 +885,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     </Select>
                   </div>
                   <div className="space-y-2"><label className="text-sm font-bold text-slate-600">كلمة المرور</label><Input type="password" placeholder="كلمة مرور القسم..." value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12" /></div>
-                  <Button onClick={handleAddCenter} className="md:col-span-3 bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 font-bold gap-2"><Plus size={18} /> إضافة قسم جديد</Button>
+                  <Button onClick={handleAddCenter} className={cn("md:col-span-3 rounded-xl h-12 font-bold gap-2", editingCenterId ? "bg-blue-600 hover:bg-blue-700" : "bg-indigo-600 hover:bg-indigo-700")}>
+                    {editingCenterId ? <Save size={18} /> : <Plus size={18} />}
+                    {editingCenterId ? "تحديث بيانات القسم" : "إضافة قسم جديد"}
+                  </Button>
                 </div>
 
                 <div className="space-y-3">
                   <h3 className="font-bold text-slate-700">قائمة الأقسام الحالية</h3>
                   {marketingCenters.map(center => (
-                    <div key={center.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl shadow-sm">
+                    <div key={center.id} className={cn("flex items-center justify-between p-4 bg-white border rounded-xl shadow-sm transition-all", editingCenterId === center.id ? "border-indigo-500 ring-2 ring-indigo-50" : "border-slate-100")}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center"><Store className="text-slate-400" size={20} /></div>
                         <div>
@@ -882,7 +905,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={10} /> {center.password}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={18} /></Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => {
+                          setEditingCenterId(center.id);
+                          setNewCenter({ name: center.name, password: center.password, type: center.type });
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }} className="text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={18} /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={18} /></Button>
+                      </div>
                     </div>
                   ))}
                 </div>
