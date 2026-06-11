@@ -488,7 +488,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         <UnitDetailsModal 
           isOpen={isUnitModalOpen} 
           onClose={() => setIsUnitModalOpen(false)} 
-          onSave={(data) => handleSaveData(selectedElementId!, data)} 
+          onSave={handleSaveData} 
           unitId={selectedElementId} 
           unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} 
           initialData={selectedElementId ? housesData[selectedElementId] : undefined}
