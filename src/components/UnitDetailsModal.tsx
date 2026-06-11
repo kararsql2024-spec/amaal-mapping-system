@@ -32,41 +32,6 @@ interface Note {
 interface UnitDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (key: string, data<dyad-write path="src/components/UnitDetailsModal.tsx" description="جعل حقول السعر والعملة غير قابلة للتعديل وإضافة تنسيق الفواصل للسعر.">
-"use client";
-
-import React, { useState, useEffect } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-interface Note {
-  text: string;
-  author: string;
-  date: string;
-}
-
-interface UnitDetailsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
   onSave: (key: string, data: any) => void;
   unitId: string | null;
   unitLabel?: string;
