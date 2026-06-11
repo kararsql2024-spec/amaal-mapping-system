@@ -911,6 +911,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     </div>
   );
 
+  if (editingMapProject) {
+    return (
+      <MapEditor 
+        project={editingMapProject} 
+        onSave={handleSaveMap} 
+        onCancel={() => setEditingMapProject(null)} 
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-8">
