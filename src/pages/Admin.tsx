@@ -942,7 +942,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
                     <h3 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><AlertCircle size={18} /> تعليمات النقل والاستعادة</h3>
                     <p className="text-sm text-blue-700 leading-relaxed">
-                      عند الانتقال إلى استضافة جديدة، قم بتحميل ملف SQL أعلاه. يحتوي الملف على كافة البيانات (المشاريع، المخططات، الوحدات، المراكز التسويقية). 
+                      عند الانتقال إلى استضافة جديدة، قم تحميل ملف SQL أعلاه. يحتوي الملف على كافة البيانات (المشاريع، المخططات، الوحدات، المراكز التسويقية). 
                       يمكنك تنفيذ محتوى هذا الملف في واجهة SQL الخاصة بقاعدة البيانات الجديدة لاستعادة كافة البيانات بضغطة واحدة.
                     </p>
                   </div>

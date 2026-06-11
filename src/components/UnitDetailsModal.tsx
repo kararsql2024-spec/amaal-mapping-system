@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -96,7 +96,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     setFormData({ ...formData, notes: updatedNotes });
     setNewNote('');
     
-    // Save immediately when adding a note
+    // حفظ الملاحظة فوراً عند الإضافة
     if (unitId) {
       onSave(unitId, { ...formData, notes: updatedNotes });
     }
