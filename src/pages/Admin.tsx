@@ -346,7 +346,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showStatusField: true
     };
     
-    // Fix: Ensure we toggle a boolean value correctly
     const currentValue = current[permission];
     const newValue = typeof currentValue === 'boolean' ? !currentValue : true;
 
@@ -366,6 +365,32 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) {
       console.error("Error updating permission:", error);
       showError("فشل في تحديث الصلاحية");
+    }
+  };
+
+  const toggleProjectVisibility = async (type: string, projectId: string) => {
+    const current = deptPermissions[type] || {};
+    const allowedProjects = current.allowedProjects || [];
+    
+    const newAllowed = allowedProjects.includes(projectId)
+      ? allowedProjects.filter((id: string) => id !== projectId)
+      : [...allowedProjects, projectId];
+
+    const updated = {
+      ...deptPermissions,
+      [type]: {
+        ...current,
+        allowedProjects: newAllowed
+      }
+    };
+
+    try {
+      const { error } = await supabase.from('settings').upsert({ key: 'dept_permissions', value: updated });
+      if (error) throw error;
+      setDeptPermissions(updated);
+      showSuccess("تم تحديث صلاحية الوصول للمشروع");
+    } catch (error) {
+      showError("فشل في التحديث");
     }
   };
 
@@ -1006,7 +1031,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         showSideNotReceivedUnit: true,
                         showNotifications: true,
                         colorMode: 'default',
-                        showStatusField: true
+                        showStatusField: true,
+                        allowedProjects: []
                       };
                       
                       return (
@@ -1020,6 +1046,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           </div>
                           
                           <div className="space-y-6">
+                            <div className="space-y-3">
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><MapIcon size={16} className="text-blue-600" /> المشاريع المسموح برؤيتها</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                {projects.map(p => (
+                                  <PermissionToggle 
+                                    key={p.id} 
+                                    label={p.name} 
+                                    checked={!perms.allowedProjects || perms.allowedProjects.length === 0 || perms.allowedProjects.includes(p.id)} 
+                                    onChange={() => toggleProjectVisibility(type, p.id)} 
+                                  />
+                                ))}
+                              </div>
+                              <p className="text-[10px] text-slate-400 font-bold">* إذا لم يتم تحديد أي مشروع، سيتمكن القسم من رؤية كافة المشاريع.</p>
+                            </div>
+
                             <div className="space-y-3">
                               <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><Palette size={16} className="text-indigo-600" /> نمط تلوين الخريطة</h4>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

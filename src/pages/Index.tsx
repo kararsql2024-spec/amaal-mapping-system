@@ -35,7 +35,7 @@ interface IndexProps {
 }
 
 const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projects.length > 0 ? projects[0].id : null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeElements, setActiveElements] = useState<MapElement[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
@@ -67,8 +67,24 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showSideNotReceivedUnit: true,
     showNotifications: true,
     colorMode: 'default',
-    showStatusField: true
+    showStatusField: true,
+    allowedProjects: []
   });
+
+  // فلترة المشاريع بناءً على الصلاحيات
+  const filteredProjects = React.useMemo(() => {
+    if (!permissions.allowedProjects || permissions.allowedProjects.length === 0) return projects;
+    return projects.filter(p => permissions.allowedProjects.includes(p.id));
+  }, [projects, permissions.allowedProjects]);
+
+  // تعيين المشروع الأول المتاح عند تغيير القائمة المفلترة
+  useEffect(() => {
+    if (filteredProjects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(filteredProjects[0].id);
+    } else if (filteredProjects.length > 0 && selectedProjectId && !filteredProjects.find(p => p.id === selectedProjectId)) {
+      setSelectedProjectId(filteredProjects[0].id);
+    }
+  }, [filteredProjects, selectedProjectId]);
 
   useEffect(() => {
     const fetchCentersAndPermissions = async () => {
@@ -245,11 +261,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       showSideNotReceivedUnit: true,
       showNotifications: true,
       colorMode: 'default',
-      showStatusField: true
+      showStatusField: true,
+      allowedProjects: []
     });
   };
 
-  const activeProject = projects.find(p => p.id === selectedProjectId);
+  const activeProject = filteredProjects.find(p => p.id === selectedProjectId);
   const selectedElement = activeElements.find(el => el.id === selectedElementId);
 
   const handleElementClick = (id: string) => {
@@ -355,7 +372,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             <div><h1 className="text-2xl font-black text-slate-800">نظام ادارة الوحدات السكنية التفاعلي</h1><p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p></div>
           </div>
           <div className="flex items-center gap-4">
-            {projects.length > 0 && (
+            {filteredProjects.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">
@@ -364,7 +381,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="rounded-xl">
-                  {projects.map(p => (
+                  {filteredProjects.map(p => (
                     <DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">
                       {p.name}
                     </DropdownMenuItem>
@@ -389,7 +406,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>
             ) : (
-              <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">يرجى إنشاء مشروع أولاً</h2></div>
+              <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">لا توجد مشاريع متاحة للعرض</h2></div>
             )}
           </div>
 
