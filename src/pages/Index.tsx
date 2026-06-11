@@ -233,7 +233,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         if (deptPerms) setPermissions(deptPerms);
       }
       
-      showSuccess(`مرحباً بك في مركز ${center.name}`);
+      showSuccess(`مرحباً بك في قسم ${center.name}`);
     } else {
       showError("بيانات الدخول غير صحيحة");
     }
@@ -340,15 +340,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
           <div className="text-center mb-8">
             <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-100 mx-auto mb-6"><Store className="text-white w-10 h-10" /></div>
-            <h1 className="text-2xl font-black text-slate-800">دخول المراكز التسويقية</h1>
-            <p className="text-slate-500 font-medium mt-2">يرجى اختيار المركز وإدخال كلمة المرور</p>
+            <h1 className="text-2xl font-black text-slate-800">دخول الأقسام</h1>
+            <p className="text-slate-500 font-medium mt-2">يرجى اختيار القسم وإدخال كلمة المرور</p>
           </div>
           <div className="space-y-6">
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-600 mr-2">المركز التسويقي</label>
+              <label className="text-sm font-bold text-slate-600 mr-2">القسم</label>
               <div className="relative">
                 <Select onValueChange={(val) => setLoginData({...loginData, centerId: val})}>
-                  <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر المركز التسويقي..." /></SelectTrigger>
+                  <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر القسم..." /></SelectTrigger>
                   <SelectContent className="rounded-xl">{marketingCenters.map(center => (<SelectItem key={center.id} value={center.id} className="text-right font-bold">{center.name}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
