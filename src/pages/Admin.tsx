@@ -346,19 +346,25 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showStatusField: true
     };
     
+    // Fix: Ensure we toggle a boolean value correctly
+    const currentValue = current[permission];
+    const newValue = typeof currentValue === 'boolean' ? !currentValue : true;
+
     const updated = {
       ...deptPermissions,
       [type]: {
         ...current,
-        [permission]: typeof current[permission] === 'boolean' ? !current[permission] : permission
+        [permission]: newValue
       }
     };
 
     try {
-      await supabase.from('settings').upsert({ key: 'dept_permissions', value: updated });
+      const { error } = await supabase.from('settings').upsert({ key: 'dept_permissions', value: updated });
+      if (error) throw error;
       setDeptPermissions(updated);
       showSuccess("تم تحديث الصلاحية");
     } catch (error) {
+      console.error("Error updating permission:", error);
       showError("فشل في تحديث الصلاحية");
     }
   };
