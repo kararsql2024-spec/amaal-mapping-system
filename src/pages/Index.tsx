@@ -68,7 +68,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showNotifications: true,
     colorMode: 'default',
     showStatusField: true,
-    canEditUnitData: false
+    canEditUnitData: false,
+    showOtherDeptsNotes: true,
+    canDeleteNotes: false
   });
 
   // فلترة المشاريع بناءً على إعدادات القسم المباشرة
@@ -264,7 +266,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       showNotifications: true,
       colorMode: 'default',
       showStatusField: true,
-      canEditUnitData: false
+      canEditUnitData: false,
+      showOtherDeptsNotes: true,
+      canDeleteNotes: false
     });
   };
 

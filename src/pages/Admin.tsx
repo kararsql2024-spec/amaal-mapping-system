@@ -345,7 +345,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showNotifications: true,
       colorMode: 'default',
       showStatusField: true,
-      canEditUnitData: false
+      canEditUnitData: false,
+      showOtherDeptsNotes: true,
+      canDeleteNotes: false
     };
     
     const currentValue = current[permission];
@@ -1016,7 +1018,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         showNotifications: true,
                         colorMode: 'default',
                         showStatusField: true,
-                        canEditUnitData: false
+                        canEditUnitData: false,
+                        showOtherDeptsNotes: true,
+                        canDeleteNotes: false
                       };
                       
                       return (
@@ -1034,6 +1038,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><Edit2 size={16} className="text-amber-600" /> صلاحيات التعديل</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <PermissionToggle label="تعديل بيانات الوحدة" checked={perms.canEditUnitData} onChange={() => togglePermission(type, 'canEditUnitData')} />
+                                <PermissionToggle label="إمكانية حذف الملاحظات" checked={perms.canDeleteNotes} onChange={() => togglePermission(type, 'canDeleteNotes')} />
                               </div>
                               <p className="text-[10px] text-slate-400 font-bold">* ملاحظة: حقل الملاحظات متاح للجميع للإضافة دائماً.</p>
                             </div>
@@ -1082,6 +1087,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                 <PermissionToggle label="رقم الطابو" checked={perms.showTaboNum} onChange={() => togglePermission(type, 'showTaboNum')} />
                                 <PermissionToggle label="حالة الطابو" checked={perms.showTaboStatus} onChange={() => togglePermission(type, 'showTaboStatus')} />
                                 <PermissionToggle label="تاريخ الاستلام" checked={perms.showHandoverInfo} onChange={() => togglePermission(type, 'showHandoverInfo')} />
+                                <PermissionToggle label="رؤية ملاحظات الأقسام الأخرى" checked={perms.showOtherDeptsNotes} onChange={() => togglePermission(type, 'showOtherDeptsNotes')} />
                               </div>
                             </div>
 
@@ -1225,69 +1231,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : showSalesUpdate ? (
-              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
-                <div className="flex items-center justify-between border-b pb-4">
-                  <div className="flex items-center gap-3"><div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div><h2 className="text-xl font-black text-slate-800">تحديث بيانات الوحدات عبر الإكسل</h2></div>
-                  <div className="flex gap-2">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild><Button variant="outline" className="rounded-xl gap-2 border-rose-200 text-rose-500 hover:bg-rose-50"><RefreshCcw size={18} /> تصفير كافة البيانات</Button></AlertDialogTrigger>
-                      <AlertDialogContent dir="rtl">
-                        <AlertDialogHeader><AlertDialogTitle className="text-right">هل أنت متأكد تماماً؟</AlertDialogTitle><AlertDialogDescription className="text-right">سيؤدي هذا الإجراء إلى حذف كافة بيانات المبيعات والأسماء والتواريخ من قاعدة البيانات لجميع المشاريع.</AlertDialogDescription></AlertDialogHeader>
-                        <AlertDialogFooter className="flex-row-reverse gap-2"><AlertDialogAction onClick={handleResetAllData} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، قم بالتصفير</AlertDialogAction><AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel></AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                    <Button variant="outline" onClick={handleClearNotifications} className="rounded-xl gap-2 border-amber-200 text-amber-600 hover:bg-amber-50"><Eraser size={18} /> تصفير الإشعارات</Button>
-                    <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2"><Save size={18} /> {isSavingSettings ? "جاري الحفظ..." : "حفظ الإعدادات"}</Button>
-                  </div>
-                </div>
-
-                {lastUpdate && <div className="flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 p-3 rounded-xl border border-indigo-100"><Clock size={16} /> آخر تحديث للبيانات: {new Date(lastUpdate).toLocaleString('ar-EG')}</div>}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600 flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> عمود المدينة (A, B, ...)</label><Input placeholder="A" value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" /></div>
-                  <div className="space-y-2"><label className="text-sm font-bold text-slate-600">عمود رقم الوحدة</label><Input placeholder="I" value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="rounded-xl h-12 border-slate-200" /></div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود الاسم</label><Input placeholder="C" value={excelMapping.nameCol} onChange={(e) => setExcelMapping({...excelMapping, nameCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود الهاتف</label><Input placeholder="D" value={excelMapping.phoneCol} onChange={(e) => setExcelMapping({...excelMapping, phoneCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود التاريخ</label><Input placeholder="E" value={excelMapping.dateCol} onChange={(e) => setExcelMapping({...excelMapping, dateCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود رقم الطابو</label><Input placeholder="J" value={excelMapping.taboNumCol} onChange={(e) => setExcelMapping({...excelMapping, taboNumCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود حالة الطابو</label><Input placeholder="K" value={excelMapping.taboStatusCol} onChange={(e) => setExcelMapping({...excelMapping, taboStatusCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
-                  <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عمود تاريخ الاستلام</label><Input placeholder="L" value={excelMapping.handoverDateCol} onChange={(e) => setExcelMapping({...excelMapping, handoverDateCol: e.target.value.toUpperCase()})} className="rounded-xl h-10" /></div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
-                  <div className="space-y-2"><label className="text-xs font-bold text-emerald-700 flex items-center gap-2"><Banknote size={14} /> عمود سعر الوحدة</label><Input placeholder="F" value={excelMapping.priceCol} onChange={(e) => setExcelMapping({...excelMapping, priceCol: e.target.value.toUpperCase()})} className="rounded-xl h-10 border-emerald-200" /></div>
-                  <div className="space-y-2"><label className="text-xs font-bold text-emerald-700 flex items-center gap-2"><Coins size={14} /> عمود نوع العملة</label><Input placeholder="G" value={excelMapping.currencyCol} onChange={(e) => setExcelMapping({...excelMapping, currencyCol: e.target.value.toUpperCase()})} className="rounded-xl h-10 border-emerald-200" /></div>
-                </div>
-
-                <div className="bg-slate-50 p-6 rounded-2xl border border-dashed border-slate-300 text-center space-y-4">
-                  <div className="flex justify-center"><Upload className="text-slate-400 w-12 h-12" /></div>
-                  <div><p className="font-bold text-slate-700">اختر ملف الإكسل للمزامنة</p><p className="text-xs text-slate-500 mt-1">سيتم تحديث الحالات والبيانات تلقائياً وتوليد الإشعارات</p></div>
-                  <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="hidden" id="excel-upload" disabled={isProcessing} />
-                  <Button asChild disabled={isProcessing} className="bg-slate-900 hover:bg-slate-800 rounded-xl px-8 h-12 font-bold"><label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-2">{isProcessing ? "جاري المعالجة..." : "رفع الملف وبدء التحديث"}</label></Button>
-                </div>
-
-                <div className="bg-purple-50 p-8 rounded-[2rem] border-2 border-purple-100 space-y-6">
-                  <div className="flex items-center gap-3 border-b border-purple-100 pb-4"><div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center"><Coins className="text-purple-600" /></div><h2 className="text-xl font-black text-slate-800">قائمة الاستثمارات</h2></div>
-                  <div className="flex gap-2"><Input placeholder="أدخل اسم المستثمر..." value={newInvestmentName} onChange={(e) => setNewInvestmentName(e.target.value)} className="rounded-xl h-12 border-purple-200" onKeyPress={(e) => e.key === 'Enter' && handleAddInvestmentName()} /><Button onClick={handleAddInvestmentName} className="bg-purple-600 hover:bg-purple-700 rounded-xl h-12 px-6 font-bold">إضافة وحفظ</Button></div>
-                  <div className="flex flex-wrap gap-2">{investmentNames.map((name, idx) => (<div key={idx} className="bg-white border border-purple-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm"><span className="font-bold text-slate-700">{name}</span><button onClick={() => handleDeleteInvestmentName(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={14} /></button></div>))}</div>
-                </div>
-
-                {processLogs.length > 0 && (
-                  <div className="space-y-2 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex items-center gap-2 text-slate-800 font-black"><Terminal size={18} /> سجل العمليات</div>
-                    <div className="bg-slate-900 rounded-2xl p-4 font-mono text-xs text-emerald-400 border border-slate-800 shadow-inner">
-                      <ScrollArea className="h-48 w-full"><div className="space-y-1">{processLogs.map((log, i) => (<div key={i} className={cn(log.includes('خطأ') ? 'text-rose-400' : log.includes('تنبيه') ? 'text-amber-400' : '')}>{log}</div>))}</div></ScrollArea>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <>

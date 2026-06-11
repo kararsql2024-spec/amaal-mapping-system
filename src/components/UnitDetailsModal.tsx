@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -108,6 +108,14 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   };
 
+  const handleDeleteNote = (idx: number) => {
+    const updatedNotes = formData.notes.filter((_, i) => i !== idx);
+    setFormData({ ...formData, notes: updatedNotes });
+    if (unitId) {
+      onSave(unitId, { ...formData, notes: updatedNotes });
+    }
+  };
+
   const handleSave = () => {
     if (unitId) {
       onSave(unitId, formData);
@@ -116,6 +124,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   };
 
   const canEdit = permissions.canEditUnitData;
+  const currentDeptName = localStorage.getItem('marketing_center_name') || '';
+  
+  // فلترة الملاحظات بناءً على الصلاحية
+  const visibleNotes = permissions.showOtherDeptsNotes 
+    ? formData.notes 
+    : formData.notes.filter(n => n.author === currentDeptName);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -285,13 +299,22 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
             <ScrollArea className="h-[200px] w-full rounded-xl border border-slate-100 bg-slate-50/50 p-4">
               <div className="space-y-4">
-                {formData.notes.length > 0 ? formData.notes.map((note, idx) => (
-                  <div key={idx} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm space-y-1">
+                {visibleNotes.length > 0 ? visibleNotes.map((note, idx) => (
+                  <div key={idx} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm space-y-1 relative group">
                     <div className="flex items-center justify-between text-[10px] font-black text-slate-400">
                       <span className="flex items-center gap-1 text-blue-600"><Store size={10} /> {note.author}</span>
                       <span className="flex items-center gap-1"><Clock size={10} /> {new Date(note.date).toLocaleString('ar-EG')}</span>
                     </div>
                     <p className="text-sm font-bold text-slate-700 leading-relaxed">{note.text}</p>
+                    
+                    {permissions.canDeleteNotes && (
+                      <button 
+                        onClick={() => handleDeleteNote(idx)}
+                        className="absolute left-2 top-2 text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 )) : (
                   <div className="text-center py-10 text-slate-400 font-bold">لا توجد ملاحظات مسجلة</div>
