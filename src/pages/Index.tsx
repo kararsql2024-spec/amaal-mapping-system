@@ -68,16 +68,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showNotifications: true,
     colorMode: 'default',
     showStatusField: true,
-    allowedProjects: []
+    canEditUnitData: false
   });
 
-  // فلترة المشاريع بناءً على الصلاحيات
+  // فلترة المشاريع بناءً على إعدادات القسم المباشرة
   const filteredProjects = React.useMemo(() => {
-    if (!permissions.allowedProjects || permissions.allowedProjects.length === 0) return projects;
-    return projects.filter(p => permissions.allowedProjects.includes(p.id));
-  }, [projects, permissions.allowedProjects]);
+    if (!currentCenter || !currentCenter.allowed_projects || currentCenter.allowed_projects.length === 0) return projects;
+    return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
+  }, [projects, currentCenter]);
 
-  // تعيين المشروع الأول المتاح عند تغيير القائمة المفلترة
   useEffect(() => {
     if (filteredProjects.length > 0 && !selectedProjectId) {
       setSelectedProjectId(filteredProjects[0].id);
@@ -97,6 +96,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         if (center) {
           setCurrentCenter(center);
           setIsLoggedIn(true);
+          localStorage.setItem('marketing_center_name', center.name);
           
           const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
           if (settings && settings.value && center.type) {
@@ -225,6 +225,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       setIsLoggedIn(true);
       setCurrentCenter(center);
       localStorage.setItem('marketing_center_session', center.id);
+      localStorage.setItem('marketing_center_name', center.name);
       
       const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
       if (settings && settings.value && center.type) {
@@ -242,6 +243,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     setIsLoggedIn(false);
     setCurrentCenter(null);
     localStorage.removeItem('marketing_center_session');
+    localStorage.removeItem('marketing_center_name');
     setPermissions({
       showPrice: true,
       showCustomerName: true,
@@ -262,7 +264,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       showNotifications: true,
       colorMode: 'default',
       showStatusField: true,
-      allowedProjects: []
+      canEditUnitData: false
     });
   };
 

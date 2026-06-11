@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette
+  Palette, MessageSquare
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -61,7 +61,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isSavingMap, setIsSavingMap] = useState(false);
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
-  const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '' });
+  const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '', allowed_projects: [] as string[] });
   const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
   const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
   const [newDeptType, setNewDeptType] = useState('');
@@ -228,7 +228,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const payload = {
         name: newCenter.name,
         password: newCenter.password,
-        type: newCenter.type
+        type: newCenter.type,
+        allowed_projects: newCenter.allowed_projects
       };
 
       if (editingCenterId) {
@@ -256,7 +257,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           showSuccess("تم إضافة القسم بنجاح");
         }
       }
-      setNewCenter({ name: '', password: '', type: '' });
+      setNewCenter({ name: '', password: '', type: '', allowed_projects: [] });
     } catch (error) {
       console.error("Error in handleAddCenter:", error);
       showError(editingCenterId ? "فشل في تحديث القسم" : "فشل في إضافة القسم");
@@ -343,7 +344,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showSideNotReceivedUnit: true,
       showNotifications: true,
       colorMode: 'default',
-      showStatusField: true
+      showStatusField: true,
+      canEditUnitData: false
     };
     
     const currentValue = current[permission];
@@ -368,30 +370,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  const toggleProjectVisibility = async (type: string, projectId: string) => {
-    const current = deptPermissions[type] || {};
-    const allowedProjects = current.allowedProjects || [];
-    
-    const newAllowed = allowedProjects.includes(projectId)
-      ? allowedProjects.filter((id: string) => id !== projectId)
-      : [...allowedProjects, projectId];
-
-    const updated = {
-      ...deptPermissions,
-      [type]: {
-        ...current,
-        allowedProjects: newAllowed
-      }
-    };
-
-    try {
-      const { error } = await supabase.from('settings').upsert({ key: 'dept_permissions', value: updated });
-      if (error) throw error;
-      setDeptPermissions(updated);
-      showSuccess("تم تحديث صلاحية الوصول للمشروع");
-    } catch (error) {
-      showError("فشل في التحديث");
-    }
+  const toggleProjectVisibilityForCenter = (projectId: string) => {
+    const current = newCenter.allowed_projects || [];
+    const newAllowed = current.includes(projectId)
+      ? current.filter(id => id !== projectId)
+      : [...current, projectId];
+    setNewCenter({ ...newCenter, allowed_projects: newAllowed });
   };
 
   const setColorMode = async (type: string, mode: string) => {
@@ -840,7 +824,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       // Schema
       sql += `-- 1. Table: projects\nCREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, description TEXT, elements JSONB, map_width INTEGER, map_height INTEGER, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
       sql += `-- 2. Table: houses_data\nCREATE TABLE IF NOT EXISTS houses_data (unit_key TEXT PRIMARY KEY, project_id TEXT, data JSONB, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
-      sql += `-- 3. Table: marketing_centers\nCREATE TABLE IF NOT EXISTS marketing_centers (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT, password TEXT, type TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
+      sql += `-- 3. Table: marketing_centers\nCREATE TABLE IF NOT EXISTS marketing_centers (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT, password TEXT, type TEXT, allowed_projects JSONB, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
       sql += `-- 4. Table: settings\nCREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB);\n\n`;
       sql += `-- 5. Table: notifications\nCREATE TABLE IF NOT EXISTS notifications (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), project_id TEXT, message TEXT, created_at TIMESTAMPTZ DEFAULT NOW());\n\n`;
 
@@ -870,7 +854,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (centersData) {
         sql += `-- Data for marketing_centers\n`;
         centersData.forEach(c => {
-          sql += `INSERT INTO marketing_centers (id, name, password, type, created_at) VALUES (${escape(c.id)}, ${escape(c.name)}, ${escape(c.password)}, ${escape(c.type)}, ${escape(c.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
+          sql += `INSERT INTO marketing_centers (id, name, password, type, allowed_projects, created_at) VALUES (${escape(c.id)}, ${escape(c.name)}, ${escape(c.password)}, ${escape(c.type)}, ${escape(c.allowed_projects)}, ${escape(c.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
         });
         sql += `\n`;
       }
@@ -1032,7 +1016,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         showNotifications: true,
                         colorMode: 'default',
                         showStatusField: true,
-                        allowedProjects: []
+                        canEditUnitData: false
                       };
                       
                       return (
@@ -1047,18 +1031,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           
                           <div className="space-y-6">
                             <div className="space-y-3">
-                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><MapIcon size={16} className="text-blue-600" /> المشاريع المسموح برؤيتها</h4>
+                              <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><Edit2 size={16} className="text-amber-600" /> صلاحيات التعديل</h4>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {projects.map(p => (
-                                  <PermissionToggle 
-                                    key={p.id} 
-                                    label={p.name} 
-                                    checked={!perms.allowedProjects || perms.allowedProjects.length === 0 || perms.allowedProjects.includes(p.id)} 
-                                    onChange={() => toggleProjectVisibility(type, p.id)} 
-                                  />
-                                ))}
+                                <PermissionToggle label="تعديل بيانات الوحدة" checked={perms.canEditUnitData} onChange={() => togglePermission(type, 'canEditUnitData')} />
                               </div>
-                              <p className="text-[10px] text-slate-400 font-bold">* إذا لم يتم تحديد أي مشروع، سيتمكن القسم من رؤية كافة المشاريع.</p>
+                              <p className="text-[10px] text-slate-400 font-bold">* ملاحظة: حقل الملاحظات متاح للجميع للإضافة دائماً.</p>
                             </div>
 
                             <div className="space-y-3">
@@ -1167,7 +1144,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   {editingCenterId && (
                     <div className="md:col-span-3 flex items-center justify-between bg-indigo-50 p-2 rounded-lg border border-indigo-100 mb-2">
                       <span className="text-xs font-bold text-indigo-600 flex items-center gap-2"><Edit2 size={14} /> أنت الآن في وضع تعديل بيانات القسم</span>
-                      <Button variant="ghost" size="sm" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '' }); }} className="h-7 text-xs text-rose-500 hover:bg-rose-50"><X size={14} /> إلغاء التعديل</Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '', allowed_projects: [] }); }} className="h-7 text-xs text-rose-500 hover:bg-rose-50"><X size={14} /> إلغاء التعديل</Button>
                     </div>
                   )}
                   <div className="space-y-2"><label className="text-sm font-bold text-slate-600">اسم القسم</label><Input placeholder="اسم القسم..." value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12" /></div>
@@ -1185,6 +1162,28 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     </Select>
                   </div>
                   <div className="space-y-2"><label className="text-sm font-bold text-slate-600">كلمة المرور</label><Input type="password" placeholder="كلمة مرور القسم..." value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12" /></div>
+                  
+                  <div className="md:col-span-3 space-y-3 bg-white p-4 rounded-xl border border-slate-200">
+                    <h4 className="font-black text-slate-700 text-sm flex items-center gap-2"><MapIcon size={16} className="text-blue-600" /> المشاريع المسموح لهذا القسم برؤيتها</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {projects.map(p => (
+                        <div key={p.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => toggleProjectVisibilityForCenter(p.id)}>
+                          <span className="text-[10px] font-black text-slate-600">{p.name}</span>
+                          <div className={cn(
+                            "w-8 h-4 rounded-full relative transition-colors",
+                            newCenter.allowed_projects?.includes(p.id) ? "bg-indigo-600" : "bg-slate-300"
+                          )}>
+                            <div className={cn(
+                              "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+                              newCenter.allowed_projects?.includes(p.id) ? "right-4.5" : "right-0.5"
+                            )} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold">* إذا لم يتم تحديد أي مشروع، سيتمكن القسم من رؤية كافة المشاريع.</p>
+                  </div>
+
                   <Button onClick={handleAddCenter} className={cn("md:col-span-3 rounded-xl h-12 font-bold gap-2", editingCenterId ? "bg-blue-600 hover:bg-blue-700" : "bg-indigo-600 hover:bg-indigo-700")}>
                     {editingCenterId ? <Save size={18} /> : <Plus size={18} />}
                     {editingCenterId ? "تحديث بيانات القسم" : "إضافة قسم جديد"}
@@ -1203,12 +1202,22 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-black border border-indigo-100">{center.type || 'غير محدد'}</span>
                           </div>
                           <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={10} /> {center.password}</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {center.allowed_projects && center.allowed_projects.length > 0 ? (
+                              center.allowed_projects.map((pId: string) => {
+                                const p = projects.find(proj => proj.id === pId);
+                                return p ? <span key={pId} className="text-[8px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-md border border-blue-100">{p.name}</span> : null;
+                              })
+                            ) : (
+                              <span className="text-[8px] bg-slate-50 text-slate-400 px-1.5 py-0.5 rounded-md border border-slate-100">كافة المشاريع</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => {
                           setEditingCenterId(center.id);
-                          setNewCenter({ name: center.name, password: center.password, type: center.type });
+                          setNewCenter({ name: center.name, password: center.password, type: center.type, allowed_projects: center.allowed_projects || [] });
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }} className="text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={18} /></Button>
                         <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={18} /></Button>
