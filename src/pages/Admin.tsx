@@ -914,7 +914,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   if (editingMapProject) {
     return (
       <MapEditor 
-        project={editingMapProject} 
+        initialElements={editingMapProject.elements || []} 
+        mapWidth={editingMapProject.mapWidth || 1000}
+        mapHeight={editingMapProject.mapHeight || 800}
         onSave={handleSaveMap} 
         onCancel={() => setEditingMapProject(null)} 
       />
