@@ -1232,6 +1232,78 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   ))}
                 </div>
               </div>
+            ) : showSalesUpdate ? (
+              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-100 shadow-xl animate-in fade-in slide-in-from-top-4 space-y-8">
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div className="flex items-center gap-3"><div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center"><FileSpreadsheet className="text-emerald-600" /></div><h2 className="text-xl font-black text-slate-800">تحديث المبيعات عبر الإكسل</h2></div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handleSaveSettings} disabled={isSavingSettings} className="rounded-xl gap-2">{isSavingSettings ? <RefreshCcw className="animate-spin" size={16} /> : <Save size={16} />} حفظ الإعدادات</Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild><Button variant="ghost" className="text-rose-500 hover:bg-rose-50 rounded-xl gap-2"><Eraser size={16} /> تصفير كافة البيانات</Button></AlertDialogTrigger>
+                      <AlertDialogContent dir="rtl">
+                        <AlertDialogHeader><AlertDialogTitle className="text-right">تنبيه خطير جداً!</AlertDialogTitle><AlertDialogDescription className="text-right">سيتم حذف كافة بيانات الوحدات (الأسماء، الهواتف، حالات البيع) لجميع المشاريع. لا يمكن التراجع عن هذه الخطوة.</AlertDialogDescription></AlertDialogHeader>
+                        <AlertDialogFooter className="flex-row-reverse gap-2"><AlertDialogAction onClick={handleResetAllData} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، صفر البيانات</AlertDialogAction><AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel></AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-6">
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2"><Settings2 size={18} /> إعدادات مطابقة الأعمدة</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود المشروع</Label><Input value={excelMapping.cityCol} onChange={(e) => setExcelMapping({...excelMapping, cityCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود رقم الوحدة</Label><Input value={excelMapping.unitCol} onChange={(e) => setExcelMapping({...excelMapping, unitCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود الاسم</Label><Input value={excelMapping.nameCol} onChange={(e) => setExcelMapping({...excelMapping, nameCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود الهاتف</Label><Input value={excelMapping.phoneCol} onChange={(e) => setExcelMapping({...excelMapping, phoneCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود التاريخ</Label><Input value={excelMapping.dateCol} onChange={(e) => setExcelMapping({...excelMapping, dateCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود السعر</Label><Input value={excelMapping.priceCol} onChange={(e) => setExcelMapping({...excelMapping, priceCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود العملة</Label><Input value={excelMapping.currencyCol} onChange={(e) => setExcelMapping({...excelMapping, currencyCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود رقم الطابو</Label><Input value={excelMapping.taboNumCol} onChange={(e) => setExcelMapping({...excelMapping, taboNumCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود حالة الطابو</Label><Input value={excelMapping.taboStatusCol} onChange={(e) => setExcelMapping({...excelMapping, taboStatusCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                        <div className="space-y-1"><Label className="text-[10px] font-bold">عمود الاستلام</Label><Input value={excelMapping.handoverDateCol} onChange={(e) => setExcelMapping({...excelMapping, handoverDateCol: e.target.value.toUpperCase()})} className="h-10 rounded-lg text-center font-bold" /></div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2"><Coins size={18} /> إدارة أسماء المستثمرين</h3>
+                      <div className="flex gap-2">
+                        <Input placeholder="أدخل اسم المستثمر..." value={newInvestmentName} onChange={(e) => setNewInvestmentName(e.target.value)} className="rounded-xl h-12" />
+                        <Button onClick={handleAddInvestmentName} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 px-6 font-bold">إضافة</Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {investmentNames.map((name, idx) => (
+                          <div key={idx} className="bg-white border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs font-bold shadow-sm">
+                            {name}
+                            <button onClick={() => handleDeleteInvestmentName(idx)} className="text-rose-500 hover:text-rose-700"><X size={14} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="bg-emerald-50 p-8 rounded-[2rem] border-2 border-dashed border-emerald-200 flex flex-col items-center justify-center text-center space-y-4 relative overflow-hidden">
+                      <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm"><Upload className="text-emerald-600" size={32} /></div>
+                      <div><h3 className="font-black text-emerald-900 text-lg">رفع ملف المبيعات</h3><p className="text-emerald-700 text-sm font-medium">اختر ملف Excel (.xlsx) لتحديث البيانات</p></div>
+                      <Input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} disabled={isProcessing} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      {isProcessing && <div className="absolute inset-0 bg-emerald-600/90 flex flex-col items-center justify-center text-white gap-3"><RefreshCcw className="animate-spin" size={40} /><p className="font-black text-lg">جاري المعالجة...</p></div>}
+                    </div>
+
+                    <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3"><h3 className="text-white font-bold flex items-center gap-2"><Terminal size={18} className="text-emerald-500" /> سجل العمليات</h3><Button variant="ghost" size="sm" onClick={() => setProcessLogs([])} className="text-slate-400 hover:text-white h-7 text-[10px]">مسح السجل</Button></div>
+                      <ScrollArea className="h-[250px] w-full">
+                        <div className="space-y-2 pr-4">
+                          {processLogs.length > 0 ? processLogs.map((log, i) => (
+                            <div key={i} className="text-[10px] font-mono text-slate-300 leading-relaxed border-r-2 border-emerald-500/30 pr-3 py-1">{log}</div>
+                          )) : <div className="text-slate-500 text-center py-10 text-xs italic">بانتظار بدء العملية...</div>}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               <>
                 <div className="flex items-center justify-between"><h2 className="text-xl font-bold">المشاريع الحالية</h2><Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800 }); }} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button></div>
