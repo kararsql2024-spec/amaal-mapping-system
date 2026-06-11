@@ -20,7 +20,42 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface Note {
+  text: string;
+  author: string;
+  date: string;
+}
+
+interface UnitDetailsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (key: string, data<dyad-write path="src/components/UnitDetailsModal.tsx" description="جعل حقول السعر والعملة غير قابلة للتعديل وإضافة تنسيق الفواصل للسعر.">
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -84,6 +119,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   }, [initialData, isOpen]);
 
+  const formatPrice = (val: string) => {
+    if (!val) return "";
+    const num = parseFloat(val.replace(/,/g, ''));
+    if (isNaN(num)) return val;
+    return num.toLocaleString('en-US');
+  };
+
   const handleAddNote = () => {
     if (!newNote.trim()) return;
     const centerName = localStorage.getItem('marketing_center_name') || 'قسم غير معروف';
@@ -96,7 +138,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     setFormData({ ...formData, notes: updatedNotes });
     setNewNote('');
     
-    // حفظ الملاحظة فوراً عند الإضافة
     if (unitId) {
       onSave(unitId, { ...formData, notes: updatedNotes });
     }
@@ -189,22 +230,20 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <div className="space-y-2">
                   <Label className="font-bold text-slate-600 flex items-center gap-2"><Banknote size={16} /> السعر</Label>
                   <Input 
-                    disabled={!canEdit}
-                    value={formData.price} 
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    className="rounded-xl h-12 border-slate-200 font-bold"
+                    disabled={true}
+                    value={formatPrice(formData.price)} 
+                    className="rounded-xl h-12 border-slate-200 font-bold bg-slate-50"
                     placeholder="0.00"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label className="font-bold text-slate-600 flex items-center gap-2"><Coins size={16} /> العملة</Label>
                   <Select 
-                    disabled={!canEdit}
+                    disabled={true}
                     value={formData.currency} 
-                    onValueChange={(val) => setFormData({...formData, currency: val})}
                   >
-                    <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold">
-                      <SelectValue />
+                    <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold bg-slate-50">
+                      <SelectValue placeholder={formData.currency === 'USD' ? 'دولار أمريكي' : 'دينار عراقي'} />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="IQD" className="font-bold">دينار عراقي</SelectItem>
