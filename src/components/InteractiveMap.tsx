@@ -3,7 +3,6 @@
 import React from 'react';
 import { MapElement, Point } from '@/types/project';
 import { cn } from '@/lib/utils';
-import { Building2, Home } from 'lucide-react';
 
 interface InteractiveMapProps {
   elements: MapElement[];
@@ -67,7 +66,6 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     return 'fill-slate-100 stroke-slate-200';
   };
 
-  // ترتيب العناصر بحيث تظهر الصور المرجعية والمساحات الخضراء في الخلف
   const layerOrder: Record<string, number> = { 
     'reference_image': -2, 
     'green': -1, 
