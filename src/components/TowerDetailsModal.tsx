@@ -7,9 +7,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Building2, LayoutGrid, Snowflake } from "lucide-react";
+import { Building2, LayoutGrid, Snowflake, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import UnitDetailsModal from './UnitDetailsModal';
+import { supabase } from "@/integrations/supabase/client";
+import { showError } from '@/utils/toast';
 
 interface TowerDetailsModalProps {
   isOpen: boolean;
@@ -23,6 +25,8 @@ interface TowerDetailsModalProps {
 const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment, permissions }: TowerDetailsModalProps) => {
   const [selectedFloor, setSelectedFloor] = useState(1);
   const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
+  const [detailedAptData, setDetailedAptData] = useState<any>(null);
+  const [isFetching, setIsFetching] = useState(false);
 
   if (!tower) return null;
 
@@ -32,14 +36,11 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
   const reorderedApts = [];
   for (let i = 0; i < apts.length; i += 2) {
-    if (i + 1 < apts.length) {
-      reorderedApts.push(apts[i + 1]);
-    }
+    if (i + 1 < apts.length) reorderedApts.push(apts[i + 1]);
     reorderedApts.push(apts[i]);
   }
 
   const getAptKey = (floor: number, aptNum: number) => `${tower.id}_F${floor}_A${aptNum}`;
-  
   const getFloorCode = (floor: number) => floor === 1 ? "FG" : `F${floor - 1}`;
 
   const getAptFullLabel = (floor: number, aptNum: number) => {
@@ -49,11 +50,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
         const key = getAptKey(f, a);
         const data = housesData[key];
         const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
-        
-        if (!isFrozenSequence) {
-          pCounter++;
-        }
-
+        if (!isFrozenSequence) pCounter++;
         if (f === floor && a === aptNum) {
           const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
           return `${tower.label}-${getFloorCode(f)}-${aptCode}`;
@@ -69,8 +66,27 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     return parts[parts.length - 1];
   };
 
-  const getStatusColor = (status: string) => {
+  // دالة التلوين الموحدة التي تدعم كافة الأنماط للشقق بناءً على صلاحيات القسم
+  const getUnitColor = (data: any) => {
+    const status = data?.status || 'available';
     if (status?.startsWith('frozen')) return 'bg-slate-200 text-slate-600 border-slate-300';
+
+    const mode = permissions?.colorMode || 'default';
+
+    // نمط تلوين الطابو
+    if (mode === 'tabo') {
+      const tabo = data?.taboStatus?.trim();
+      if (tabo === 'مستلم') return 'bg-emerald-500 text-white border-emerald-600';
+      if (tabo === 'مروج') return 'bg-indigo-500 text-white border-indigo-600';
+      return 'bg-slate-400 text-white border-slate-500';
+    }
+
+    // نمط تلوين الاستلام
+    if (mode === 'handover') {
+      return data?.handoverDate ? 'bg-sky-500 text-white border-sky-600' : 'bg-rose-400 text-white border-rose-500';
+    }
+
+    // النمط الافتراضي (حالة الوحدة)
     switch (status) {
       case 'sold': return 'bg-rose-500 text-white border-rose-600';
       case 'pending': return 'bg-blue-500 text-white border-blue-600';
@@ -80,12 +96,35 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     }
   };
 
+  const handleAptClick = async (key: string) => {
+    setIsFetching(true);
+    try {
+      const { data, error } = await supabase.from('houses_data').select('data').eq('unit_key', key).single();
+      if (error) throw error;
+      setDetailedAptData(data?.data || {});
+      setSelectedAptKey(key);
+    } catch (error) {
+      showError("فشل في جلب تفاصيل الشقة");
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
   const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor - 1}`;
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
+          {isFetching && (
+            <div className="absolute inset-0 z-[60] bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+                <p className="font-black text-slate-800">جاري جلب التفاصيل...</p>
+              </div>
+            </div>
+          )}
+          
           <div className="flex h-[600px]">
             <div className="w-56 bg-slate-50 border-l border-slate-100 p-6 overflow-y-auto">
               <h3 className="font-black text-slate-400 text-xs uppercase mb-4 tracking-wider">قائمة الطوابق</h3>
@@ -127,28 +166,23 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                   const fullLabel = getAptFullLabel(selectedFloor, aptNum);
                   const shortLabel = getAptShortLabel(fullLabel);
                   const data = housesData[key] || { status: 'available' };
-                  const isFrozen = data.status?.startsWith('frozen');
                   
                   return (
                     <div 
                       key={key}
                       className={cn(
                         "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full",
-                        getStatusColor(data.status)
+                        getUnitColor(data)
                       )}
-                      onClick={() => setSelectedAptKey(key)}
+                      onClick={() => handleAptClick(key)}
                     >
                       <div className="relative z-10">
                         <div className="flex justify-between items-start">
                           <p className="text-3xl font-black">{shortLabel}</p>
-                          {isFrozen && <Snowflake size={18} className="opacity-50" />}
+                          {data.status?.startsWith('frozen') && <Snowflake size={18} className="opacity-50" />}
                         </div>
                         <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
-                          {data.status === 'frozen_uncounted' ? 'مجمدة (خارج المجموع)' : 
-                           data.status === 'frozen_counted' ? 'مجمدة (داخل المجموع)' : 
-                           data.status === 'frozen_hidden' ? 'مجمدة (مخفي من العدد)' :
-                           data.status === 'investment' ? 'استثمار' :
-                           data.status}
+                          {data.status === 'frozen_uncounted' ? 'مجمدة' : data.status}
                         </p>
                       </div>
                       <LayoutGrid className="absolute -bottom-4 -right-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
@@ -171,7 +205,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
           }}
           unitId={selectedAptKey}
           unitLabel={getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1]))}
-          initialData={housesData[selectedAptKey]}
+          initialData={detailedAptData}
           isApartment
           permissions={permissions}
         />
