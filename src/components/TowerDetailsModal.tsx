@@ -44,13 +44,10 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
   const getAptFullLabel = (floor: number, aptNum: number) => {
     let pCounter = 0;
-    const floorCode = getFloorCode(floor);
-
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
         const key = getAptKey(f, a);
         const data = housesData[key];
-        // إذا كانت الشقة مجمدة (بأي نوع من أنواع التجميد التي تستبعدها من العد)، لا نزيد العداد
         const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
         
         if (!isFrozenSequence) {
@@ -164,19 +161,21 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
         </DialogContent>
       </Dialog>
 
-      <UnitDetailsModal 
-        isOpen={!!selectedAptKey}
-        onClose={() => setSelectedAptKey(null)}
-        onSave={(data) => {
-          if (selectedAptKey) onSaveApartment(selectedAptKey, data);
-          setSelectedAptKey(null);
-        }}
-        unitId={selectedAptKey}
-        unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
-        initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
-        isApartment
-        permissions={permissions}
-      />
+      {selectedAptKey && (
+        <UnitDetailsModal 
+          isOpen={!!selectedAptKey}
+          onClose={() => setSelectedAptKey(null)}
+          onSave={(id, data) => {
+            onSaveApartment(id, data);
+            setSelectedAptKey(null);
+          }}
+          unitId={selectedAptKey}
+          unitLabel={getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1]))}
+          initialData={housesData[selectedAptKey]}
+          isApartment
+          permissions={permissions}
+        />
+      )}
     </>
   );
 };
