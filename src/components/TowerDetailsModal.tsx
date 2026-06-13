@@ -50,6 +50,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
         const key = getAptKey(f, a);
         const data = housesData[key];
+        // إذا كانت الشقة مجمدة (بأي نوع من أنواع التجميد التي تستبعدها من العد)، لا نزيد العداد
         const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
         
         if (!isFrozenSequence) {
@@ -80,7 +81,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
       case 'investment': return 'bg-purple-400 text-white border-purple-500';
       default: return 'bg-emerald-500 text-white border-emerald-600';
     }
-  }
+  };
 
   const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor - 1}`;
 
@@ -163,21 +164,19 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
         </DialogContent>
       </Dialog>
 
-      {selectedAptKey && (
-        <UnitDetailsModal 
-          isOpen={!!selectedAptKey}
-          onClose={() => setSelectedAptKey(null)}
-          onSave={(data) => {
-            onSaveApartment(selectedAptKey, data);
-            setSelectedAptKey(null);
-          }}
-          unitId={selectedAptKey}
-          unitLabel={getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1]))}
-          initialData={housesData[selectedAptKey]}
-          isApartment
-          permissions={permissions}
-        />
-      )}
+      <UnitDetailsModal 
+        isOpen={!!selectedAptKey}
+        onClose={() => setSelectedAptKey(null)}
+        onSave={(data) => {
+          if (selectedAptKey) onSaveApartment(selectedAptKey, data);
+          setSelectedAptKey(null);
+        }}
+        unitId={selectedAptKey}
+        unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
+        initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
+        isApartment
+        permissions={permissions}
+      />
     </>
   );
 };
