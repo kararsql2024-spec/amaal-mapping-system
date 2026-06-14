@@ -66,7 +66,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     return parts[parts.length - 1];
   };
 
-  // دالة التلوين الموحدة التي تدعم كافة الأنماط للشقق بناءً على صلاحيات القسم
+  // دالة التلوين الموحدة التي تدعم كافة الأنماط للشقق بناءً على طلبك الدقيق
   const getUnitColor = (data: any) => {
     const status = data?.status || 'available';
     if (status?.startsWith('frozen')) return 'bg-slate-200 text-slate-600 border-slate-300';
@@ -76,14 +76,16 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     // نمط تلوين الطابو
     if (mode === 'tabo') {
       const tabo = data?.taboStatus?.trim();
-      if (tabo === 'مستلم') return 'bg-emerald-500 text-white border-emerald-600';
-      if (tabo === 'مروج') return 'bg-indigo-500 text-white border-indigo-600';
-      return 'bg-slate-400 text-white border-slate-500';
+      if (tabo === 'مستلم') return 'bg-emerald-500 text-white border-emerald-600'; // أخضر
+      if (tabo === 'مروج') return 'bg-amber-500 text-white border-amber-600'; // برتقالي
+      return 'bg-rose-500 text-white border-rose-600'; // أحمر (غير مروج)
     }
 
     // نمط تلوين الاستلام
     if (mode === 'handover') {
-      return data?.handoverDate ? 'bg-sky-500 text-white border-sky-600' : 'bg-rose-400 text-white border-rose-500';
+      return data?.handoverDate 
+        ? 'bg-emerald-500 text-white border-emerald-600' // أخضر (مستلم)
+        : 'bg-rose-500 text-white border-rose-600'; // أحمر (غير مستلم)
     }
 
     // النمط الافتراضي (حالة الوحدة)
