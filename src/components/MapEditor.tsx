@@ -143,7 +143,7 @@ const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight
           dx = -step * Math.cos(angleRad);
           dy = -step * Math.sin(angleRad);
         } else if (e.key === 'ArrowRight') {
-          dx = step * Math.sin(angleRad);
+          dx = step * Math.cos(angleRad);
           dy = step * Math.sin(angleRad);
         }
 
