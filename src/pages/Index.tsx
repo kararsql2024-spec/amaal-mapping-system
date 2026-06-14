@@ -43,6 +43,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
@@ -161,6 +162,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             formattedUnits[u.unit_key] = u.data;
           });
           setHousesData(formattedUnits);
+          setLastUpdated(new Date());
           
           checkExpiredBookings(allUnits, selectedProjectId);
           
@@ -210,6 +212,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         expiredUnits.forEach(u => { next[u.unit_key] = u.data; });
         return next;
       });
+      setLastUpdated(new Date());
       
       const { data: newNotifs } = await supabase
         .from('notifications')
@@ -287,6 +290,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     try {
       await supabase.from('houses_data').upsert({ unit_key: key, project_id: selectedProjectId, data: data }, { onConflict: 'unit_key' });
       setHousesData(prev => ({ ...prev, [key]: data }));
+      setLastUpdated(new Date());
       showSuccess(`تم تحديث البيانات بنجاح`);
     } catch (error) { showError("فشل في حفظ البيانات"); }
   };
@@ -375,7 +379,26 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><MapIcon className="text-white w-8 h-8" /></div>
-            <div><h1 className="text-2xl font-black text-slate-800">نظام ادارة الوحدات السكنية التفاعلي</h1><p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p></div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-800">نظام ادارة الوحدات السكنية التفاعلي</h1>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p>
+                <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                <div className="flex items-center gap-1 text-blue-600 font-bold text-xs bg-blue-50 px-2 py-0.5 rounded-full">
+                  <Store size={12} />
+                  {currentCenter?.name}
+                </div>
+                {lastUpdated && (
+                  <>
+                    <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                    <div className="flex items-center gap-1 text-slate-400 font-bold text-xs">
+                      <Clock size={12} />
+                      تحديث: {lastUpdated.toLocaleTimeString('ar-EG')}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             {filteredProjects.length > 0 && (
