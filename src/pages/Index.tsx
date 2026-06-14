@@ -393,7 +393,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                     <span className="w-1 h-1 bg-slate-300 rounded-full" />
                     <div className="flex items-center gap-1 text-slate-400 font-bold text-xs">
                       <Clock size={12} />
-                      تحديث: {lastUpdated.toLocaleTimeString('ar-EG')}
+                      تحديث البيانات: {lastUpdated.toLocaleTimeString('ar-EG')}
                     </div>
                   </>
                 )}
