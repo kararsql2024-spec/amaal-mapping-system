@@ -163,17 +163,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           });
           setHousesData(formattedUnits);
 
-          // جلب تاريخ آخر تحديث فعلي من قاعدة البيانات
-          const { data: lastUpdateData } = await supabase
-            .from('houses_data')
-            .select('updated_at')
-            .eq('project_id', selectedProjectId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
+          // جلب تاريخ آخر تحديث لملف المبيعات من جدول الإعدادات
+          const { data: lastUpdateSetting } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'last_excel_update')
             .single();
 
-          if (lastUpdateData?.updated_at) {
-            setLastUpdated(new Date(lastUpdateData.updated_at));
+          if (lastUpdateSetting?.value) {
+            setLastUpdated(new Date(lastUpdateSetting.value));
           } else {
             setLastUpdated(null);
           }
@@ -303,7 +301,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     try {
       await supabase.from('houses_data').upsert({ unit_key: key, project_id: selectedProjectId, data: data }, { onConflict: 'unit_key' });
       setHousesData(prev => ({ ...prev, [key]: data }));
-      setLastUpdated(new Date());
       showSuccess(`تم تحديث البيانات بنجاح`);
     } catch (error) { showError("فشل في حفظ البيانات"); }
   };
