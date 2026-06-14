@@ -162,7 +162,21 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             formattedUnits[u.unit_key] = u.data;
           });
           setHousesData(formattedUnits);
-          setLastUpdated(new Date());
+
+          // جلب تاريخ آخر تحديث فعلي من قاعدة البيانات
+          const { data: lastUpdateData } = await supabase
+            .from('houses_data')
+            .select('updated_at')
+            .eq('project_id', selectedProjectId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (lastUpdateData?.updated_at) {
+            setLastUpdated(new Date(lastUpdateData.updated_at));
+          } else {
+            setLastUpdated(null);
+          }
           
           checkExpiredBookings(allUnits, selectedProjectId);
           
@@ -212,7 +226,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         expiredUnits.forEach(u => { next[u.unit_key] = u.data; });
         return next;
       });
-      setLastUpdated(new Date());
       
       const { data: newNotifs } = await supabase
         .from('notifications')
@@ -393,7 +406,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                     <span className="w-1 h-1 bg-slate-300 rounded-full" />
                     <div className="flex items-center gap-1 text-slate-400 font-bold text-xs">
                       <Clock size={12} />
-                      تحديث البيانات: {lastUpdated.toLocaleTimeString('ar-EG')}
+                      تحديث البيانات: {lastUpdated.toLocaleString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </>
                 )}
