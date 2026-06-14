@@ -66,33 +66,58 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     return parts[parts.length - 1];
   };
 
-  // دالة التلوين الموحدة التي تدعم كافة الأنماط للشقق بناءً على صلاحيات القسم
+  // دالة التلوين الموحدة مع الألوان المطلوبة
   const getUnitColor = (data: any) => {
     const status = data?.status || 'available';
     if (status?.startsWith('frozen')) return 'bg-slate-200 text-slate-600 border-slate-300';
 
     const mode = permissions?.colorMode || 'default';
 
-    // نمط تلوين الطابو
     if (mode === 'tabo') {
       const tabo = data?.taboStatus?.trim();
       if (tabo === 'مستلم') return 'bg-emerald-500 text-white border-emerald-600';
-      if (tabo === 'مروج') return 'bg-indigo-500 text-white border-indigo-600';
-      return 'bg-slate-400 text-white border-slate-500';
+      if (tabo === 'مروج') return 'bg-amber-500 text-white border-amber-600';
+      return 'bg-rose-500 text-white border-rose-600'; // غير مروج
     }
 
-    // نمط تلوين الاستلام
     if (mode === 'handover') {
-      return data?.handoverDate ? 'bg-sky-500 text-white border-sky-600' : 'bg-rose-400 text-white border-rose-500';
+      return data?.handoverDate ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-rose-500 text-white border-rose-600';
     }
 
-    // النمط الافتراضي (حالة الوحدة)
+    // النمط الافتراضي
     switch (status) {
       case 'sold': return 'bg-rose-500 text-white border-rose-600';
       case 'pending': return 'bg-blue-500 text-white border-blue-600';
       case 'reserved': return 'bg-amber-400 text-white border-amber-500';
       case 'investment': return 'bg-purple-400 text-white border-purple-500';
       default: return 'bg-emerald-500 text-white border-emerald-600';
+    }
+  };
+
+  // دالة جلب المسمى العربي بناءً على النمط
+  const getUnitStatusLabel = (data: any) => {
+    const status = data?.status || 'available';
+    if (status === 'frozen_uncounted' || status === 'frozen_hidden') return 'مجمدة';
+
+    const mode = permissions?.colorMode || 'default';
+
+    if (mode === 'tabo') {
+      const tabo = data?.taboStatus?.trim();
+      if (tabo === 'مستلم') return 'مستلم';
+      if (tabo === 'مروج') return 'مروج';
+      return 'غير مروج';
+    }
+
+    if (mode === 'handover') {
+      return data?.handoverDate ? 'مستلم' : 'غير مستلم';
+    }
+
+    switch (status) {
+      case 'sold': return 'مباع';
+      case 'pending': return 'قيد الانتظار';
+      case 'reserved': return 'محجوز';
+      case 'investment': return 'استثمار';
+      default: return 'متوفر';
     }
   };
 
@@ -182,7 +207,7 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                           {data.status?.startsWith('frozen') && <Snowflake size={18} className="opacity-50" />}
                         </div>
                         <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
-                          {data.status === 'frozen_uncounted' ? 'مجمدة' : data.status}
+                          {getUnitStatusLabel(data)}
                         </p>
                       </div>
                       <LayoutGrid className="absolute -bottom-4 -right-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
