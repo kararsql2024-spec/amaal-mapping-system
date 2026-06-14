@@ -124,12 +124,23 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
   const handleAptClick = async (key: string) => {
     setIsFetching(true);
     try {
-      const { data, error } = await supabase.from('houses_data').select('data').eq('unit_key', key).single();
+      // استخدام maybeSingle بدلاً من single لتجنب الخطأ في حال عدم وجود سجل (الشقق المتوفرة)
+      const { data, error } = await supabase
+        .from('houses_data')
+        .select('data')
+        .eq('unit_key', key)
+        .maybeSingle();
+      
       if (error) throw error;
-      setDetailedAptData(data?.data || {});
+      
+      // إذا لم توجد بيانات في القاعدة، نستخدم البيانات المحلية أو نضع حالة افتراضية
+      setDetailedAptData(data?.data || housesData[key] || { status: 'available' });
       setSelectedAptKey(key);
     } catch (error) {
-      showError("فشل في جلب تفاصيل الشقة");
+      console.error("Error fetching unit details:", error);
+      // في حال حدوث خطأ في الشبكة، نعتمد على البيانات المحلية لضمان استمرارية العمل
+      setDetailedAptData(housesData[key] || { status: 'available' });
+      setSelectedAptKey(key);
     } finally {
       setIsFetching(false);
     }
