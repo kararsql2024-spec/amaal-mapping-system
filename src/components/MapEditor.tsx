@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { MapElement, ElementType, Point } from '@/types/project';
+import { MapElement, ElementType, Point, Project } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, Leaf, 
@@ -28,6 +28,8 @@ interface MapEditorProps {
   mapWidth: number;
   mapHeight: number;
   isSaving?: boolean;
+  isMainMapMode?: boolean;
+  projects?: Project[];
 }
 
 const GRID_SIZE = 10;
@@ -74,7 +76,7 @@ const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; col
   { type: 'map_boundary', label: 'حدود الخريطة', icon: Frame, color: 'bg-orange-600' },
 ];
 
-const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight, isSaving = false }: MapEditorProps) => {
+const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight, isSaving = false, isMainMapMode = false, projects = [] }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements || []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | null>(null);
@@ -494,6 +496,7 @@ const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight
           <Button variant="outline" size="icon" onClick={() => setIsFullScreen(!isFullScreen)} className="rounded-xl">
             {isFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
           </Button>
+          {isMainMapMode && <div className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-xl font-black text-xs border border-blue-100">وضع تعديل المخطط العام</div>}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" onClick={onCancel} className="rounded-xl gap-2 border-slate-200">
@@ -592,7 +595,6 @@ const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight
                     )}
                     {el.type === 'pitch' && renderPitchLines(pts)}
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? '#ffffff' : '#1e293b')} strokeWidth={2.5}/></div></foreignObject>}
-                    {el.type === 'road' && !el.isStroke && (el.orientation === 'vertical' ? <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> : <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />)}
                     {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || '#1e293b'} style={{ fontSize: `${el.fontSize || 10}px`, fontWeight: 'black' }} className="pointer-events-none select-none">{el.label.split('-').pop()}</text>}
                     {isSelectedEl && (
                       <>
@@ -626,6 +628,22 @@ const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
+                  {isMainMapMode && (selectedElement.type === 'house' || selectedElement.type === 'tower' || selectedElement.type === 'amenity') && (
+                    <div className="space-y-2 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                      <Label className="text-xs font-black text-blue-600 uppercase tracking-wider flex items-center gap-2"><MapPin size={14} /> ربط بالمشروع</Label>
+                      <Select value={selectedElement.projectId} onValueChange={(val) => updateSelectedElement({ projectId: val })}>
+                        <SelectTrigger className="rounded-xl h-12 bg-white border-blue-200 font-bold">
+                          <SelectValue placeholder="اختر المشروع..." />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {projects.map(p => (
+                            <SelectItem key={p.id} value={p.id} className="font-bold">{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-blue-400 font-bold mt-1">* عند الضغط على هذا الشكل في الواجهة الرئيسية، سيتم فتح المشروع المختار.</p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.locked ? <Lock size={16} className="text-rose-500" /> : <Unlock size={16} className="text-emerald-500" />}<Label className="font-bold text-sm text-slate-700">قفل العنصر</Label></div><Switch checked={selectedElement.locked} onCheckedChange={(val) => updateSelectedElement({ locked: val })} /></div>
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">زاوية الدوران (درجة)</Label><div className="relative"><RotateCw className="absolute right-3 top-3 w-5 h-5 text-slate-400" /><Input type="number" value={Math.round(selectedElement.rotation || 0)} onChange={(e) => updateSelectedElement({ rotation: parseInt(e.target.value) })} className="pr-10 rounded-xl h-12 border-slate-200 font-bold" /></div></div>
