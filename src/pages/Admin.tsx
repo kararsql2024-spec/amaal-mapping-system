@@ -409,7 +409,95 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // ... (keep existing excel upload logic)
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    setProcessLogs(["بدء معالجة الملف..."]);
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 'A' });
+
+        setProcessLogs(prev => [...prev, `تم قراءة ${data.length} صف من الملف.`]);
+
+        const { data: projectsList } = await supabase.from('projects').select('id, name');
+        const updates: any[] = [];
+        const notifications: any[] = [];
+
+        data.forEach((row: any, index) => {
+          if (index === 0) return; // Skip header
+
+          const cityName = row[excelMapping.cityCol]?.toString().trim();
+          const unitId = row[excelMapping.unitCol]?.toString().trim();
+          const customerName = row[excelMapping.nameCol]?.toString().trim();
+          
+          if (!cityName || !unitId) return;
+
+          const project = projectsList?.find(p => p.name === cityName);
+          if (!project) return;
+
+          const isInvestment = investmentNames.some(name => customerName?.includes(name));
+          const status = isInvestment ? 'investment' : (customerName ? 'sold' : 'available');
+
+          const unitData = {
+            status,
+            name: customerName || '',
+            phone: row[excelMapping.phoneCol]?.toString().trim() || '',
+            saleDate: row[excelMapping.dateCol]?.toString().trim() || '',
+            price: row[excelMapping.priceCol]?.toString().trim() || '',
+            currency: row[excelMapping.currencyCol]?.toString().trim() || 'IQD',
+            taboNum: row[excelMapping.taboNumCol]?.toString().trim() || '',
+            taboStatus: row[excelMapping.taboStatusCol]?.toString().trim() || 'غير مروج',
+            handoverDate: row[excelMapping.handoverDateCol]?.toString().trim() || '',
+            notes: []
+          };
+
+          updates.push({
+            unit_key: unitId,
+            project_id: project.id,
+            data: unitData
+          });
+
+          if (status !== 'available') {
+            notifications.push({
+              project_id: project.id,
+              message: `تم تحديث حالة الوحدة ${unitId} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
+            });
+          }
+        });
+
+        setProcessLogs(prev => [...prev, `جاري تحديث قاعدة البيانات (${updates.length} وحدة)...`]);
+
+        // Batch updates
+        for (let i = 0; i < updates.length; i += 100) {
+          const chunk = updates.slice(i, i + 100);
+          await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
+        }
+
+        if (notifications.length > 0) {
+          await supabase.from('notifications').insert(notifications.slice(0, 100));
+        }
+
+        const now = new Date().toISOString();
+        await supabase.from('settings').upsert({ key: 'last_excel_update', value: now });
+        setLastUpdate(now);
+
+        setProcessLogs(prev => [...prev, "تمت العملية بنجاح!"]);
+        showSuccess("تم تحديث البيانات بنجاح");
+      } catch (error) {
+        console.error(error);
+        showError("حدث خطأ أثناء معالجة الملف");
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handleCreateProject = async () => {
@@ -493,7 +581,33 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleDownloadBackup = async () => {
-    // ... (keep existing backup logic)
+    setIsGeneratingBackup(true);
+    try {
+      const { data: projects } = await supabase.from('projects').select('*');
+      const { data: houses } = await supabase.from('houses_data').select('*');
+      const { data: settings } = await supabase.from('settings').select('*');
+      const { data: centers } = await supabase.from('marketing_centers').select('*');
+
+      const backup = {
+        timestamp: new Date().toISOString(),
+        projects,
+        houses,
+        settings,
+        centers
+      };
+
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      showSuccess("تم إنشاء النسخة الاحتياطية بنجاح");
+    } catch (error) {
+      showError("فشل في إنشاء النسخة الاحتياطية");
+    } finally {
+      setIsGeneratingBackup(false);
+    }
   };
 
   if (editingMapProject || isEditingMainMap) {
@@ -530,7 +644,270 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-3 space-y-6">
-            {/* ... (keep existing conditional sections) */}
+            {showDatabaseInspector && (
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-8 animate-in fade-in slide-in-from-top-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-100"><Database className="text-white" /></div>
+                    <h2 className="text-2xl font-black text-slate-800">النسخ الاحتياطي وإدارة البيانات</h2>
+                  </div>
+                  <Button onClick={handleDownloadBackup} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2 h-12 px-6 font-bold">
+                    {isGeneratingBackup ? <RefreshCcw className="animate-spin" /> : <Download size={18} />}
+                    إنشاء نسخة احتياطية كاملة
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                    <h3 className="font-black text-lg flex items-center gap-2 text-slate-700"><Info size={20} className="text-blue-600" /> معلومات النظام</h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-500">إجمالي المشاريع:</span><span className="text-slate-800">{projects.length}</span></div>
+                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-500">إجمالي الأقسام:</span><span className="text-slate-800">{marketingCenters.length}</span></div>
+                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-500">آخر تحديث مبيعات:</span><span className="text-blue-600">{lastUpdate ? new Date(lastUpdate).toLocaleString('ar-EG') : 'لم يتم التحديث بعد'}</span></div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-rose-50 rounded-3xl border border-rose-100 space-y-4">
+                    <h3 className="font-black text-lg flex items-center gap-2 text-rose-700"><AlertCircle size={20} /> منطقة الخطر</h3>
+                    <p className="text-xs font-bold text-rose-600 leading-relaxed">تحذير: العمليات التالية ستقوم بحذف البيانات بشكل نهائي ولا يمكن التراجع عنها.</p>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="w-full rounded-xl h-12 font-black gap-2"><Eraser size={18} /> مسح كافة بيانات المبيعات</Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent dir="rtl">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-right">هل أنت متأكد تماماً؟</AlertDialogTitle>
+                          <AlertDialogDescription className="text-right">سيتم حذف كافة بيانات المبيعات والزبناء من جميع المشاريع. لن يتم حذف المخططات الهندسية.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="flex-row-reverse gap-2">
+                          <AlertDialogAction onClick={async () => {
+                            const { error } = await supabase.from('houses_data').delete().neq('unit_key', '0');
+                            if (!error) showSuccess("تم مسح البيانات بنجاح");
+                          }} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، امسح البيانات</AlertDialogAction>
+                          <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showMarketingCenters && (
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-8 animate-in fade-in slide-in-from-top-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100"><Store className="text-white" /></div>
+                    <h2 className="text-2xl font-black text-slate-800">إدارة الأقسام والصلاحيات</h2>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-1 space-y-6">
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                      <h3 className="font-black text-lg text-slate-700">{editingCenterId ? 'تعديل قسم' : 'إضافة قسم جديد'}</h3>
+                      <div className="space-y-4">
+                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase">اسم القسم</Label><Input value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12 font-bold" placeholder="مثال: قسم المبيعات" /></div>
+                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase">كلمة المرور</Label><Input type="password" value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12 font-bold" placeholder="****" /></div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400 uppercase">نوع القسم (للصلاحيات)</Label>
+                          <Select value={newCenter.type} onValueChange={(val) => setNewCenter({...newCenter, type: val})}>
+                            <SelectTrigger className="rounded-xl h-12 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              {departmentTypes.map(type => (<SelectItem key={type} value={type} className="font-bold">{type}</SelectItem>))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400 uppercase">المشاريع المسموحة</Label>
+                          <ScrollArea className="h-32 border rounded-xl p-3 bg-white">
+                            <div className="space-y-2">
+                              {projects.map(p => (
+                                <div key={p.id} className="flex items-center gap-2">
+                                  <Checkbox id={`p-${p.id}`} checked={newCenter.allowed_projects?.includes(p.id)} onCheckedChange={() => toggleProjectVisibilityForCenter(p.id)} />
+                                  <label htmlFor={`p-${p.id}`} className="text-sm font-bold cursor-pointer">{p.name}</label>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                        <Button onClick={handleAddCenter} className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 font-black shadow-lg shadow-indigo-100">
+                          {editingCenterId ? 'تحديث القسم' : 'إضافة القسم'}
+                        </Button>
+                        {editingCenterId && <Button variant="ghost" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '', allowed_projects: [] }); }} className="w-full rounded-xl">إلغاء التعديل</Button>}
+                      </div>
+                    </div>
+
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                      <h3 className="font-black text-lg text-slate-700">أنواع الأقسام</h3>
+                      <div className="flex gap-2"><Input value={newDeptType} onChange={(e) => setNewDeptType(e.target.value)} className="rounded-xl h-12 font-bold" placeholder="نوع جديد..." /><Button onClick={handleAddDeptType} className="bg-slate-900 rounded-xl h-12"><Plus size={18} /></Button></div>
+                      <div className="space-y-2">
+                        {departmentTypes.map((type, idx) => (
+                          <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 font-bold text-sm">
+                            <span>{type}</span>
+                            <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={16} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
+                      <div className="p-6 border-b border-slate-200 bg-white"><h3 className="font-black text-lg text-slate-700">الأقسام الحالية</h3></div>
+                      <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {marketingCenters.map(center => (
+                            <div key={center.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3 group">
+                              <div className="flex justify-between items-start">
+                                <div><h4 className="font-black text-slate-800">{center.name}</h4><span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{center.type}</span></div>
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button variant="ghost" size="icon" onClick={() => { setEditingCenterId(center.id); setNewCenter({ name: center.name, password: center.password, type: center.type, allowed_projects: center.allowed_projects || [] }); }} className="text-blue-500 h-8 w-8"><Edit2 size={14} /></Button>
+                                  <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 h-8 w-8"><Trash2 size={14} /></Button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs font-bold text-slate-400"><Lock size={12} /> {center.password}</div>
+                              <div className="flex flex-wrap gap-1">
+                                {center.allowed_projects?.map((pid: string) => (
+                                  <span key={pid} className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-bold">
+                                    {projects.find(p => p.id === pid)?.name || 'مشروع محذوف'}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
+                      <div className="p-6 border-b border-slate-200 bg-white"><h3 className="font-black text-lg text-slate-700">إعدادات الصلاحيات لكل نوع</h3></div>
+                      <div className="p-6 space-y-8">
+                        {departmentTypes.map(type => (
+                          <div key={type} className="bg-white p-6 rounded-2xl border border-slate-100 space-y-6">
+                            <div className="flex items-center justify-between border-b pb-4">
+                              <h4 className="font-black text-indigo-600 text-lg">صلاحيات نوع: {type}</h4>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs font-bold">نمط التلوين:</Label>
+                                <Select value={deptPermissions[type]?.colorMode || 'default'} onValueChange={(val) => setColorMode(type, val)}>
+                                  <SelectTrigger className="w-32 h-8 text-xs font-bold"><SelectValue /></SelectTrigger>
+                                  <SelectContent className="rounded-xl">
+                                    <SelectItem value="default" className="text-xs font-bold">حالة الوحدة</SelectItem>
+                                    <SelectItem value="tabo" className="text-xs font-bold">حالة الطابو</SelectItem>
+                                    <SelectItem value="handover" className="text-xs font-bold">حالة الاستلام</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                              <div className="space-y-3">
+                                <h5 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">عرض الحقول في البطاقة</h5>
+                                <PermissionToggle label="عرض السعر والعملة" checked={deptPermissions[type]?.showPrice} onChange={() => togglePermission(type, 'showPrice')} />
+                                <PermissionToggle label="عرض اسم الزبون" checked={deptPermissions[type]?.showCustomerName} onChange={() => togglePermission(type, 'showCustomerName')} />
+                                <PermissionToggle label="عرض رقم الهاتف" checked={deptPermissions[type]?.showCustomerPhone} onChange={() => togglePermission(type, 'showCustomerPhone')} />
+                                <PermissionToggle label="عرض تاريخ البيع" checked={deptPermissions[type]?.showSaleDate} onChange={() => togglePermission(type, 'showSaleDate')} />
+                                <PermissionToggle label="عرض رقم الطابو" checked={deptPermissions[type]?.showTaboNum} onChange={() => togglePermission(type, 'showTaboNum')} />
+                                <PermissionToggle label="عرض حالة الطابو" checked={deptPermissions[type]?.showTaboStatus} onChange={() => togglePermission(type, 'showTaboStatus')} />
+                                <PermissionToggle label="عرض تاريخ الاستلام" checked={deptPermissions[type]?.showHandoverInfo} onChange={() => togglePermission(type, 'showHandoverInfo')} />
+                                <PermissionToggle label="تعديل بيانات الوحدة" checked={deptPermissions[type]?.canEditUnitData} onChange={() => togglePermission(type, 'canEditUnitData')} />
+                                <PermissionToggle label="عرض ملاحظات الأقسام الأخرى" checked={deptPermissions[type]?.showOtherDeptsNotes} onChange={() => togglePermission(type, 'showOtherDeptsNotes')} />
+                                <PermissionToggle label="حذف الملاحظات" checked={deptPermissions[type]?.canDeleteNotes} onChange={() => togglePermission(type, 'canDeleteNotes')} />
+                              </div>
+                              <div className="space-y-3">
+                                <h5 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">إحصائيات الواجهة والجانبية</h5>
+                                <PermissionToggle label="عرض الإحصائيات العامة" checked={deptPermissions[type]?.showGeneralStats} onChange={() => togglePermission(type, 'showGeneralStats')} />
+                                <PermissionToggle label="عرض جدول الإحصائيات المفصل" checked={deptPermissions[type]?.showStatsTable} onChange={() => togglePermission(type, 'showStatsTable')} />
+                                <PermissionToggle label="عرض الإشعارات" checked={deptPermissions[type]?.showNotifications} onChange={() => togglePermission(type, 'showNotifications')} />
+                                <div className="h-px bg-slate-100 my-2" />
+                                <PermissionToggle label="إحصائية: المجموع الكلي" checked={deptPermissions[type]?.showSideTotal} onChange={() => togglePermission(type, 'showSideTotal')} />
+                                <PermissionToggle label="إحصائية: المباع" checked={deptPermissions[type]?.showSideSold} onChange={() => togglePermission(type, 'showSideSold')} />
+                                <PermissionToggle label="إحصائية: الاستثمار" checked={deptPermissions[type]?.showSideInvestment} onChange={() => togglePermission(type, 'showSideInvestment')} />
+                                <PermissionToggle label="إحصائية: المتاح" checked={deptPermissions[type]?.showSideAvailable} onChange={() => togglePermission(type, 'showSideAvailable')} />
+                                <PermissionToggle label="إحصائية: مروج" checked={deptPermissions[type]?.showSidePromoted} onChange={() => togglePermission(type, 'showSidePromoted')} />
+                                <PermissionToggle label="إحصائية: مستلم الطابو" checked={deptPermissions[type]?.showSideReceivedTabo} onChange={() => togglePermission(type, 'showSideReceivedTabo')} />
+                                <PermissionToggle label="إحصائية: مستلم الوحدة" checked={deptPermissions[type]?.showSideReceivedUnit} onChange={() => togglePermission(type, 'showSideReceivedUnit')} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showSalesUpdate && (
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-8 animate-in fade-in slide-in-from-top-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-100"><FileSpreadsheet className="text-white" /></div>
+                    <h2 className="text-2xl font-black text-slate-800">تحديث المبيعات من ملف Excel</h2>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-slate-400 uppercase">آخر تحديث ناجح</p>
+                    <p className="text-sm font-black text-emerald-600">{lastUpdate ? new Date(lastUpdate).toLocaleString('ar-EG') : 'لا يوجد'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="p-10 border-4 border-dashed border-slate-100 rounded-[2.5rem] bg-slate-50/50 flex flex-col items-center justify-center text-center space-y-4 group hover:border-emerald-200 transition-colors relative overflow-hidden">
+                      {isProcessing && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center flex-col gap-4"><RefreshCcw className="w-12 h-12 text-emerald-600 animate-spin" /><p className="font-black text-emerald-800">جاري معالجة البيانات...</p></div>}
+                      <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform"><Upload className="text-emerald-600 w-10 h-10" /></div>
+                      <div><h3 className="text-xl font-black text-slate-800">اسحب ملف Excel هنا</h3><p className="text-slate-500 font-medium mt-1">أو اضغط لاختيار الملف من جهازك</p></div>
+                      <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="absolute inset-0 opacity-0 cursor-pointer" disabled={isProcessing} />
+                      <div className="flex gap-4 pt-4"><div className="flex items-center gap-2 text-xs font-bold text-slate-400"><CheckCircle2 size={14} className="text-emerald-500" /> دعم ملفات .xlsx</div><div className="flex items-center gap-2 text-xs font-bold text-slate-400"><CheckCircle2 size={14} className="text-emerald-500" /> معالجة تلقائية</div></div>
+                    </div>
+
+                    <div className="bg-slate-900 rounded-3xl p-6 font-mono text-xs text-emerald-400 space-y-2 h-64 overflow-y-auto shadow-2xl border border-slate-800">
+                      <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-4 text-slate-500"><Terminal size={14} /> سجل العمليات</div>
+                      {processLogs.map((log, i) => (<div key={i} className="flex gap-2"><span>[{new Date().toLocaleTimeString()}]</span><span>{log}</span></div>))}
+                      {processLogs.length === 0 && <div className="text-slate-700 italic">بانتظار رفع الملف...</div>}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-6">
+                      <h3 className="font-black text-lg flex items-center gap-2 text-slate-800"><Settings2 size={20} className="text-emerald-600" /> إعدادات المخطط</h3>
+                      <div className="space-y-4">
+                        <MappingInput label="عمود المدينة" value={excelMapping.cityCol} onChange={(v) => setExcelMapping({...excelMapping, cityCol: v})} />
+                        <MappingInput label="عمود رقم الوحدة" value={excelMapping.unitCol} onChange={(v) => setExcelMapping({...excelMapping, unitCol: v})} />
+                        <MappingInput label="عمود اسم الزبون" value={excelMapping.nameCol} onChange={(v) => setExcelMapping({...excelMapping, nameCol: v})} />
+                        <MappingInput label="عمود رقم الهاتف" value={excelMapping.phoneCol} onChange={(v) => setExcelMapping({...excelMapping, phoneCol: v})} />
+                        <MappingInput label="عمود تاريخ البيع" value={excelMapping.dateCol} onChange={(v) => setExcelMapping({...excelMapping, dateCol: v})} />
+                        <MappingInput label="عمود السعر" value={excelMapping.priceCol} onChange={(v) => setExcelMapping({...excelMapping, priceCol: v})} />
+                        <MappingInput label="عمود العملة" value={excelMapping.currencyCol} onChange={(v) => setExcelMapping({...excelMapping, currencyCol: v})} />
+                        <MappingInput label="عمود رقم الطابو" value={excelMapping.taboNumCol} onChange={(v) => setExcelMapping({...excelMapping, taboNumCol: v})} />
+                        <MappingInput label="عمود حالة الطابو" value={excelMapping.taboStatusCol} onChange={(v) => setExcelMapping({...excelMapping, taboStatusCol: v})} />
+                        <MappingInput label="عمود تاريخ الاستلام" value={excelMapping.handoverDateCol} onChange={(v) => setExcelMapping({...excelMapping, handoverDateCol: v})} />
+                      </div>
+                    </div>
+
+                    <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                      <h3 className="font-black text-lg flex items-center gap-2 text-slate-800"><Tags size={20} className="text-purple-600" /> أسماء المستثمرين</h3>
+                      <p className="text-[10px] font-bold text-slate-400">أي اسم يحتوي على هذه الكلمات سيتم تصنيفه كـ "استثمار" تلقائياً.</p>
+                      <div className="flex gap-2"><Input value={newInvestmentName} onChange={(e) => setNewInvestmentName(e.target.value)} className="rounded-xl h-10 font-bold text-sm" placeholder="كلمة دلالية..." /><Button onClick={handleAddInvestmentName} className="bg-purple-600 rounded-xl h-10"><Plus size={16} /></Button></div>
+                      <div className="flex flex-wrap gap-2">
+                        {investmentNames.map((name, idx) => (
+                          <span key={idx} className="bg-purple-50 text-purple-600 px-3 py-1 rounded-full text-xs font-black flex items-center gap-2 border border-purple-100">
+                            {name}
+                            <button onClick={() => handleDeleteInvestmentName(idx)}><X size={12} /></button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="w-full bg-slate-900 hover:bg-black rounded-2xl h-14 font-black gap-2 shadow-xl">
+                      {isSavingSettings ? <RefreshCcw className="animate-spin" /> : <Save size={20} />}
+                      حفظ كافة الإعدادات
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!showDatabaseInspector && !showMarketingCenters && !showSalesUpdate && (
               <>
                 <div className="flex items-center justify-between"><h2 className="text-xl font-bold">المشاريع الحالية</h2><Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800 }); }} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button></div>
@@ -573,5 +950,25 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     </div>
   );
 };
+
+const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
+  <div className="flex items-center justify-between gap-4">
+    <Label className="text-xs font-bold text-slate-600">{label}</Label>
+    <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
+  </div>
+);
+
+const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
+  <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100 hover:bg-white transition-colors">
+    <span className="text-xs font-bold text-slate-700">{label}</span>
+    <Switch checked={checked} onCheckedChange={onChange} />
+  </div>
+);
+
+const Switch = ({ checked, onCheckedChange }: { checked: boolean, onCheckedChange: () => void }) => (
+  <button onClick={onCheckedChange} className={cn("w-10 h-5 rounded-full transition-colors relative", checked ? "bg-indigo-600" : "bg-slate-200")}>
+    <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", checked ? "right-1" : "right-6")} />
+  </button>
+);
 
 export default Admin;
