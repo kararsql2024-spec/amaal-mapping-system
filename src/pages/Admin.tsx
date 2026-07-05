@@ -444,9 +444,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const project = projectsList?.find(p => p.name === cityName);
           if (!project) return;
 
-          // منطق تحديد الحالة بدقة كما في النسخ السابقة
+          // منطق تحديد الحالة بدقة كما في النسخة 244
           let status = 'available';
-          if (customerName) {
+          if (customerName && customerName.length > 1) {
             const isInvestment = investmentNames.some(name => 
               customerName.toLowerCase().includes(name.toLowerCase().trim())
             );
@@ -456,9 +456,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const existingUnit = existingHouses?.find(h => h.unit_key === unitId);
           const existingData = existingUnit?.data || {};
 
+          // تحديث البيانات مع ضمان أولوية الحالة الجديدة من ملف الاكسل
           const unitData = {
-            ...existingData, // الحفاظ على الملاحظات والبيانات الأخرى
-            status,
+            ...existingData, 
+            status: status, // فرض الحالة الجديدة
             name: customerName || '',
             phone: row[excelMapping.phoneCol]?.toString().trim() || '',
             saleDate: row[excelMapping.dateCol]?.toString().trim() || '',
@@ -475,7 +476,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             data: unitData
           });
 
-          // إضافة إشعار في حال تغيرت الحالة
+          // إضافة إشعار في حال تغيرت الحالة من أي حالة سابقة إلى مباع أو استثمار
           if (existingData.status !== status && status !== 'available') {
             notifications.push({
               project_id: project.id,
