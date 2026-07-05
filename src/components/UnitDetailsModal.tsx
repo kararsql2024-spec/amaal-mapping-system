@@ -54,18 +54,44 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   });
   const [newNote, setNewNote] = useState('');
 
+  // دالة لتحويل التاريخ إلى صيغة YYYY-MM-DD المتوافقة مع حقل الإدخال
+  const formatDateForInput = (dateStr: any) => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+      // محاولة معالجة التنسيقات الشائعة مثل DD/MM/YYYY
+      const parts = dateStr.toString().split(/[/.-]/);
+      if (parts.length === 3) {
+        // إذا كان العام في النهاية (مثل 05/07/2026)
+        if (parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        // إذا كان العام في البداية (مثل 2026/07/05)
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+      }
+    } catch (e) {
+      console.error("Error formatting date:", e);
+    }
+    return "";
+  };
+
   useEffect(() => {
     if (initialData) {
       setFormData({
         status: initialData.status || 'available',
         name: initialData.name || '',
         phone: initialData.phone || '',
-        saleDate: initialData.saleDate || '',
+        saleDate: formatDateForInput(initialData.saleDate),
         price: initialData.price || '',
         currency: initialData.currency || 'IQD',
         taboNum: initialData.taboNum || '',
         taboStatus: initialData.taboStatus || 'غير مروج',
-        handoverDate: initialData.handoverDate || '',
+        handoverDate: formatDateForInput(initialData.handoverDate),
         notes: Array.isArray(initialData.notes) ? initialData.notes : (initialData.details ? [{ text: initialData.details, author: 'نظام قديم', date: new Date().toISOString() }] : [])
       });
     } else {
