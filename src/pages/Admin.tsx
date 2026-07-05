@@ -448,14 +448,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           let realUnitKey = null;
           const elements = project.elements || [];
           
-          // تنظيف التسمية للمطابقة
+          // تنظيف التسمية للمطابقة (إزالة المسافات وتحويل للأحرف الكبيرة)
           const cleanExcelLabel = unitLabel.replace(/\s+/g, '').toUpperCase();
 
           // 1. البحث في المنازل
           const house = elements.find(el => {
             if (el.type !== 'house') return false;
             const cleanElLabel = el.label.replace(/\s+/g, '').toUpperCase();
-            return cleanElLabel === cleanExcelLabel || cleanElLabel.endsWith(cleanExcelLabel) || cleanExcelLabel.endsWith(cleanElLabel);
+            return cleanElLabel === cleanExcelLabel;
           });
 
           if (house) {
@@ -476,7 +476,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   const fullLabel = `${tower.label}-${floorCode}-${aptCode}`;
                   const cleanFullLabel = fullLabel.replace(/\s+/g, '').toUpperCase();
                   
-                  if (cleanFullLabel === cleanExcelLabel || cleanFullLabel.endsWith(cleanExcelLabel) || cleanExcelLabel.endsWith(cleanFullLabel)) {
+                  if (cleanFullLabel === cleanExcelLabel) {
                     realUnitKey = key;
                     return;
                   }
@@ -485,7 +485,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             });
           }
 
-          // إذا لم يتم العثور على المعرف، نستخدم التسمية كمعرف احتياطي
+          // إذا لم يتم العثور على المعرف، نستخدم التسمية كمعرف احتياطي (لضمان عدم ضياع البيانات)
           if (!realUnitKey) realUnitKey = unitLabel;
 
           // منطق تحديد الحالة بدقة
@@ -530,9 +530,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         setProcessLogs(prev => [...prev, `جاري تحديث قاعدة البيانات (${updates.length} وحدة)...`]);
 
+        // تنفيذ التحديث في دفعات لضمان الاستقرار
         for (let i = 0; i < updates.length; i += 100) {
           const chunk = updates.slice(i, i + 100);
-          await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
+          const { error: upsertError } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
+          if (upsertError) throw upsertError;
         }
 
         if (notifications.length > 0) {
