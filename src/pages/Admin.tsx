@@ -444,14 +444,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const project = projectsList?.find(p => p.name === cityName);
           if (!project) return;
 
-          // البحث عن المعرف الحقيقي للوحدة (ID) لضمان التحديث الصحيح
           let realUnitKey = null;
           const elements = project.elements || [];
-          
-          // تنظيف التسمية للمطابقة (إزالة المسافات وتحويل للأحرف الكبيرة)
           const cleanExcelLabel = unitLabel.replace(/\s+/g, '').toUpperCase();
 
-          // 1. البحث في المنازل
           const house = elements.find(el => {
             if (el.type !== 'house') return false;
             const cleanElLabel = el.label.replace(/\s+/g, '').toUpperCase();
@@ -461,7 +457,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           if (house) {
             realUnitKey = house.id;
           } else {
-            // 2. البحث في الشقق داخل العمارات
             elements.filter(el => el.type === 'tower').forEach(tower => {
               if (realUnitKey) return;
               let pCounter = 0;
@@ -470,12 +465,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   const key = `${tower.id}_F${f}_A${a}`;
                   const hData = housesData[key];
                   if (hData?.status !== 'frozen_uncounted' && hData?.status !== 'frozen_hidden') pCounter++;
-                  
                   const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                   const aptCode = (hData?.status === 'frozen_uncounted' || hData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
                   const fullLabel = `${tower.label}-${floorCode}-${aptCode}`;
                   const cleanFullLabel = fullLabel.replace(/\s+/g, '').toUpperCase();
-                  
                   if (cleanFullLabel === cleanExcelLabel) {
                     realUnitKey = key;
                     return;
@@ -485,10 +478,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             });
           }
 
-          // إذا لم يتم العثور على المعرف، نستخدم التسمية كمعرف احتياطي (لضمان عدم ضياع البيانات)
           if (!realUnitKey) realUnitKey = unitLabel;
 
-          // منطق تحديد الحالة بدقة
           let status = 'available';
           if (customerName && customerName.length > 1) {
             const isInvestment = investmentNames.some(name => 
@@ -500,7 +491,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const existingUnit = existingHouses?.find(h => h.unit_key === realUnitKey);
           const existingData = existingUnit?.data || {};
 
-          // تحديث البيانات مع فرض الحالة الجديدة وتجاوز الحالات المؤقتة
           const unitData = {
             ...existingData, 
             status: status, 
@@ -514,11 +504,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             handoverDate: row[excelMapping.handoverDateCol]?.toString().trim() || '',
           };
 
-          updates.push({
-            unit_key: realUnitKey,
-            project_id: project.id,
-            data: unitData
-          });
+          updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
 
           if (existingData.status !== status && status !== 'available') {
             notifications.push({
@@ -528,13 +514,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           }
         });
 
-        setProcessLogs(prev => [...prev, `جاري تحديث قاعدة البيانات (${updates.length} وحدة)...`]);
-
-        // تنفيذ التحديث في دفعات لضمان الاستقرار
         for (let i = 0; i < updates.length; i += 100) {
           const chunk = updates.slice(i, i + 100);
-          const { error: upsertError } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
-          if (upsertError) throw upsertError;
+          await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
         }
 
         if (notifications.length > 0) {
@@ -544,7 +526,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const now = new Date().toISOString();
         await supabase.from('settings').upsert({ key: 'last_excel_update', value: now });
         setLastUpdate(now);
-
         setProcessLogs(prev => [...prev, "تمت العملية بنجاح!"]);
         showSuccess("تم تحديث البيانات بنجاح");
       } catch (error) {
@@ -644,15 +625,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const { data: houses } = await supabase.from('houses_data').select('*');
       const { data: settings } = await supabase.from('settings').select('*');
       const { data: centers } = await supabase.from('marketing_centers').select('*');
-
-      const backup = {
-        timestamp: new Date().toISOString(),
-        projects,
-        houses,
-        settings,
-        centers
-      };
-
+      const backup = { timestamp: new Date().toISOString(), projects, houses, settings, centers };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -660,11 +633,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       showSuccess("تم إنشاء النسخة الاحتياطية بنجاح");
-    } catch (error) {
-      showError("فشل في إنشاء النسخة الاحتياطية");
-    } finally {
-      setIsGeneratingBackup(false);
-    }
+    } catch (error) { showError("فشل في إنشاء النسخة الاحتياطية"); } finally { setIsGeneratingBackup(false); }
   };
 
   if (editingMapProject || isEditingMainMap) {
@@ -675,8 +644,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         mapHeight={isEditingMainMap ? (mainMapData?.height || 800) : (editingMapProject?.mapHeight || 800)}
         onSave={handleSaveMap} 
         onCancel={() => { setEditingMapProject(null); setIsEditingMainMap(false); }} 
-        isMainMapMode={isEditingMainMap}
-        projects={projects}
       />
     );
   }
@@ -713,40 +680,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     إنشاء نسخة احتياطية كاملة
                   </Button>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
-                    <h3 className="font-black text-lg flex items-center gap-2 text-slate-700"><Info size={20} className="text-blue-600" /> معلومات النظام</h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-500">إجمالي المشاريع:</span><span className="text-slate-800">{projects.length}</span></div>
-                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-500">إجمالي الأقسام:</span><span className="text-slate-800">{marketingCenters.length}</span></div>
-                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-500">آخر تحديث مبيعات:</span><span className="text-blue-600">{lastUpdate ? new Date(lastUpdate).toLocaleString('ar-EG') : 'لم يتم التحديث بعد'}</span></div>
-                    </div>
-                  </div>
-
-                  <div className="p-6 bg-rose-50 rounded-3xl border border-rose-100 space-y-4">
-                    <h3 className="font-black text-lg flex items-center gap-2 text-rose-700"><AlertCircle size={20} /> منطقة الخطر</h3>
-                    <p className="text-xs font-bold text-rose-600 leading-relaxed">تحذير: العمليات التالية ستقوم بحذف البيانات بشكل نهائي ولا يمكن التراجع عنها.</p>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="destructive" className="w-full rounded-xl h-12 font-black gap-2"><Eraser size={18} /> مسح كافة بيانات المبيعات</Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent dir="rtl">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle className="text-right">هل أنت متأكد تماماً؟</AlertDialogTitle>
-                          <AlertDialogDescription className="text-right">سيتم حذف كافة بيانات المبيعات والزبناء من جميع المشاريع. لن يتم حذف المخططات الهندسية.</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter className="flex-row-reverse gap-2">
-                          <AlertDialogAction onClick={async () => {
-                            const { error } = await supabase.from('houses_data').delete().neq('unit_key', '0');
-                            if (!error) showSuccess("تم مسح البيانات بنجاح");
-                          }} className="bg-rose-600 hover:bg-rose-700 rounded-xl">نعم، امسح البيانات</AlertDialogAction>
-                          <AlertDialogCancel className="rounded-xl">إلغاء</AlertDialogCancel>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -758,7 +691,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <h2 className="text-2xl font-black text-slate-800">إدارة الأقسام والصلاحيات</h2>
                   </div>
                 </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-1 space-y-6">
                     <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
@@ -794,21 +726,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         {editingCenterId && <Button variant="ghost" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '', allowed_projects: [] }); }} className="w-full rounded-xl">إلغاء التعديل</Button>}
                       </div>
                     </div>
-
-                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
-                      <h3 className="font-black text-lg text-slate-700">أنواع الأقسام</h3>
-                      <div className="flex gap-2"><Input value={newDeptType} onChange={(e) => setNewDeptType(e.target.value)} className="rounded-xl h-12 font-bold" placeholder="نوع جديد..." /><Button onClick={handleAddDeptType} className="bg-slate-900 rounded-xl h-12"><Plus size={18} /></Button></div>
-                      <div className="space-y-2">
-                        {departmentTypes.map((type, idx) => (
-                          <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 font-bold text-sm">
-                            <span>{type}</span>
-                            <button onClick={() => handleDeleteDeptType(idx)} className="text-rose-500 hover:text-rose-700"><Trash2 size={16} /></button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   </div>
-
                   <div className="lg:col-span-2 space-y-6">
                     <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
                       <div className="p-6 border-b border-slate-200 bg-white"><h3 className="font-black text-lg text-slate-700">الأقسام الحالية</h3></div>
@@ -823,71 +741,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="text-rose-500 h-8 w-8"><Trash2 size={14} /></Button>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 text-xs font-bold text-slate-400"><Lock size={12} /> {center.password}</div>
-                              <div className="flex flex-wrap gap-1">
-                                {center.allowed_projects?.map((pid: string) => (
-                                  <span key={pid} className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-bold">
-                                    {projects.find(p => p.id === pid)?.name || 'مشروع محذوف'}
-                                  </span>
-                                ))}
-                              </div>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
-                      <div className="p-6 border-b border-slate-200 bg-white"><h3 className="font-black text-lg text-slate-700">إعدادات الصلاحيات لكل نوع</h3></div>
-                      <div className="p-6 space-y-8">
-                        {departmentTypes.map(type => (
-                          <div key={type} className="bg-white p-6 rounded-2xl border border-slate-100 space-y-6">
-                            <div className="flex items-center justify-between border-b pb-4">
-                              <h4 className="font-black text-indigo-600 text-lg">صلاحيات نوع: {type}</h4>
-                              <div className="flex items-center gap-2">
-                                <Label className="text-xs font-bold">نمط التلوين:</Label>
-                                <Select value={deptPermissions[type]?.colorMode || 'default'} onValueChange={(val) => setColorMode(type, val)}>
-                                  <SelectTrigger className="w-32 h-8 text-xs font-bold"><SelectValue /></SelectTrigger>
-                                  <SelectContent className="rounded-xl">
-                                    <SelectItem value="default" className="text-xs font-bold">حالة الوحدة</SelectItem>
-                                    <SelectItem value="tabo" className="text-xs font-bold">حالة الطابو</SelectItem>
-                                    <SelectItem value="handover" className="text-xs font-bold">حالة الاستلام</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
-                              <div className="space-y-3">
-                                <h5 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">عرض الحقول في البطاقة</h5>
-                                <PermissionToggle label="عرض السعر والعملة" checked={deptPermissions[type]?.showPrice} onChange={() => togglePermission(type, 'showPrice')} />
-                                <PermissionToggle label="عرض اسم الزبون" checked={deptPermissions[type]?.showCustomerName} onChange={() => togglePermission(type, 'showCustomerName')} />
-                                <PermissionToggle label="عرض رقم الهاتف" checked={deptPermissions[type]?.showCustomerPhone} onChange={() => togglePermission(type, 'showCustomerPhone')} />
-                                <PermissionToggle label="عرض تاريخ البيع" checked={deptPermissions[type]?.showSaleDate} onChange={() => togglePermission(type, 'showSaleDate')} />
-                                <PermissionToggle label="عرض رقم الطابو" checked={deptPermissions[type]?.showTaboNum} onChange={() => togglePermission(type, 'showTaboNum')} />
-                                <PermissionToggle label="عرض حالة الطابو" checked={deptPermissions[type]?.showTaboStatus} onChange={() => togglePermission(type, 'showTaboStatus')} />
-                                <PermissionToggle label="عرض تاريخ الاستلام" checked={deptPermissions[type]?.showHandoverInfo} onChange={() => togglePermission(type, 'showHandoverInfo')} />
-                                <PermissionToggle label="تعديل بيانات الوحدة" checked={deptPermissions[type]?.canEditUnitData} onChange={() => togglePermission(type, 'canEditUnitData')} />
-                                <PermissionToggle label="عرض ملاحظات الأقسام الأخرى" checked={deptPermissions[type]?.showOtherDeptsNotes} onChange={() => togglePermission(type, 'showOtherDeptsNotes')} />
-                                <PermissionToggle label="حذف الملاحظات" checked={deptPermissions[type]?.canDeleteNotes} onChange={() => togglePermission(type, 'canDeleteNotes')} />
-                              </div>
-                              <div className="space-y-3">
-                                <h5 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">إحصائيات الواجهة والجانبية</h5>
-                                <PermissionToggle label="عرض الإحصائيات العامة" checked={deptPermissions[type]?.showGeneralStats} onChange={() => togglePermission(type, 'showGeneralStats')} />
-                                <PermissionToggle label="عرض جدول الإحصائيات المفصل" checked={deptPermissions[type]?.showStatsTable} onChange={() => togglePermission(type, 'showStatsTable')} />
-                                <PermissionToggle label="عرض الإشعارات" checked={deptPermissions[type]?.showNotifications} onChange={() => togglePermission(type, 'showNotifications')} />
-                                <div className="h-px bg-slate-100 my-2" />
-                                <PermissionToggle label="إحصائية: المجموع الكلي" checked={deptPermissions[type]?.showSideTotal} onChange={() => togglePermission(type, 'showSideTotal')} />
-                                <PermissionToggle label="إحصائية: المباع" checked={deptPermissions[type]?.showSideSold} onChange={() => togglePermission(type, 'showSideSold')} />
-                                <PermissionToggle label="إحصائية: الاستثمار" checked={deptPermissions[type]?.showSideInvestment} onChange={() => togglePermission(type, 'showSideInvestment')} />
-                                <PermissionToggle label="إحصائية: المتاح" checked={deptPermissions[type]?.showSideAvailable} onChange={() => togglePermission(type, 'showSideAvailable')} />
-                                <PermissionToggle label="إحصائية: مروج" checked={deptPermissions[type]?.showSidePromoted} onChange={() => togglePermission(type, 'showSidePromoted')} />
-                                <PermissionToggle label="إحصائية: مستلم الطابو" checked={deptPermissions[type]?.showSideReceivedTabo} onChange={() => togglePermission(type, 'showSideReceivedTabo')} />
-                                <PermissionToggle label="إحصائية: مستلم الوحدة" checked={deptPermissions[type]?.showSideReceivedUnit} onChange={() => togglePermission(type, 'showSideReceivedUnit')} />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </div>
@@ -902,12 +758,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-100"><FileSpreadsheet className="text-white" /></div>
                     <h2 className="text-2xl font-black text-slate-800">تحديث المبيعات من ملف Excel</h2>
                   </div>
-                  <div className="text-left">
-                    <p className="text-xs font-bold text-slate-400 uppercase">آخر تحديث ناجح</p>
-                    <p className="text-sm font-black text-emerald-600">{lastUpdate ? new Date(lastUpdate).toLocaleString('ar-EG') : 'لا يوجد'}</p>
-                  </div>
                 </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-6">
                     <div className="p-10 border-4 border-dashed border-slate-100 rounded-[2.5rem] bg-slate-50/50 flex flex-col items-center justify-center text-center space-y-4 group hover:border-emerald-200 transition-colors relative overflow-hidden">
@@ -915,16 +766,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform"><Upload className="text-emerald-600 w-10 h-10" /></div>
                       <div><h3 className="text-xl font-black text-slate-800">اسحب ملف Excel هنا</h3><p className="text-slate-500 font-medium mt-1">أو اضغط لاختيار الملف من جهازك</p></div>
                       <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="absolute inset-0 opacity-0 cursor-pointer" disabled={isProcessing} />
-                      <div className="flex gap-4 pt-4"><div className="flex items-center gap-2 text-xs font-bold text-slate-400"><CheckCircle2 size={14} className="text-emerald-500" /> دعم ملفات .xlsx</div><div className="flex items-center gap-2 text-xs font-bold text-slate-400"><CheckCircle2 size={14} className="text-emerald-500" /> معالجة تلقائية</div></div>
                     </div>
-
                     <div className="bg-slate-900 rounded-3xl p-6 font-mono text-xs text-emerald-400 space-y-2 h-64 overflow-y-auto shadow-2xl border border-slate-800">
                       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-4 text-slate-500"><Terminal size={14} /> سجل العمليات</div>
                       {processLogs.map((log, i) => (<div key={i} className="flex gap-2"><span>[{new Date().toLocaleTimeString()}]</span><span>{log}</span></div>))}
-                      {processLogs.length === 0 && <div className="text-slate-700 italic">بانتظار رفع الملف...</div>}
                     </div>
                   </div>
-
                   <div className="space-y-6">
                     <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-6">
                       <h3 className="font-black text-lg flex items-center gap-2 text-slate-800"><Settings2 size={20} className="text-emerald-600" /> إعدادات المخطط</h3>
@@ -941,21 +788,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         <MappingInput label="عمود تاريخ الاستلام" value={excelMapping.handoverDateCol} onChange={(v) => setExcelMapping({...excelMapping, handoverDateCol: v})} />
                       </div>
                     </div>
-
-                    <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                      <h3 className="font-black text-lg flex items-center gap-2 text-slate-800"><Tags size={20} className="text-purple-600" /> أسماء المستثمرين</h3>
-                      <p className="text-[10px] font-bold text-slate-400">أي اسم يحتوي على هذه الكلمات سيتم تصنيفه كـ "استثمار" تلقائياً.</p>
-                      <div className="flex gap-2"><Input value={newInvestmentName} onChange={(e) => setNewInvestmentName(e.target.value)} className="rounded-xl h-10 font-bold text-sm" placeholder="كلمة دلالية..." /><Button onClick={handleAddInvestmentName} className="bg-purple-600 rounded-xl h-10"><Plus size={16} /></Button></div>
-                      <div className="flex flex-wrap gap-2">
-                        {investmentNames.map((name, idx) => (
-                          <span key={idx} className="bg-purple-50 text-purple-600 px-3 py-1 rounded-full text-xs font-black flex items-center gap-2 border border-purple-100">
-                            {name}
-                            <button onClick={() => handleDeleteInvestmentName(idx)}><X size={12} /></button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
                     <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="w-full bg-slate-900 hover:bg-black rounded-2xl h-14 font-black gap-2 shadow-xl">
                       {isSavingSettings ? <RefreshCcw className="animate-spin" /> : <Save size={20} />}
                       حفظ كافة الإعدادات
