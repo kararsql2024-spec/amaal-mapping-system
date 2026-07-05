@@ -426,7 +426,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         setProcessLogs(prev => [...prev, `تم قراءة ${data.length} صف من الملف.`]);
 
-        // جلب المشاريع مع عناصرها للقيام بالمطابقة
         const { data: projectsList } = await supabase.from('projects').select('id, name, elements');
         const { data: existingHouses } = await supabase.from('houses_data').select('unit_key, data');
         
@@ -445,28 +444,42 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const project = projectsList?.find(p => p.name === cityName);
           if (!project) return;
 
-          // البحث عن المعرف الحقيقي للوحدة (ID) بناءً على التسمية (Label)
+          // البحث عن المعرف الحقيقي للوحدة (ID) لضمان التحديث الصحيح
           let realUnitKey = null;
           const elements = project.elements || [];
           
-          // البحث في المنازل
+          // 1. البحث في المنازل
           const house = elements.find(el => el.type === 'house' && el.label === unitLabel);
           if (house) {
             realUnitKey = house.id;
           } else {
-            // البحث في الشقق داخل العمارات
-            const tower = elements.find(el => el.type === 'tower');
-            if (tower) {
-              // محاولة مطابقة تسمية الشقة (مثلاً: Tower1-F1-P1)
-              // هذا يتطلب منطقاً مشابهاً لما في TowerDetailsModal لتوليد التسميات
-              // للتبسيط، سنفترض أن unitLabel في الاكسل يطابق unit_key في حال لم يكن منزلاً
-              realUnitKey = unitLabel;
-            } else {
-              realUnitKey = unitLabel;
-            }
+            // 2. البحث في الشقق داخل العمارات
+            elements.filter(el => el.type === 'tower').forEach(tower => {
+              if (realUnitKey) return;
+              let pCounter = 0;
+              for (let f = 1; f <= (tower.floors || 1); f++) {
+                for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
+                  const key = `${tower.id}_F${f}_A${a}`;
+                  const hData = housesData[key];
+                  if (hData?.status !== 'frozen_uncounted' && hData?.status !== 'frozen_hidden') pCounter++;
+                  
+                  const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                  const aptCode = (hData?.status === 'frozen_uncounted' || hData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
+                  const fullLabel = `${tower.label}-${floorCode}-${aptCode}`;
+                  
+                  if (fullLabel === unitLabel) {
+                    realUnitKey = key;
+                    return;
+                  }
+                }
+              }
+            });
           }
 
-          // منطق تحديد الحالة بدقة كما في النسخة 244
+          // إذا لم يتم العثور على المعرف، نستخدم التسمية كمعرف احتياطي
+          if (!realUnitKey) realUnitKey = unitLabel;
+
+          // منطق تحديد الحالة بدقة
           let status = 'available';
           if (customerName && customerName.length > 1) {
             const isInvestment = investmentNames.some(name => 
@@ -478,7 +491,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const existingUnit = existingHouses?.find(h => h.unit_key === realUnitKey);
           const existingData = existingUnit?.data || {};
 
-          // تحديث البيانات مع ضمان فرض الحالة الجديدة وتجاوز الحالات المؤقتة
+          // تحديث البيانات مع فرض الحالة الجديدة وتجاوز الحالات المؤقتة
           const unitData = {
             ...existingData, 
             status: status, 
