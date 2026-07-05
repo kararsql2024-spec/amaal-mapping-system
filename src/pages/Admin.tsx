@@ -432,6 +432,18 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const updates: any[] = [];
         const notifications: any[] = [];
 
+        // دالة لتحويل تاريخ إكسل (الرقم التسلسلي) إلى صيغة نصية مفهومة
+        const parseExcelDate = (val: any) => {
+          if (!val) return '';
+          if (typeof val === 'number') {
+            // تحويل الرقم التسلسلي لإكسل إلى تاريخ JS
+            // إكسل يبدأ من 30 ديسمبر 1899
+            const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+            return date.toISOString().split('T')[0];
+          }
+          return val.toString().trim();
+        };
+
         data.forEach((row: any, index) => {
           if (index === 0) return; // Skip header
 
@@ -496,12 +508,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             status: status, 
             name: customerName || '',
             phone: row[excelMapping.phoneCol]?.toString().trim() || '',
-            saleDate: row[excelMapping.dateCol]?.toString().trim() || '',
+            saleDate: parseExcelDate(row[excelMapping.dateCol]),
             price: row[excelMapping.priceCol]?.toString().trim() || '',
             currency: row[excelMapping.currencyCol]?.toString().trim() || 'IQD',
             taboNum: row[excelMapping.taboNumCol]?.toString().trim() || '',
             taboStatus: row[excelMapping.taboStatusCol]?.toString().trim() || 'غير مروج',
-            handoverDate: row[excelMapping.handoverDateCol]?.toString().trim() || '',
+            handoverDate: parseExcelDate(row[excelMapping.handoverDateCol]),
           };
 
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
@@ -850,14 +862,10 @@ const MappingInput = ({ label, value, onChange }: { label: string, value: string
 const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
   <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100 hover:bg-white transition-colors">
     <span className="text-xs font-bold text-slate-700">{label}</span>
-    <Switch checked={checked} onCheckedChange={onChange} />
+    <span className={cn("w-10 h-5 rounded-full transition-colors relative", checked ? "bg-indigo-600" : "bg-slate-200")}>
+      <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", checked ? "right-1" : "right-6")} />
+    </span>
   </div>
-);
-
-const Switch = ({ checked, onCheckedChange }: { checked: boolean, onCheckedChange: () => void }) => (
-  <button onClick={onCheckedChange} className={cn("w-10 h-5 rounded-full transition-colors relative", checked ? "bg-indigo-600" : "bg-slate-200")}>
-    <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", checked ? "right-1" : "right-6")} />
-  </button>
 );
 
 export default Admin;
