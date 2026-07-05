@@ -76,6 +76,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     canDeleteNotes: false
   });
 
+  // تعريف المشروع النشط بناءً على المعرف المختار
+  const activeProject = projects.find(p => p.id === selectedProjectId);
+
   const filteredProjects = React.useMemo(() => {
     if (!currentCenter || !currentCenter.allowed_projects || currentCenter.allowed_projects.length === 0) return projects;
     return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
