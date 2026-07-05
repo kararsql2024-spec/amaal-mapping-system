@@ -36,6 +36,7 @@ export interface MapElement {
   textureType?: string;
   textureColor?: string;
   textureSize?: number;
+  projectId?: string; // ربط الشكل بمشروع معين في المخطط العام
 }
 
 export interface Project {
