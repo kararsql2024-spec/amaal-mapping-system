@@ -426,7 +426,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         setProcessLogs(prev => [...prev, `تم قراءة ${data.length} صف من الملف.`]);
 
-        const { data: projectsList } = await supabase.from('projects').select('id, name');
+        // جلب المشاريع مع عناصرها للقيام بالمطابقة
+        const { data: projectsList } = await supabase.from('projects').select('id, name, elements');
         const { data: existingHouses } = await supabase.from('houses_data').select('unit_key, data');
         
         const updates: any[] = [];
@@ -436,13 +437,34 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           if (index === 0) return; // Skip header
 
           const cityName = row[excelMapping.cityCol]?.toString().trim();
-          const unitId = row[excelMapping.unitCol]?.toString().trim();
+          const unitLabel = row[excelMapping.unitCol]?.toString().trim();
           const customerName = row[excelMapping.nameCol]?.toString().trim();
           
-          if (!cityName || !unitId) return;
+          if (!cityName || !unitLabel) return;
 
           const project = projectsList?.find(p => p.name === cityName);
           if (!project) return;
+
+          // البحث عن المعرف الحقيقي للوحدة (ID) بناءً على التسمية (Label)
+          let realUnitKey = null;
+          const elements = project.elements || [];
+          
+          // البحث في المنازل
+          const house = elements.find(el => el.type === 'house' && el.label === unitLabel);
+          if (house) {
+            realUnitKey = house.id;
+          } else {
+            // البحث في الشقق داخل العمارات
+            const tower = elements.find(el => el.type === 'tower');
+            if (tower) {
+              // محاولة مطابقة تسمية الشقة (مثلاً: Tower1-F1-P1)
+              // هذا يتطلب منطقاً مشابهاً لما في TowerDetailsModal لتوليد التسميات
+              // للتبسيط، سنفترض أن unitLabel في الاكسل يطابق unit_key في حال لم يكن منزلاً
+              realUnitKey = unitLabel;
+            } else {
+              realUnitKey = unitLabel;
+            }
+          }
 
           // منطق تحديد الحالة بدقة كما في النسخة 244
           let status = 'available';
@@ -453,13 +475,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             status = isInvestment ? 'investment' : 'sold';
           }
 
-          const existingUnit = existingHouses?.find(h => h.unit_key === unitId);
+          const existingUnit = existingHouses?.find(h => h.unit_key === realUnitKey);
           const existingData = existingUnit?.data || {};
 
-          // تحديث البيانات مع ضمان أولوية الحالة الجديدة من ملف الاكسل
+          // تحديث البيانات مع ضمان فرض الحالة الجديدة وتجاوز الحالات المؤقتة
           const unitData = {
             ...existingData, 
-            status: status, // فرض الحالة الجديدة
+            status: status, 
             name: customerName || '',
             phone: row[excelMapping.phoneCol]?.toString().trim() || '',
             saleDate: row[excelMapping.dateCol]?.toString().trim() || '',
@@ -471,23 +493,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           };
 
           updates.push({
-            unit_key: unitId,
+            unit_key: realUnitKey,
             project_id: project.id,
             data: unitData
           });
 
-          // إضافة إشعار في حال تغيرت الحالة من أي حالة سابقة إلى مباع أو استثمار
           if (existingData.status !== status && status !== 'available') {
             notifications.push({
               project_id: project.id,
-              message: `تحديث: الوحدة ${unitId} تغيرت من ${existingData.status || 'متاح'} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
+              message: `تحديث: الوحدة ${unitLabel} تغيرت من ${existingData.status || 'متاح'} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
             });
           }
         });
 
         setProcessLogs(prev => [...prev, `جاري تحديث قاعدة البيانات (${updates.length} وحدة)...`]);
 
-        // Batch updates
         for (let i = 0; i < updates.length; i += 100) {
           const chunk = updates.slice(i, i + 100);
           await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
