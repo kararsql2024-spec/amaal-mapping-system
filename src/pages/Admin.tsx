@@ -448,8 +448,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           let realUnitKey = null;
           const elements = project.elements || [];
           
+          // تنظيف التسمية للمطابقة
+          const cleanExcelLabel = unitLabel.replace(/\s+/g, '').toUpperCase();
+
           // 1. البحث في المنازل
-          const house = elements.find(el => el.type === 'house' && el.label === unitLabel);
+          const house = elements.find(el => {
+            if (el.type !== 'house') return false;
+            const cleanElLabel = el.label.replace(/\s+/g, '').toUpperCase();
+            return cleanElLabel === cleanExcelLabel || cleanElLabel.endsWith(cleanExcelLabel) || cleanExcelLabel.endsWith(cleanElLabel);
+          });
+
           if (house) {
             realUnitKey = house.id;
           } else {
@@ -466,8 +474,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                   const aptCode = (hData?.status === 'frozen_uncounted' || hData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
                   const fullLabel = `${tower.label}-${floorCode}-${aptCode}`;
+                  const cleanFullLabel = fullLabel.replace(/\s+/g, '').toUpperCase();
                   
-                  if (fullLabel === unitLabel) {
+                  if (cleanFullLabel === cleanExcelLabel || cleanFullLabel.endsWith(cleanExcelLabel) || cleanExcelLabel.endsWith(cleanFullLabel)) {
                     realUnitKey = key;
                     return;
                   }
