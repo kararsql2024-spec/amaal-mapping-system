@@ -54,29 +54,31 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   });
   const [newNote, setNewNote] = useState('');
 
-  // دالة لتحويل التاريخ إلى صيغة YYYY-MM-DD المتوافقة مع حقل الإدخال
+  // دالة محسنة جداً لتحويل التاريخ إلى صيغة YYYY-MM-DD
   const formatDateForInput = (dateStr: any) => {
     if (!dateStr) return "";
+    const str = dateStr.toString().trim();
+    
+    // 1. محاولة مطابقة صيغة DD/MM/YYYY أو DD-MM-YYYY (الأكثر شيوعاً في إكسل)
+    const dmyMatch = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if (dmyMatch) {
+      return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+    }
+
+    // 2. محاولة مطابقة صيغة YYYY/MM/DD أو YYYY-MM-DD
+    const ymdMatch = str.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/);
+    if (ymdMatch) {
+      return `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
+    }
+
+    // 3. محاولة استخدام محرك التاريخ الافتراضي كحل أخير
     try {
-      const date = new Date(dateStr);
+      const date = new Date(str);
       if (!isNaN(date.getTime())) {
         return date.toISOString().split('T')[0];
       }
-      // محاولة معالجة التنسيقات الشائعة مثل DD/MM/YYYY
-      const parts = dateStr.toString().split(/[/.-]/);
-      if (parts.length === 3) {
-        // إذا كان العام في النهاية (مثل 05/07/2026)
-        if (parts[2].length === 4) {
-          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-        }
-        // إذا كان العام في البداية (مثل 2026/07/05)
-        if (parts[0].length === 4) {
-          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-        }
-      }
-    } catch (e) {
-      console.error("Error formatting date:", e);
-    }
+    } catch (e) {}
+    
     return "";
   };
 
@@ -152,7 +154,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   const canEdit = permissions.canEditUnitData;
   const currentDeptName = localStorage.getItem('marketing_center_name') || '';
   
-  // فلترة الملاحظات بناءً على الصلاحية
   const visibleNotes = permissions.showOtherDeptsNotes 
     ? formData.notes 
     : formData.notes.filter(n => n.author === currentDeptName);
