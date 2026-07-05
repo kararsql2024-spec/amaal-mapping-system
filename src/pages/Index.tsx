@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import InteractiveMap from '@/components/InteractiveMap';
-import MainMap from '@/components/MainMap';
 import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, ArrowRight } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3 } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,7 +44,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [mainMapConfig, setMainMapConfig] = useState<any>(null);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
@@ -82,125 +80,114 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
   }, [projects, currentCenter]);
 
-  // إزالة التحديد التلقائي للمشروع للسماح بظهور المخطط العام أولاً
   useEffect(() => {
-    if (filteredProjects.length > 0 && selectedProjectId && !filteredProjects.find(p => p.id === selectedProjectId)) {
-      setSelectedProjectId(null);
+    if (filteredProjects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(filteredProjects[0].id);
+    } else if (filteredProjects.length > 0 && selectedProjectId && !filteredProjects.find(p => p.id === selectedProjectId)) {
+      setSelectedProjectId(filteredProjects[0].id);
     }
   }, [filteredProjects, selectedProjectId]);
 
   useEffect(() => {
     const fetchCentersAndPermissions = async () => {
-      try {
-        const { data: centers } = await supabase.from('marketing_centers').select('*');
-        if (centers) setMarketingCenters(centers);
+      const { data: centers } = await supabase.from('marketing_centers').select('*');
+      if (centers) setMarketingCenters(centers);
 
-        const savedCenterId = localStorage.getItem('marketing_center_session');
-        if (savedCenterId && centers) {
-          const center = centers.find(c => c.id === savedCenterId);
-          if (center) {
-            setCurrentCenter(center);
-            setIsLoggedIn(true);
-            localStorage.setItem('marketing_center_name', center.name);
-            
-            const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
-            if (settings && settings.value && center.type) {
-              const deptPerms = settings.value[center.type];
-              if (deptPerms) setPermissions(deptPerms);
-            }
+      const savedCenterId = localStorage.getItem('marketing_center_session');
+      if (savedCenterId && centers) {
+        const center = centers.find(c => c.id === savedCenterId);
+        if (center) {
+          setCurrentCenter(center);
+          setIsLoggedIn(true);
+          localStorage.setItem('marketing_center_name', center.name);
+          
+          const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
+          if (settings && settings.value && center.type) {
+            const deptPerms = settings.value[center.type];
+            if (deptPerms) setPermissions(deptPerms);
           }
         }
-
-        // جلب إعدادات المخطط العام
-        const { data: mainMapSetting } = await supabase.from('settings').select('value').eq('key', 'main_map_config').maybeSingle();
-        if (mainMapSetting?.value) setMainMapConfig(mainMapSetting.value);
-      } catch (e) {
-        console.error("Error fetching initial data", e);
       }
     };
     fetchCentersAndPermissions();
   }, []);
 
-  const fetchProjectData = useCallback(async (projectId: string) => {
-    setIsProjectLoading(true);
-    try {
-      // محاولة الجلب مع مهلة زمنية بسيطة لتجنب أخطاء الشبكة العابرة
-      const { data: projectDetails, error: projectError } = await supabase
-        .from('projects')
-        .select('elements')
-        .eq('id', projectId)
-        .single();
-      
-      if (projectError) throw projectError;
-      setActiveElements(projectDetails?.elements || []);
-
-      const { data: notifs } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (notifs) setNotifications(notifs);
-
-      let allUnits: any[] = [];
-      let from = 0;
-      const step = 1000;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data: chunk, error: unitsError } = await supabase
-          .from('houses_data')
-          .select('*')
-          .eq('project_id', projectId)
-          .range(from, from + step - 1);
-        
-        if (unitsError) throw unitsError;
-        
-        if (!chunk || chunk.length === 0) {
-          hasMore = false;
-        } else {
-          allUnits = [...allUnits, ...chunk];
-          from += step;
-          if (chunk.length < step) hasMore = false;
-        }
-      }
-      
-      const formattedUnits: Record<string, any> = {};
-      allUnits.forEach(u => {
-        formattedUnits[u.unit_key] = u.data;
-      });
-      setHousesData(formattedUnits);
-
-      const { data: lastUpdateSetting } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'last_excel_update')
-        .single();
-
-      if (lastUpdateSetting?.value) {
-        setLastUpdated(new Date(lastUpdateSetting.value));
-      } else {
-        setLastUpdated(null);
-      }
-      
-      checkExpiredBookings(allUnits, projectId);
-      
-    } catch (error) {
-      console.error("Error loading project data:", error);
-      showError("فشل في تحميل بيانات المشروع، يرجى المحاولة مرة أخرى");
-    } finally {
-      setIsProjectLoading(false);
-    }
-  }, [setHousesData]);
-
   useEffect(() => {
     if (selectedProjectId) {
-      fetchProjectData(selectedProjectId);
-    } else {
-      setActiveElements([]);
-      setHousesData({});
+      const fetchProjectData = async () => {
+        setIsProjectLoading(true);
+        try {
+          const { data: projectDetails, error: projectError } = await supabase
+            .from('projects')
+            .select('elements')
+            .eq('id', selectedProjectId)
+            .single();
+          
+          if (projectError) throw projectError;
+          setActiveElements(projectDetails?.elements || []);
+
+          const { data: notifs } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('project_id', selectedProjectId)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          if (notifs) setNotifications(notifs);
+
+          let allUnits: any[] = [];
+          let from = 0;
+          const step = 1000;
+          let hasMore = true;
+
+          while (hasMore) {
+            const { data: chunk, error: unitsError } = await supabase
+              .from('houses_data')
+              .select('*')
+              .eq('project_id', selectedProjectId)
+              .range(from, from + step - 1);
+            
+            if (unitsError) throw unitsError;
+            
+            if (!chunk || chunk.length === 0) {
+              hasMore = false;
+            } else {
+              allUnits = [...allUnits, ...chunk];
+              from += step;
+              if (chunk.length < step) hasMore = false;
+            }
+          }
+          
+          const formattedUnits: Record<string, any> = {};
+          allUnits.forEach(u => {
+            formattedUnits[u.unit_key] = u.data;
+          });
+          setHousesData(formattedUnits);
+
+          // جلب تاريخ آخر تحديث لملف المبيعات من جدول الإعدادات
+          const { data: lastUpdateSetting } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'last_excel_update')
+            .single();
+
+          if (lastUpdateSetting?.value) {
+            setLastUpdated(new Date(lastUpdateSetting.value));
+          } else {
+            setLastUpdated(null);
+          }
+          
+          checkExpiredBookings(allUnits, selectedProjectId);
+          
+        } catch (error) {
+          console.error("Error loading project data:", error);
+          showError("فشل في تحميل بيانات المشروع");
+        } finally {
+          setIsProjectLoading(false);
+        }
+      };
+      fetchProjectData();
     }
-  }, [selectedProjectId, fetchProjectData]);
+  }, [selectedProjectId, setHousesData]);
 
   const checkExpiredBookings = async (units: any[], projectId: string) => {
     const now = new Date();
@@ -271,12 +258,36 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentCenter(null);
-    setSelectedProjectId(null);
     localStorage.removeItem('marketing_center_session');
     localStorage.removeItem('marketing_center_name');
+    setPermissions({
+      showPrice: true,
+      showCustomerName: true,
+      showCustomerPhone: true,
+      showTaboInfo: true,
+      showHandoverInfo: true,
+      showStatsTable: true,
+      showGeneralStats: true,
+      showSideTotal: true,
+      showSideSold: true,
+      showSideInvestment: true,
+      showSideAvailable: true,
+      showSidePromoted: true,
+      showSideNotPromoted: true,
+      showSideReceivedTabo: true,
+      showSideReceivedUnit: true,
+      showSideNotReceivedUnit: true,
+      showNotifications: true,
+      colorMode: 'default',
+      showStatusField: true,
+      canEditUnitData: false,
+      showOtherDeptsNotes: true,
+      canDeleteNotes: false
+    });
   };
 
   const activeProject = filteredProjects.find(p => p.id === selectedProjectId);
+  const selectedElement = activeElements.find(el => el.id === selectedElementId);
 
   const handleElementClick = (id: string) => {
     setSelectedElementId(id);
@@ -387,12 +398,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                   <Store size={12} />
                   {currentCenter?.name}
                 </div>
-                {lastUpdated && selectedProjectId && (
+                {lastUpdated && (
                   <>
                     <span className="w-1 h-1 bg-slate-300 rounded-full" />
                     <div className="flex items-center gap-1 text-slate-400 font-bold text-xs">
                       <Clock size={12} />
-                      تحديث البيانات: {lastUpdated.toLocaleString('ar-EG')}
+                      تحديث البيانات: {lastUpdated.toLocaleString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </>
                 )}
@@ -400,16 +411,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {selectedProjectId && (
-              <Button 
-                variant="outline" 
-                onClick={() => setSelectedProjectId(null)}
-                className="rounded-xl gap-2 border-slate-200 text-blue-600 font-black hover:bg-blue-50"
-              >
-                <ArrowRight size={18} />
-                الرجوع للمخطط العام
-              </Button>
-            )}
             {filteredProjects.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -438,21 +439,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 <h2 className="text-xl font-bold text-slate-600">جاري تحميل بيانات المشروع...</h2>
               </div>
-            ) : selectedProjectId && activeProject ? (
+            ) : activeProject ? (
               <>
                 <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} permissions={permissions} />
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>
             ) : (
-              <MainMap 
-                projects={filteredProjects} 
-                onProjectSelect={setSelectedProjectId} 
-                mainMapConfig={mainMapConfig}
-              />
+              <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">لا توجد مشاريع متاحة للعرض</h2></div>
             )}
           </div>
 
-          {(permissions.showGeneralStats || permissions.showNotifications) && selectedProjectId && (
+          {(permissions.showGeneralStats || permissions.showNotifications) && (
             <div className="space-y-6">
               {permissions.showGeneralStats && (
                 <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
