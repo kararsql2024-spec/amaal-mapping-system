@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin
+  Palette, MessageSquare, MapPin, Info
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -427,6 +427,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         setProcessLogs(prev => [...prev, `تم قراءة ${data.length} صف من الملف.`]);
 
         const { data: projectsList } = await supabase.from('projects').select('id, name');
+        const { data: existingHouses } = await supabase.from('houses_data').select('unit_key, data');
+        
         const updates: any[] = [];
         const notifications: any[] = [];
 
@@ -442,10 +444,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const project = projectsList?.find(p => p.name === cityName);
           if (!project) return;
 
-          const isInvestment = investmentNames.some(name => customerName?.includes(name));
-          const status = isInvestment ? 'investment' : (customerName ? 'sold' : 'available');
+          // منطق تحديد الحالة بدقة كما في النسخ السابقة
+          let status = 'available';
+          if (customerName) {
+            const isInvestment = investmentNames.some(name => 
+              customerName.toLowerCase().includes(name.toLowerCase().trim())
+            );
+            status = isInvestment ? 'investment' : 'sold';
+          }
+
+          const existingUnit = existingHouses?.find(h => h.unit_key === unitId);
+          const existingData = existingUnit?.data || {};
 
           const unitData = {
+            ...existingData, // الحفاظ على الملاحظات والبيانات الأخرى
             status,
             name: customerName || '',
             phone: row[excelMapping.phoneCol]?.toString().trim() || '',
@@ -455,7 +467,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             taboNum: row[excelMapping.taboNumCol]?.toString().trim() || '',
             taboStatus: row[excelMapping.taboStatusCol]?.toString().trim() || 'غير مروج',
             handoverDate: row[excelMapping.handoverDateCol]?.toString().trim() || '',
-            notes: []
           };
 
           updates.push({
@@ -464,10 +475,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             data: unitData
           });
 
-          if (status !== 'available') {
+          // إضافة إشعار في حال تغيرت الحالة
+          if (existingData.status !== status && status !== 'available') {
             notifications.push({
               project_id: project.id,
-              message: `تم تحديث حالة الوحدة ${unitId} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
+              message: `تحديث: الوحدة ${unitId} تغيرت من ${existingData.status || 'متاح'} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
             });
           }
         });
