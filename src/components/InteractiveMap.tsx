@@ -17,9 +17,11 @@ interface InteractiveMapProps {
   mapWidth: number;
   mapHeight: number;
   permissions?: any;
+  backgroundColor?: string;
+  showGrid?: boolean;
 }
 
-const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, mapWidth, mapHeight, permissions }: InteractiveMapProps) => {
+const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, mapWidth, mapHeight, permissions, backgroundColor, showGrid }: InteractiveMapProps) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -275,7 +277,10 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
               <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
             </pattern>
           </defs>
-          <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" />
+          <rect width={mapWidth} height={mapHeight} fill={backgroundColor || "#ffffff"} />
+          {showGrid !== false && (
+            <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" pointerEvents="none" />
+          )}
           
           {sortedElements.map((el) => {
             const styles = getElementStyles(el);

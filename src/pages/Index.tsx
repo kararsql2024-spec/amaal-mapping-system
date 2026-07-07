@@ -76,6 +76,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     canDeleteNotes: false
   });
 
+  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
+
   // تعريف المشروع النشط بناءً على المعرف المختار
   const activeProject = projects.find(p => p.id === selectedProjectId);
 
@@ -91,6 +93,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
       const { data: mainMap } = await supabase.from('settings').select('value').eq('key', 'main_map_config').single();
       if (mainMap?.value) setMainMapConfig(mainMap.value);
+
+      const { data: configs } = await supabase.from('settings').select('value').eq('key', 'project_configs').single();
+      if (configs?.value) setProjectConfigs(configs.value);
 
       const savedCenterId = localStorage.getItem('marketing_center_session');
       if (savedCenterId && centers) {
@@ -348,13 +353,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div><h2 className="text-xl font-bold text-slate-600">جاري تحميل بيانات المشروع...</h2></div>
             ) : showMainMap ? (
               mainMapConfig ? (
-                <InteractiveMap elements={mainMapConfig.elements} onHouseClick={handleElementClick} housesData={{}} mapWidth={mainMapConfig.width} mapHeight={mainMapConfig.height} permissions={{...permissions, colorMode: 'default'}} />
+                <InteractiveMap elements={mainMapConfig.elements} onHouseClick={handleElementClick} housesData={{}} mapWidth={mainMapConfig.width} mapHeight={mainMapConfig.height} permissions={{...permissions, colorMode: 'default'}} backgroundColor={mainMapConfig.backgroundColor} showGrid={mainMapConfig.showGrid} />
               ) : (
                 <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center"><MapIcon className="mx-auto mb-4 opacity-10" size={80} /><h2 className="text-xl font-bold text-slate-400">لم يتم إعداد المخطط العام بعد</h2></div>
               )
             ) : (
               <>
-                <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject?.mapWidth || 1000} mapHeight={activeProject?.mapHeight || 800} permissions={permissions} />
+                <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject?.mapWidth || 1000} mapHeight={activeProject?.mapHeight || 800} permissions={permissions} backgroundColor={projectConfigs[selectedProjectId || '']?.backgroundColor} showGrid={projectConfigs[selectedProjectId || '']?.showGrid} />
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>
             )}
