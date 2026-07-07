@@ -187,6 +187,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     <SelectItem value="investment" className="font-bold text-purple-600">استثمار</SelectItem>
                     <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
                     <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
+                    <SelectItem value="frozen_uncounted" className="font-bold text-slate-500">مجمدة وغير محسوبة</SelectItem>
+                    <SelectItem value="frozen_hidden" className="font-bold text-slate-700">مجمدة ومخفية</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
