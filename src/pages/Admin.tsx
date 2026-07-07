@@ -413,7 +413,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     if (!file) return;
 
     setIsProcessing(true);
-    setProcessLogs(["بدء معالجة الملف..."]);
+    const logs: string[] = ["بدء معالجة الملف..."];
+    setProcessLogs([...logs]);
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -424,7 +425,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 'A' });
 
-        setProcessLogs(prev => [...prev, `تم قراءة ${data.length} صف من الملف.`]);
+        logs.push(`تم قراءة ${data.length} صف من الملف.`);
+        setProcessLogs([...logs]);
 
         const { data: projectsList } = await supabase.from('projects').select('id, name, elements');
         const { data: existingHouses } = await supabase.from('houses_data').select('unit_key, data');
@@ -451,10 +453,18 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const unitLabel = row[excelMapping.unitCol]?.toString().trim();
           const customerName = row[excelMapping.nameCol]?.toString().trim();
           
-          if (!cityName || !unitLabel) return;
+          if (!cityName || !unitLabel) {
+            if (index > 1) {
+              logs.push(`⚠️ السطر ${index + 1}: تخطي السطر لعدم وجود اسم المدينة أو رقم الوحدة.`);
+            }
+            return;
+          }
 
           const project = projectsList?.find(p => p.name === cityName);
-          if (!project) return;
+          if (!project) {
+            logs.push(`❌ السطر ${index + 1}: لم يتم العثور على مشروع باسم "${cityName}" في النظام.`);
+            return;
+          }
 
           let realUnitKey = null;
           const elements = project.elements || [];
@@ -490,7 +500,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             });
           }
 
-          if (!realUnitKey) realUnitKey = unitLabel;
+          if (!realUnitKey) {
+            logs.push(`⚠️ السطر ${index + 1}: لم يتم العثور على شكل هندسي للوحدة "${unitLabel}" في مخطط "${cityName}". سيتم حفظها كبيانات نصية فقط.`);
+            realUnitKey = unitLabel;
+          }
 
           let status = 'available';
           if (customerName && customerName.length > 1) {
@@ -518,17 +531,35 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
 
-          if (existingData.status !== status && status !== 'available') {
-            notifications.push({
-              project_id: project.id,
-              message: `تحديث: الوحدة ${unitLabel} تغيرت من ${existingData.status || 'متاح'} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
-            });
+          // تسجيل تفاصيل التغيير في السجل
+          const oldName = existingData.name || 'فارغ';
+          const newName = customerName || 'فارغ';
+          const oldStatus = existingData.status || 'available';
+          
+          if (oldName !== newName || oldStatus !== status) {
+            logs.push(`🔄 السطر ${index + 1} [${cityName} - ${unitLabel}]: تحديث المشتري من [${oldName}] إلى [${newName}] وتغيير الحالة من [${oldStatus}] إلى [${status}]`);
+            
+            if (status !== 'available') {
+              notifications.push({
+                project_id: project.id,
+                message: `تحديث: الوحدة ${unitLabel} تغيرت من ${oldStatus} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
+              });
+            }
+          } else {
+            logs.push(`ℹ️ السطر ${index + 1} [${cityName} - ${unitLabel}]: البيانات متطابقة بالفعل (المشتري: ${newName})`);
           }
         });
 
+        logs.push(`جاري حفظ التحديثات في قاعدة البيانات...`);
+        setProcessLogs([...logs]);
+
         for (let i = 0; i < updates.length; i += 100) {
           const chunk = updates.slice(i, i + 100);
-          await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
+          const { error: upsertError } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
+          if (upsertError) {
+            logs.push(`❌ فشل حفظ دفعة من التحديثات: ${upsertError.message}`);
+            throw upsertError;
+          }
         }
 
         if (notifications.length > 0) {
@@ -538,10 +569,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const now = new Date().toISOString();
         await supabase.from('settings').upsert({ key: 'last_excel_update', value: now });
         setLastUpdate(now);
-        setProcessLogs(prev => [...prev, "تمت العملية بنجاح!"]);
+        logs.push("🎉 تم الانتهاء من تحديث كافة البيانات بنجاح!");
+        setProcessLogs([...logs]);
         showSuccess("تم تحديث البيانات بنجاح");
-      } catch (error) {
+      } catch (error: any) {
         console.error(error);
+        logs.push(`❌ حدث خطأ أثناء المعالجة: ${error.message || error}`);
+        setProcessLogs([...logs]);
         showError("حدث خطأ أثناء معالجة الملف");
       } finally {
         setIsProcessing(false);
@@ -800,6 +834,39 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         <MappingInput label="عمود تاريخ الاستلام" value={excelMapping.handoverDateCol} onChange={(v) => setExcelMapping({...excelMapping, handoverDateCol: v})} />
                       </div>
                     </div>
+
+                    <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                      <h3 className="font-black text-lg flex items-center gap-2 text-slate-800">
+                        <Tags size={20} className="text-emerald-600" /> قائمة المستثمرين
+                      </h3>
+                      <div className="flex gap-2">
+                        <Input 
+                          value={newInvestmentName} 
+                          onChange={(e) => setNewInvestmentName(e.target.value)} 
+                          placeholder="اسم المستثمر..." 
+                          className="rounded-xl h-10"
+                        />
+                        <Button onClick={handleAddInvestmentName} className="bg-emerald-600 hover:bg-emerald-700 rounded-xl h-10 px-4">
+                          إضافة
+                        </Button>
+                      </div>
+                      <ScrollArea className="h-32 border rounded-xl p-2 bg-slate-50">
+                        <div className="space-y-1">
+                          {investmentNames.map((name, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-white p-2 rounded-lg border text-xs font-bold">
+                              <span>{name}</span>
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteInvestmentName(idx)} className="h-6 w-6 text-rose-500 hover:bg-rose-50">
+                                <X size={12} />
+                              </Button>
+                            </div>
+                          ))}
+                          {investmentNames.length === 0 && (
+                            <p className="text-center text-slate-400 py-4 text-xs">لا يوجد مستثمرون مضافون</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
                     <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="w-full bg-slate-900 hover:bg-black rounded-2xl h-14 font-black gap-2 shadow-xl">
                       {isSavingSettings ? <RefreshCcw className="animate-spin" /> : <Save size={20} />}
                       حفظ كافة الإعدادات
