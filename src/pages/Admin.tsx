@@ -485,7 +485,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               for (let f = 1; f <= (tower.floors || 1); f++) {
                 for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
                   const key = `${tower.id}_F${f}_A${a}`;
-                  const hData = housesData[key];
+                  
+                  // تصحيح: جلب حالة الشقة من قاعدة البيانات الفعلية بدلاً من المتغير الفارغ housesData
+                  const existingUnit = existingHouses?.find(h => h.unit_key === key);
+                  const hData = existingUnit?.data;
+                  
                   if (hData?.status !== 'frozen_uncounted' && hData?.status !== 'frozen_hidden') pCounter++;
                   const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                   const aptCode = (hData?.status === 'frozen_uncounted' || hData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
