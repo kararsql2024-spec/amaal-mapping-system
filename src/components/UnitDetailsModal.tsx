@@ -109,6 +109,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   };
 
+  const formatPrice = (val: string) => {
+    if (!val) return '';
+    const clean = val.toString().replace(/,/g, '');
+    const num = Number(clean);
+    return isNaN(num) ? val : num.toLocaleString('en-US');
+  };
+
   const canEdit = permissions.canEditUnitData;
 
   return (
@@ -189,11 +196,11 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <div className="space-y-2">
                   <Label className="font-bold text-slate-600 flex items-center gap-2"><Banknote size={16} /> السعر</Label>
                   <Input 
-                    disabled={!canEdit}
-                    value={formData.price} 
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    className="rounded-xl h-12 border-slate-200 font-bold"
-                    placeholder="0.00"
+                    readOnly
+                    disabled
+                    value={formatPrice(formData.price)} 
+                    className="rounded-xl h-12 border-slate-200 font-bold bg-slate-50 cursor-not-allowed opacity-80"
+                    placeholder="0"
                   />
                 </div>
                 <div className="space-y-2">
