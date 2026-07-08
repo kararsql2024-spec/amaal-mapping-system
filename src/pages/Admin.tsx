@@ -433,29 +433,51 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تم قراءة ${data.length} صف من الملف.`);
         setProcessLogs([...logs]);
 
-        // جلب المشاريع بدفعات (Pagination) لتجنب Failed to fetch
-        logs.push("جاري جلب بيانات المشاريع...");
+        // 1. تحديد أسماء المدن/المشاريع الفريدة لتقليص حجم الطلب
+        const uniqueCities = Array.from(
+          new Set(
+            data
+              .map((row: any) => row[excelMapping.cityCol]?.toString().trim())
+              .filter(Boolean)
+          )
+        );
+
+        logs.push(`المدن المكتشفة في الملف: ${uniqueCities.join(', ')}`);
         setProcessLogs([...logs]);
-        let projectsList: any[] = [];
-        let pFrom = 0;
-        let pHasMore = true;
-        while (pHasMore) {
-          const { data: pChunk, error: pErr } = await supabase
-            .from('projects')
-            .select('id, name, elements')
-            .range(pFrom, pFrom + 49); // طلبات صغيرة
-          if (pErr) throw pErr;
-          if (!pChunk || pChunk.length === 0) pHasMore = false;
-          else {
-            projectsList = [...projectsList, ...pChunk];
-            pFrom += 50;
-            if (pChunk.length < 50) pHasMore = false;
-          }
+
+        // 2. جلب معرفات المشاريع المطابقة فقط بدون حقل elements الثقيل
+        logs.push("جاري جلب المشاريع المطابقة...");
+        setProcessLogs([...logs]);
+        const { data: matchedProjects, error: pErr } = await supabase
+          .from('projects')
+          .select('id, name')
+          .in('name', uniqueCities);
+
+        if (pErr) throw pErr;
+
+        if (!matchedProjects || matchedProjects.length === 0) {
+          throw new Error("لم يتم العثور على أي مشاريع مطابقة لأسماء المدن المدرجة في ملف الإكسل.");
         }
 
-        // جلب بيانات الوحدات بدفعات
-        logs.push("جاري جلب بيانات الوحدات الحالية...");
+        // 3. جلب الـ elements لكل مشروع مطابق بشكل فردي ومستهدف لتجنب Failed to fetch
+        const projectsList: any[] = [];
+        for (const proj of matchedProjects) {
+          logs.push(`جاري جلب عناصر المخطط للمشروع: ${proj.name}...`);
+          setProcessLogs([...logs]);
+          const { data: fullProj, error: fErr } = await supabase
+            .from('projects')
+            .select('id, name, elements')
+            .eq('id', proj.id)
+            .single();
+          if (fErr) throw fErr;
+          if (fullProj) projectsList.push(fullProj);
+        }
+
+        // 4. جلب بيانات الوحدات (houses_data) المستهدفة فقط لهذه المشاريع المحددة
+        const matchedProjectIds = matchedProjects.map(p => p.id);
+        logs.push("جاري جلب بيانات الوحدات الحالية للمشاريع المحددة...");
         setProcessLogs([...logs]);
+        
         let existingHouses: any[] = [];
         let hFrom = 0;
         let hHasMore = true;
@@ -463,6 +485,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const { data: hChunk, error: hErr } = await supabase
             .from('houses_data')
             .select('unit_key, data')
+            .in('project_id', matchedProjectIds)
             .range(hFrom, hFrom + 999);
           if (hErr) throw hErr;
           if (!hChunk || hChunk.length === 0) hHasMore = false;
@@ -474,8 +497,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         }
 
         const updates: any[] = [];
-        const notifications: any[] = [];
-
         const parseExcelDate = (val: any) => {
           if (!val) return '';
           if (typeof val === 'number') {
@@ -494,7 +515,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           
           if (!cityName || !unitLabel) return;
 
-          const project = projectsList?.find(p => p.name === cityName);
+          const project = projectsList.find(p => p.name === cityName);
           if (!project) return;
 
           let realUnitKey = null;
@@ -941,6 +962,15 @@ const MappingInput = ({ label, value, onChange }: { label: string, value: string
   <div className="flex items-center justify-between gap-4">
     <Label className="text-xs font-bold text-slate-600">{label}</Label>
     <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
+  </div>
+);
+
+const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
+  <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100 hover:bg-white transition-colors">
+    <span className="text-xs font-bold text-slate-700">{label}</span>
+    <span className={cn("w-10 h-5 rounded-full transition-colors relative", checked ? "bg-indigo-600" : "bg-slate-200")}>
+      <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", checked ? "right-1" : "right-6")} />
+    </span>
   </div>
 );
 
