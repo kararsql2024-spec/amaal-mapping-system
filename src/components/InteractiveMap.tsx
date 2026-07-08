@@ -39,6 +39,10 @@ const InteractiveMap = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
+  // لمنع تفعيل النقر عن طريق الخطأ أثناء السحب والتحريك
+  const dragStartCoords = useRef({ x: 0, y: 0 });
+  const hasDragged = useRef(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   const autoFit = () => {
@@ -86,11 +90,31 @@ const InteractiveMap = ({
     }
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    dragStartCoords.current = { x: e.clientX, y: e.clientY };
+    hasDragged.current = false;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartCoords.current.x;
+    const dy = e.clientY - dragStartCoords.current.y;
+    // إذا تحرك المؤشر أكثر من 5 بكسل، نعتبر العملية سحب (Pan) وليس نقرة سريعة
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      hasDragged.current = true;
+    }
+    setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       setIsDragging(true);
       const touch = e.touches[0];
       setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+      dragStartCoords.current = { x: touch.clientX, y: touch.clientY };
+      hasDragged.current = false;
     } else if (e.touches.length === 2) {
       setIsDragging(false);
       const dist = Math.hypot(
@@ -104,6 +128,11 @@ const InteractiveMap = ({
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length === 1 && isDragging) {
       const touch = e.touches[0];
+      const dx = touch.clientX - dragStartCoords.current.x;
+      const dy = touch.clientY - dragStartCoords.current.y;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        hasDragged.current = true;
+      }
       setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
     } else if (e.touches.length === 2 && lastTouchDistance !== null) {
       const dist = Math.hypot(
@@ -134,6 +163,15 @@ const InteractiveMap = ({
   const handleTouchEnd = () => {
     setIsDragging(false);
     setLastTouchDistance(null);
+  };
+
+  const handleElementClick = (e: React.MouseEvent, elId: string, isInteractive: boolean) => {
+    e.stopPropagation();
+    // إذا كان المستخدم يقوم بالسحب والتحريك للوصف العام، نتجاهل حدث النقر
+    if (hasDragged.current) return;
+    if (isInteractive) {
+      onHouseClick(elId);
+    }
   };
 
   const getElementPoints = (el: MapElement): Point[] => {
@@ -238,16 +276,10 @@ const InteractiveMap = ({
         "relative w-full border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
         isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
       )}
-      /* تلوين الحاوية الخارجية بنفس لون الخلفية تماماً لمنع الحواف الرمادية عند التكبير والتحريك */
       style={{ backgroundColor: backgroundColor }}
       onWheel={handleWheel}
-      onMouseDown={(e) => { 
-        setIsDragging(true); 
-        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y }); 
-      }}
-      onMouseMove={(e) => { 
-        if (isDragging) setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); 
-      }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
       onMouseUp={() => setIsDragging(false)}
       onMouseLeave={() => setIsDragging(false)}
       onTouchStart={handleTouchStart}
@@ -331,7 +363,12 @@ const InteractiveMap = ({
             const dynamicFontSize = minDim * 0.3;
 
             return (
-              <g key={el.id} onClick={(e) => { e.stopPropagation(); if (isInteractive) onHouseClick(el.id); }} className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+              <g 
+                key={el.id} 
+                onClick={(e) => handleElementClick(e, el.id, isInteractive)} 
+                className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} 
+                transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
+              >
                 <defs>
                   <clipPath id={`clip-${el.id}`}>
                     <path d={pathD} />
@@ -340,7 +377,20 @@ const InteractiveMap = ({
                 
                 {el.type !== 'text' ? (
                   <>
-                    <path d={pathD} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90", !!el.linkProjectId && "hover:filter hover:brightness-110 active:scale-95 transition-transform duration-100")} />
+                    <path 
+                      d={pathD} 
+                      fill={el.isStroke ? "none" : styles.fill} 
+                      stroke={el.isStroke ? styles.fill : styles.stroke} 
+                      fillOpacity={styles.opacity} 
+                      strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} 
+                      strokeLinejoin="round" 
+                      strokeLinecap="round" 
+                      className={cn(
+                        "transition-all duration-300", 
+                        isSelected && "stroke-black stroke-[3px] filter brightness-90", 
+                        !!el.linkProjectId && "hover:filter hover:brightness-110 transition-colors"
+                      )} 
+                    />
                     {el.hasTexture && (
                       <g clipPath={`url(#clip-${el.id})`} style={{ color: el.textureColor || 'white' }}>
                         <rect 
