@@ -595,15 +595,25 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
         });
 
-        logs.push(`جاري حفظ ${updates.length} تحديث في قاعدة البيانات...`);
+        // تصفية التكرارات قبل الإرسال إلى قاعدة البيانات لتجنب خطأ ON CONFLICT DO UPDATE command cannot affect row a second time
+        logs.push("جاري تصفية وتجهيز السجلات المكررة لمنع حدوث أخطاء تعارض البيانات...");
+        setProcessLogs([...logs]);
+        
+        const uniqueUpdatesMap = new Map<string, any>();
+        // نقوم بإبقاء آخر تحديث في السلسلة كونه الأحدث في ملف الإكسل
+        updates.forEach(u => uniqueUpdatesMap.set(u.unit_key, u));
+        const finalUpdates = Array.from(uniqueUpdatesMap.values());
+
+        logs.push(`تم تصفية البيانات بنجاح. إجمالي السجلات الفريدة: ${finalUpdates.length} سجل (تم تصفية ${updates.length - finalUpdates.length} مكرر).`);
+        logs.push(`جاري حفظ السجلات النهائية في قاعدة البيانات...`);
         setProcessLogs([...logs]);
 
-        for (let i = 0; i < updates.length; i += 100) {
-          const chunk = updates.slice(i, i + 100);
+        for (let i = 0; i < finalUpdates.length; i += 100) {
+          const chunk = finalUpdates.slice(i, i + 100);
           const { error: upsertError } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
           if (upsertError) throw upsertError;
-          if (i % 500 === 0) {
-            logs.push(`تم حفظ ${i + chunk.length} سجل...`);
+          if (i % 500 === 0 || i + chunk.length === finalUpdates.length) {
+            logs.push(`تم حفظ ${Math.min(i + chunk.length, finalUpdates.length)} سجل بنجاح...`);
             setProcessLogs([...logs]);
           }
         }
@@ -611,9 +621,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const now = new Date().toISOString();
         await supabase.from('settings').upsert({ key: 'last_excel_update', value: now });
         setLastUpdate(now);
-        logs.push("🎉 تم الانتهاء بنجاح!");
+        logs.push("🎉 تم الانتهاء بنجاح وحفظ كامل البيانات دون تكرار!");
         setProcessLogs([...logs]);
-        showSuccess("تم تحديث البيانات بنجاح");
+        showSuccess("تم تحديث البيانات بنجاح وتجاوز السجلات المكررة");
       } catch (error: any) {
         logs.push(`❌ خطأ: ${error.message || error}`);
         setProcessLogs([...logs]);
