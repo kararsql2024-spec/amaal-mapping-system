@@ -433,18 +433,52 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تم قراءة ${data.length} صف من الملف.`);
         setProcessLogs([...logs]);
 
-        const { data: projectsList } = await supabase.from('projects').select('id, name, elements');
-        const { data: existingHouses } = await supabase.from('houses_data').select('unit_key, data');
-        
+        // جلب المشاريع بدفعات (Pagination) لتجنب Failed to fetch
+        logs.push("جاري جلب بيانات المشاريع...");
+        setProcessLogs([...logs]);
+        let projectsList: any[] = [];
+        let pFrom = 0;
+        let pHasMore = true;
+        while (pHasMore) {
+          const { data: pChunk, error: pErr } = await supabase
+            .from('projects')
+            .select('id, name, elements')
+            .range(pFrom, pFrom + 49); // طلبات صغيرة
+          if (pErr) throw pErr;
+          if (!pChunk || pChunk.length === 0) pHasMore = false;
+          else {
+            projectsList = [...projectsList, ...pChunk];
+            pFrom += 50;
+            if (pChunk.length < 50) pHasMore = false;
+          }
+        }
+
+        // جلب بيانات الوحدات بدفعات
+        logs.push("جاري جلب بيانات الوحدات الحالية...");
+        setProcessLogs([...logs]);
+        let existingHouses: any[] = [];
+        let hFrom = 0;
+        let hHasMore = true;
+        while (hHasMore) {
+          const { data: hChunk, error: hErr } = await supabase
+            .from('houses_data')
+            .select('unit_key, data')
+            .range(hFrom, hFrom + 999);
+          if (hErr) throw hErr;
+          if (!hChunk || hChunk.length === 0) hHasMore = false;
+          else {
+            existingHouses = [...existingHouses, ...hChunk];
+            hFrom += 1000;
+            if (hChunk.length < 1000) hHasMore = false;
+          }
+        }
+
         const updates: any[] = [];
         const notifications: any[] = [];
 
-        // دالة لتحويل تاريخ إكسل (الرقم التسلسلي) إلى صيغة نصية مفهومة
         const parseExcelDate = (val: any) => {
           if (!val) return '';
           if (typeof val === 'number') {
-            // تحويل الرقم التسلسلي لإكسل إلى تاريخ JS
-            // إكسل يبدأ من 30 ديسمبر 1899
             const date = new Date(Math.round((val - 25569) * 86400 * 1000));
             return date.toISOString().split('T')[0];
           }
@@ -452,24 +486,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         };
 
         data.forEach((row: any, index) => {
-          if (index === 0) return; // Skip header
+          if (index === 0) return;
 
           const cityName = row[excelMapping.cityCol]?.toString().trim();
           const unitLabel = row[excelMapping.unitCol]?.toString().trim();
           const customerName = row[excelMapping.nameCol]?.toString().trim();
           
-          if (!cityName || !unitLabel) {
-            if (index > 1) {
-              logs.push(`⚠️ السطر ${index + 1}: تخطي السطر لعدم وجود اسم المدينة أو رقم الوحدة.`);
-            }
-            return;
-          }
+          if (!cityName || !unitLabel) return;
 
           const project = projectsList?.find(p => p.name === cityName);
-          if (!project) {
-            logs.push(`❌ السطر ${index + 1}: لم يتم العثور على مشروع باسم "${cityName}" في النظام.`);
-            return;
-          }
+          if (!project) return;
 
           let realUnitKey = null;
           const elements = project.elements || [];
@@ -490,8 +516,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               for (let f = 1; f <= (tower.floors || 1); f++) {
                 for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
                   const key = `${tower.id}_F${f}_A${a}`;
-                  
-                  // تصحيح: جلب حالة الشقة من قاعدة البيانات الفعلية بدلاً من المتغير الفارغ housesData
                   const existingUnit = existingHouses?.find(h => h.unit_key === key);
                   const hData = existingUnit?.data;
                   
@@ -509,10 +533,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             });
           }
 
-          if (!realUnitKey) {
-            logs.push(`⚠️ السطر ${index + 1}: لم يتم العثور على شكل هندسي للوحدة "${unitLabel}" في مخطط "${cityName}". سيتم حفظها كبيانات نصية فقط.`);
-            realUnitKey = unitLabel;
-          }
+          if (!realUnitKey) realUnitKey = unitLabel;
 
           let status = 'available';
           if (customerName && customerName.length > 1) {
@@ -539,51 +560,29 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           };
 
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
-
-          // تسجيل تفاصيل التغيير في السجل
-          const oldName = existingData.name || 'فارغ';
-          const newName = customerName || 'فارغ';
-          const oldStatus = existingData.status || 'available';
-          
-          if (oldName !== newName || oldStatus !== status) {
-            logs.push(`🔄 السطر ${index + 1} [${cityName} - ${unitLabel}]: تحديث المشتري من [${oldName}] إلى [${newName}] وتغيير الحالة من [${oldStatus}] إلى [${status}]`);
-            
-            if (status !== 'available') {
-              notifications.push({
-                project_id: project.id,
-                message: `تحديث: الوحدة ${unitLabel} تغيرت من ${oldStatus} إلى ${status === 'sold' ? 'مباع' : 'استثمار'} للزبون ${customerName}`
-              });
-            }
-          } else {
-            logs.push(`ℹ️ السطر ${index + 1} [${cityName} - ${unitLabel}]: البيانات متطابقة بالفعل (المشتري: ${newName})`);
-          }
         });
 
-        logs.push(`جاري حفظ التحديثات في قاعدة البيانات...`);
+        logs.push(`جاري حفظ ${updates.length} تحديث في قاعدة البيانات...`);
         setProcessLogs([...logs]);
 
         for (let i = 0; i < updates.length; i += 100) {
           const chunk = updates.slice(i, i + 100);
           const { error: upsertError } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
-          if (upsertError) {
-            logs.push(`❌ فشل حفظ دفعة من التحديثات: ${upsertError.message}`);
-            throw upsertError;
+          if (upsertError) throw upsertError;
+          if (i % 500 === 0) {
+            logs.push(`تم حفظ ${i + chunk.length} سجل...`);
+            setProcessLogs([...logs]);
           }
-        }
-
-        if (notifications.length > 0) {
-          await supabase.from('notifications').insert(notifications.slice(0, 100));
         }
 
         const now = new Date().toISOString();
         await supabase.from('settings').upsert({ key: 'last_excel_update', value: now });
         setLastUpdate(now);
-        logs.push("🎉 تم الانتهاء من تحديث كافة البيانات بنجاح!");
+        logs.push("🎉 تم الانتهاء بنجاح!");
         setProcessLogs([...logs]);
         showSuccess("تم تحديث البيانات بنجاح");
       } catch (error: any) {
-        console.error(error);
-        logs.push(`❌ حدث خطأ أثناء المعالجة: ${error.message || error}`);
+        logs.push(`❌ خطأ: ${error.message || error}`);
         setProcessLogs([...logs]);
         showError("حدث خطأ أثناء معالجة الملف");
       } finally {
@@ -651,7 +650,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const { error } = await supabase.from('projects').update({ elements: cleanedElements, map_width: Math.round(newWidth), map_height: Math.round(newHeight) }).eq('id', editingMapProject.id);
       if (error) throw error;
 
-      // حفظ لون الخلفية والشبكة في إعدادات المشروع
       const updatedConfigs = {
         ...projectConfigs,
         [editingMapProject.id]: { backgroundColor, showGrid }
@@ -943,15 +941,6 @@ const MappingInput = ({ label, value, onChange }: { label: string, value: string
   <div className="flex items-center justify-between gap-4">
     <Label className="text-xs font-bold text-slate-600">{label}</Label>
     <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
-  </div>
-);
-
-const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
-  <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100 hover:bg-white transition-colors">
-    <span className="text-xs font-bold text-slate-700">{label}</span>
-    <span className={cn("w-10 h-5 rounded-full transition-colors relative", checked ? "bg-indigo-600" : "bg-slate-200")}>
-      <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", checked ? "right-1" : "right-6")} />
-    </span>
   </div>
 );
 
