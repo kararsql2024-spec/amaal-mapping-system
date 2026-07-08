@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Trash2 } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -54,46 +54,18 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   });
   const [newNote, setNewNote] = useState('');
 
-  // دالة محسنة جداً لتحويل التاريخ إلى صيغة YYYY-MM-DD
-  const formatDateForInput = (dateStr: any) => {
-    if (!dateStr) return "";
-    const str = dateStr.toString().trim();
-    
-    // 1. محاولة مطابقة صيغة DD/MM/YYYY أو DD-MM-YYYY (الأكثر شيوعاً في إكسل)
-    const dmyMatch = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-    if (dmyMatch) {
-      return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
-    }
-
-    // 2. محاولة مطابقة صيغة YYYY/MM/DD أو YYYY-MM-DD
-    const ymdMatch = str.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/);
-    if (ymdMatch) {
-      return `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
-    }
-
-    // 3. محاولة استخدام محرك التاريخ الافتراضي كحل أخير
-    try {
-      const date = new Date(str);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString().split('T')[0];
-      }
-    } catch (e) {}
-    
-    return "";
-  };
-
   useEffect(() => {
     if (initialData) {
       setFormData({
         status: initialData.status || 'available',
         name: initialData.name || '',
         phone: initialData.phone || '',
-        saleDate: formatDateForInput(initialData.saleDate),
+        saleDate: initialData.saleDate || '',
         price: initialData.price || '',
         currency: initialData.currency || 'IQD',
         taboNum: initialData.taboNum || '',
         taboStatus: initialData.taboStatus || 'غير مروج',
-        handoverDate: formatDateForInput(initialData.handoverDate),
+        handoverDate: initialData.handoverDate || '',
         notes: Array.isArray(initialData.notes) ? initialData.notes : (initialData.details ? [{ text: initialData.details, author: 'نظام قديم', date: new Date().toISOString() }] : [])
       });
     } else {
@@ -112,13 +84,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   }, [initialData, isOpen]);
 
-  const formatPrice = (val: string) => {
-    if (!val) return "";
-    const num = parseFloat(val.replace(/,/g, ''));
-    if (isNaN(num)) return val;
-    return num.toLocaleString('en-US');
-  };
-
   const handleAddNote = () => {
     if (!newNote.trim()) return;
     const centerName = localStorage.getItem('marketing_center_name') || 'قسم غير معروف';
@@ -131,14 +96,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     setFormData({ ...formData, notes: updatedNotes });
     setNewNote('');
     
-    if (unitId) {
-      onSave(unitId, { ...formData, notes: updatedNotes });
-    }
-  };
-
-  const handleDeleteNote = (idx: number) => {
-    const updatedNotes = formData.notes.filter((_, i) => i !== idx);
-    setFormData({ ...formData, notes: updatedNotes });
+    // حفظ الملاحظة فوراً عند الإضافة
     if (unitId) {
       onSave(unitId, { ...formData, notes: updatedNotes });
     }
@@ -152,11 +110,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   };
 
   const canEdit = permissions.canEditUnitData;
-  const currentDeptName = localStorage.getItem('marketing_center_name') || '';
-  
-  const visibleNotes = permissions.showOtherDeptsNotes 
-    ? formData.notes 
-    : formData.notes.filter(n => n.author === currentDeptName);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -187,8 +140,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     <SelectItem value="investment" className="font-bold text-purple-600">استثمار</SelectItem>
                     <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
                     <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
-                    <SelectItem value="frozen_uncounted" className="font-bold text-slate-500">مجمدة وغير محسوبة</SelectItem>
-                    <SelectItem value="frozen_hidden" className="font-bold text-slate-700">مجمدة ومخفية</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -238,20 +189,22 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <div className="space-y-2">
                   <Label className="font-bold text-slate-600 flex items-center gap-2"><Banknote size={16} /> السعر</Label>
                   <Input 
-                    disabled={true}
-                    value={formatPrice(formData.price)} 
-                    className="rounded-xl h-12 border-slate-200 font-bold bg-slate-50"
+                    disabled={!canEdit}
+                    value={formData.price} 
+                    onChange={(e) => setFormData({...formData, price: e.target.value})}
+                    className="rounded-xl h-12 border-slate-200 font-bold"
                     placeholder="0.00"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label className="font-bold text-slate-600 flex items-center gap-2"><Coins size={16} /> العملة</Label>
                   <Select 
-                    disabled={true}
+                    disabled={!canEdit}
                     value={formData.currency} 
+                    onValueChange={(val) => setFormData({...formData, currency: val})}
                   >
-                    <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold bg-slate-50">
-                      <SelectValue placeholder={formData.currency === 'USD' ? 'دولار أمريكي' : 'دينار عراقي'} />
+                    <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold">
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="IQD" className="font-bold">دينار عراقي</SelectItem>
@@ -328,22 +281,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
             <ScrollArea className="h-[200px] w-full rounded-xl border border-slate-100 bg-slate-50/50 p-4">
               <div className="space-y-4">
-                {visibleNotes.length > 0 ? visibleNotes.map((note, idx) => (
-                  <div key={idx} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm space-y-1 relative group">
+                {formData.notes.length > 0 ? formData.notes.map((note, idx) => (
+                  <div key={idx} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm space-y-1">
                     <div className="flex items-center justify-between text-[10px] font-black text-slate-400">
                       <span className="flex items-center gap-1 text-blue-600"><Store size={10} /> {note.author}</span>
                       <span className="flex items-center gap-1"><Clock size={10} /> {new Date(note.date).toLocaleString('ar-EG')}</span>
                     </div>
                     <p className="text-sm font-bold text-slate-700 leading-relaxed">{note.text}</p>
-                    
-                    {permissions.canDeleteNotes && (
-                      <button 
-                        onClick={() => handleDeleteNote(idx)}
-                        className="absolute left-2 top-2 text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
                   </div>
                 )) : (
                   <div className="text-center py-10 text-slate-400 font-bold">لا توجد ملاحظات مسجلة</div>

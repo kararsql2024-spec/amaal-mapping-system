@@ -36,7 +36,6 @@ export interface MapElement {
   textureType?: string;
   textureColor?: string;
   textureSize?: number;
-  linkProjectId?: string;
 }
 
 export interface Project {

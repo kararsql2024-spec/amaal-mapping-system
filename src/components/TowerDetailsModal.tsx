@@ -7,11 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Building2, LayoutGrid, Snowflake, Loader2 } from "lucide-react";
+import { Building2, LayoutGrid, Snowflake } from "lucide-react";
 import { cn } from "@/lib/utils";
 import UnitDetailsModal from './UnitDetailsModal';
-import { supabase } from "@/integrations/supabase/client";
-import { showError } from '@/utils/toast';
 
 interface TowerDetailsModalProps {
   isOpen: boolean;
@@ -25,8 +23,6 @@ interface TowerDetailsModalProps {
 const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment, permissions }: TowerDetailsModalProps) => {
   const [selectedFloor, setSelectedFloor] = useState(1);
   const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
-  const [detailedAptData, setDetailedAptData] = useState<any>(null);
-  const [isFetching, setIsFetching] = useState(false);
 
   if (!tower) return null;
 
@@ -36,21 +32,31 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
 
   const reorderedApts = [];
   for (let i = 0; i < apts.length; i += 2) {
-    if (i + 1 < apts.length) reorderedApts.push(apts[i + 1]);
+    if (i + 1 < apts.length) {
+      reorderedApts.push(apts[i + 1]);
+    }
     reorderedApts.push(apts[i]);
   }
 
   const getAptKey = (floor: number, aptNum: number) => `${tower.id}_F${floor}_A${aptNum}`;
+  
   const getFloorCode = (floor: number) => floor === 1 ? "FG" : `F${floor - 1}`;
 
   const getAptFullLabel = (floor: number, aptNum: number) => {
     let pCounter = 0;
+    const floorCode = getFloorCode(floor);
+
     for (let f = 1; f <= (tower.floors || 1); f++) {
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
         const key = getAptKey(f, a);
         const data = housesData[key];
+        // إذا كانت الشقة مجمدة (بأي نوع من أنواع التجميد التي تستبعدها من العد)، لا نزيد العداد
         const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
-        if (!isFrozenSequence) pCounter++;
+        
+        if (!isFrozenSequence) {
+          pCounter++;
+        }
+
         if (f === floor && a === aptNum) {
           const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
           return `${tower.label}-${getFloorCode(f)}-${aptCode}`;
@@ -66,25 +72,8 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     return parts[parts.length - 1];
   };
 
-  // دالة التلوين الموحدة مع الألوان المطلوبة
-  const getUnitColor = (data: any) => {
-    const status = data?.status || 'available';
+  const getStatusColor = (status: string) => {
     if (status?.startsWith('frozen')) return 'bg-slate-200 text-slate-600 border-slate-300';
-
-    const mode = permissions?.colorMode || 'default';
-
-    if (mode === 'tabo') {
-      const tabo = data?.taboStatus?.trim();
-      if (tabo === 'مستلم') return 'bg-emerald-500 text-white border-emerald-600';
-      if (tabo === 'مروج') return 'bg-amber-500 text-white border-amber-600';
-      return 'bg-rose-500 text-white border-rose-600'; // غير مروج
-    }
-
-    if (mode === 'handover') {
-      return data?.handoverDate ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-rose-500 text-white border-rose-600';
-    }
-
-    // النمط الافتراضي
     switch (status) {
       case 'sold': return 'bg-rose-500 text-white border-rose-600';
       case 'pending': return 'bg-blue-500 text-white border-blue-600';
@@ -94,73 +83,12 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
     }
   };
 
-  // دالة جلب المسمى العربي بناءً على النمط
-  const getUnitStatusLabel = (data: any) => {
-    const status = data?.status || 'available';
-    if (status === 'frozen_uncounted' || status === 'frozen_hidden') return 'مجمدة';
-
-    const mode = permissions?.colorMode || 'default';
-
-    if (mode === 'tabo') {
-      const tabo = data?.taboStatus?.trim();
-      if (tabo === 'مستلم') return 'مستلم';
-      if (tabo === 'مروج') return 'مروج';
-      return 'غير مروج';
-    }
-
-    if (mode === 'handover') {
-      return data?.handoverDate ? 'مستلم' : 'غير مستلم';
-    }
-
-    switch (status) {
-      case 'sold': return 'مباع';
-      case 'pending': return 'قيد الانتظار';
-      case 'reserved': return 'محجوز';
-      case 'investment': return 'استثمار';
-      default: return 'متوفر';
-    }
-  };
-
-  const handleAptClick = async (key: string) => {
-    setIsFetching(true);
-    try {
-      // استخدام maybeSingle بدلاً من single لتجنب الخطأ في حال عدم وجود سجل (الشقق المتوفرة)
-      const { data, error } = await supabase
-        .from('houses_data')
-        .select('data')
-        .eq('unit_key', key)
-        .maybeSingle();
-      
-      if (error) throw error;
-      
-      // إذا لم توجد بيانات في القاعدة، نستخدم البيانات المحلية أو نضع حالة افتراضية
-      setDetailedAptData(data?.data || housesData[key] || { status: 'available' });
-      setSelectedAptKey(key);
-    } catch (error) {
-      console.error("Error fetching unit details:", error);
-      // في حال حدوث خطأ في الشبكة، نعتمد على البيانات المحلية لضمان استمرارية العمل
-      setDetailedAptData(housesData[key] || { status: 'available' });
-      setSelectedAptKey(key);
-    } finally {
-      setIsFetching(false);
-    }
-  };
-
   const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor - 1}`;
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
-          {isFetching && (
-            <div className="absolute inset-0 z-[60] bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-                <p className="font-black text-slate-800">جاري جلب التفاصيل...</p>
-              </div>
-            </div>
-          )}
-          
           <div className="flex h-[600px]">
             <div className="w-56 bg-slate-50 border-l border-slate-100 p-6 overflow-y-auto">
               <h3 className="font-black text-slate-400 text-xs uppercase mb-4 tracking-wider">قائمة الطوابق</h3>
@@ -202,23 +130,28 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
                   const fullLabel = getAptFullLabel(selectedFloor, aptNum);
                   const shortLabel = getAptShortLabel(fullLabel);
                   const data = housesData[key] || { status: 'available' };
+                  const isFrozen = data.status?.startsWith('frozen');
                   
                   return (
                     <div 
                       key={key}
                       className={cn(
                         "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full",
-                        getUnitColor(data)
+                        getStatusColor(data.status)
                       )}
-                      onClick={() => handleAptClick(key)}
+                      onClick={() => setSelectedAptKey(key)}
                     >
                       <div className="relative z-10">
                         <div className="flex justify-between items-start">
                           <p className="text-3xl font-black">{shortLabel}</p>
-                          {data.status?.startsWith('frozen') && <Snowflake size={18} className="opacity-50" />}
+                          {isFrozen && <Snowflake size={18} className="opacity-50" />}
                         </div>
                         <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
-                          {getUnitStatusLabel(data)}
+                          {data.status === 'frozen_uncounted' ? 'مجمدة (خارج المجموع)' : 
+                           data.status === 'frozen_counted' ? 'مجمدة (داخل المجموع)' : 
+                           data.status === 'frozen_hidden' ? 'مجمدة (مخفي من العدد)' :
+                           data.status === 'investment' ? 'استثمار' :
+                           data.status}
                         </p>
                       </div>
                       <LayoutGrid className="absolute -bottom-4 -right-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
@@ -231,21 +164,19 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
         </DialogContent>
       </Dialog>
 
-      {selectedAptKey && (
-        <UnitDetailsModal 
-          isOpen={!!selectedAptKey}
-          onClose={() => setSelectedAptKey(null)}
-          onSave={(id, data) => {
-            onSaveApartment(id, data);
-            setSelectedAptKey(null);
-          }}
-          unitId={selectedAptKey}
-          unitLabel={getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1]))}
-          initialData={detailedAptData}
-          isApartment
-          permissions={permissions}
-        />
-      )}
+      <UnitDetailsModal 
+        isOpen={!!selectedAptKey}
+        onClose={() => setSelectedAptKey(null)}
+        onSave={(data) => {
+          if (selectedAptKey) onSaveApartment(selectedAptKey, data);
+          setSelectedAptKey(null);
+        }}
+        unitId={selectedAptKey}
+        unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
+        initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
+        isApartment
+        permissions={permissions}
+      />
     </>
   );
 };
