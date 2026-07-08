@@ -221,11 +221,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const handleElementClick = (id: string) => {
     if (showMainMap) {
       const element = mainMapConfig.elements.find((el: any) => el.id === id);
-      if (element) {
-        // التحقق أولاً من الربط المباشر بالمعرف، ثم العودة للاسم كخيار احتياطي
-        const targetProjectId = element.linkedProjectId || projects.find(p => p.name === element.label)?.id;
-        if (targetProjectId) {
-          setSelectedProjectId(targetProjectId);
+      if (element && element.label) {
+        const project = projects.find(p => p.name === element.label);
+        if (project) {
+          setSelectedProjectId(project.id);
           setShowMainMap(false);
         }
       }

@@ -36,7 +36,6 @@ export interface MapElement {
   textureType?: string;
   textureColor?: string;
   textureSize?: number;
-  linkedProjectId?: string; // المعرف الفريد للمشروع المرتبط بهذا العنصر
 }
 
 export interface Project {

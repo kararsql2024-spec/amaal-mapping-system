@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { MapElement, ElementType, Point, Project } from '@/types/project';
+import { MapElement, ElementType, Point } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, Leaf, 
@@ -11,7 +11,7 @@ import {
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
-  Frame, Link as LinkIcon
+  Frame
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -30,7 +30,6 @@ interface MapEditorProps {
   isSaving?: boolean;
   initialBackgroundColor?: string;
   initialShowGrid?: boolean;
-  projects?: Project[]; // قائمة المشاريع المتاحة للربط
 }
 
 const GRID_SIZE = 10;
@@ -77,7 +76,7 @@ const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; col
   { type: 'map_boundary', label: 'حدود الخريطة', icon: Frame, color: 'bg-orange-600' },
 ];
 
-const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight, isSaving = false, initialBackgroundColor = '#ffffff', initialShowGrid = true, projects = [] }: MapEditorProps) => {
+const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight, isSaving = false, initialBackgroundColor = '#ffffff', initialShowGrid = true }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements || []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | null>(null);
@@ -616,7 +615,7 @@ const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight
           </svg>
         </div>
 
-        <div className="w-80 flex flex-col gap-4 overflow-y-auto no-scrollbar">
+        <div className="w-80 flex flex-col gap-4">
           {isBrushMode && (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
               <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-100"><SlidersHorizontal className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">إعدادات الفرشاة</h3></div>
@@ -660,20 +659,6 @@ const MapEditor = ({ initialElements = [], onSave, onCancel, mapWidth, mapHeight
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2">{selectedElement.locked ? <Lock size={16} className="text-rose-500" /> : <Unlock size={16} className="text-emerald-500" />}<Label className="font-bold text-sm text-slate-700">قفل العنصر</Label></div><Switch checked={selectedElement.locked} onCheckedChange={(val) => updateSelectedElement({ locked: val })} /></div>
-                  
-                  {/* الربط بالمشروع - جديد */}
-                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-2">
-                    <div className="flex items-center gap-2 mb-1"><LinkIcon size={16} className="text-blue-600" /><Label className="font-black text-xs text-blue-800">ربط بمشروع (زر انتقال)</Label></div>
-                    <Select value={selectedElement.linkedProjectId || 'none'} onValueChange={(val) => updateSelectedElement({ linkedProjectId: val === 'none' ? undefined : val })}>
-                      <SelectTrigger className="rounded-xl h-10 border-blue-200 bg-white font-bold text-xs"><SelectValue placeholder="اختر مشروع للربط..." /></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="none" className="font-bold text-xs">بدون ربط</SelectItem>
-                        {projects.map(p => (<SelectItem key={p.id} value={p.id} className="font-bold text-xs">{p.name}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-[10px] text-blue-500 font-bold leading-tight">عند النقر على هذا العنصر في المخطط العام، سيتم نقلك إلى المشروع المختار.</p>
-                  </div>
-
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">زاوية الدوران (درجة)</Label><div className="relative"><RotateCw className="absolute right-3 top-3 w-5 h-5 text-slate-400" /><Input type="number" value={Math.round(selectedElement.rotation || 0)} onChange={(e) => updateSelectedElement({ rotation: parseInt(e.target.value) })} className="pr-10 rounded-xl h-12 border-slate-200 font-bold" /></div></div>
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">حجم الخط</Label><Input type="number" value={selectedElement.fontSize || (selectedElement.type === 'text' ? 24 : 10)} onChange={(e) => updateSelectedElement({ fontSize: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
