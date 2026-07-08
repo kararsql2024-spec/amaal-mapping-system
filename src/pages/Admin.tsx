@@ -87,7 +87,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [newInvestmentName, setNewInvestmentName] = useState('');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
 
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
 
@@ -122,11 +121,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const investments = settingsData.find(s => s.key === 'investment_names');
           if (investments) setInvestmentNames(investments.value || []);
 
-          const deptTypes = settingsData.find(s => s.key === 'department_types');
-          if (deptTypes) setDepartmentTypes(deptTypes.value || []);
+          const dTypes = settingsData.find(s => s.key === 'department_types');
+          if (dTypes) setDepartmentTypes(dTypes.value || []);
 
-          const permissions = settingsData.find(s => s.key === 'dept_permissions');
-          if (permissions) setDeptPermissions(permissions.value || {});
+          const perms = settingsData.find(s => s.key === 'dept_permissions');
+          if (perms) setDeptPermissions(perms.value || {});
 
           const mainMap = settingsData.find(s => s.key === 'main_map_config');
           if (mainMap) setMainMapData(mainMap.value);
@@ -160,6 +159,36 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       .replace(/\s+/g, " ");
   };
 
+  const handleAddInvestmentName = async () => {
+    if (!newInvestmentName) return;
+    const updated = [...investmentNames, newInvestmentName];
+    setInvestmentNames(updated);
+    setNewInvestmentName('');
+    try {
+      await supabase.from('settings').upsert({ key: 'investment_names', value: updated });
+      showSuccess("تم إضافة المستثمر");
+    } catch (error) { showError("فشل في حفظ قائمة المستثمرين"); }
+  };
+
+  const handleDeleteInvestmentName = async (idx: number) => {
+    const updated = investmentNames.filter((_, i) => i !== idx);
+    setInvestmentNames(updated);
+    try {
+      await supabase.from('settings').upsert({ key: 'investment_names', value: updated });
+      showSuccess("تم الحذف");
+    } catch (error) { showError("فشل في التحديث"); }
+  };
+
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      await supabase.from('settings').upsert({ key: 'excel_mapping', value: excelMapping });
+      await supabase.from('settings').upsert({ key: 'investment_names', value: investmentNames });
+      showSuccess("تم حفظ الإعدادات بنجاح");
+    } catch (error) { showError("فشل في حفظ الإعدادات"); }
+    finally { setIsSavingSettings(false); }
+  };
+
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -180,7 +209,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تم قراءة ${data.length} صف من الملف.`);
         setProcessLogs([...logs]);
 
-        // جلب قائمة المشاريع بدون العناصر (لتجنب حجم البيانات الكبير)
         const { data: projectsList, error: pError } = await supabase.from('projects').select('id, name, elements');
         if (pError) throw pError;
 
@@ -188,8 +216,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         setProcessLogs([...logs]);
 
         const updates: any[] = [];
-        const notifications: any[] = [];
-
         const parseExcelDate = (val: any) => {
           if (!val) return '';
           if (typeof val === 'number') {
@@ -199,10 +225,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           return val.toString().trim();
         };
 
-        // معالجة البيانات صفاً بصف
         for (let i = 0; i < data.length; i++) {
           const row: any = data[i];
-          if (i === 0) continue; // Skip header
+          if (i === 0) continue;
 
           const cityName = row[excelMapping.cityCol]?.toString().trim();
           const unitLabel = row[excelMapping.unitCol]?.toString().trim();
@@ -222,19 +247,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const elements = project.elements || [];
           const cleanExcelLabel = unitLabel.replace(/\s+/g, '').toUpperCase();
 
-          // البحث في المنازل
           const house = elements.find(el => el.type === 'house' && el.label.replace(/\s+/g, '').toUpperCase() === cleanExcelLabel);
 
           if (house) {
             realUnitKey = house.id;
           } else {
-            // البحث في الشقق
             for (const tower of elements.filter(el => el.type === 'tower')) {
               let pCounter = 0;
               for (let f = 1; f <= (tower.floors || 1); f++) {
                 for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
                   const key = `${tower.id}_F${f}_A${a}`;
-                  pCounter++; // ملاحظة: هذا العداد يحتاج مطابقة منطق التجميد إذا أردت دقة 100%
+                  pCounter++;
                   const floorCode = f === 1 ? "FG" : `F${f - 1}`;
                   const fullLabel = `${tower.label}-${floorCode}-P${pCounter}`;
                   if (fullLabel.replace(/\s+/g, '').toUpperCase() === cleanExcelLabel) {
@@ -250,7 +273,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           if (!realUnitKey) {
             logs.push(`⚠️ السطر ${i + 1}: لم يتم العثور على شكل هندسي للوحدة "${unitLabel}" في مخطط "${cityName}".`);
-            realUnitKey = unitLabel; // استخدام الرقم كنص كحل أخير
+            realUnitKey = unitLabel;
           }
 
           let status = 'available';
@@ -276,10 +299,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
         }
 
-        logs.push(`جاري رفع ${updates.length} تحديث إلى قاعدة البيانات...`);
+        logs.push(`جاري رفع ${updates.length} تحديث...`);
         setProcessLogs([...logs]);
 
-        // رفع البيانات بدفعات
         for (let j = 0; j < updates.length; j += 100) {
           const chunk = updates.slice(j, j + 100);
           const { error } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
@@ -353,11 +375,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     try {
       const { error } = await supabase.from('projects').update({ elements, map_width: Math.round(newWidth), map_height: Math.round(newHeight) }).eq('id', editingMapProject.id);
       if (error) throw error;
-
       const updatedConfigs = { ...projectConfigs, [editingMapProject.id]: { backgroundColor, showGrid } };
       await supabase.from('settings').upsert({ key: 'project_configs', value: updatedConfigs });
       setProjectConfigs(updatedConfigs);
-
       setProjects(projects.map(p => p.id === editingMapProject.id ? { ...p, elements, mapWidth: Math.round(newWidth), mapHeight: Math.round(newHeight) } : p));
       setEditingMapProject(null);
       showSuccess('تم حفظ المخطط بنجاح');
@@ -367,6 +387,22 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 mx-auto mb-4">
+              <Settings2 className="text-white w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول الإدارة</h1>
+          </div>
+          <Auth supabaseClient={supabase} providers={[]} view="sign_in" showLinks={false} appearance={{ theme: ThemeSupa }} theme="light" />
+        </div>
+      </div>
+    );
+  }
 
   if (editingMapProject || isEditingMainMap) {
     return (
@@ -381,8 +417,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       />
     );
   }
-
-  if (!session) return null;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
@@ -443,14 +477,28 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     ))}
                   </ScrollArea>
                 </div>
-                <Button onClick={() => { localStorage.setItem('excel_mapping', JSON.stringify(excelMapping)); showSuccess("تم الحفظ"); }} className="w-full bg-slate-900 rounded-2xl h-14 font-black">حفظ الإعدادات</Button>
+                <Button onClick={handleSaveSettings} disabled={isSavingSettings} className="w-full bg-slate-900 rounded-2xl h-14 font-black">حفظ الإعدادات</Button>
               </div>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-4">
-          <div className="flex items-center justify-between"><h2 className="text-xl font-bold">المشاريع الحالية</h2><Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); }} className="bg-blue-600 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button></div>
+          <div className="flex items-center justify-between"><h2 className="text-xl font-bold">المشاريع الحالية</h2><Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({name: '', width: 1000, height: 800}); }} className="bg-blue-600 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button></div>
+          {(isCreating || editingProjectInfo) && (
+            <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl space-y-6">
+              <h3 className="font-black text-xl">{editingProjectInfo ? 'تعديل مشروع' : 'إنشاء مشروع جديد'}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Input placeholder="اسم المشروع" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="rounded-xl" />
+                <Input type="number" placeholder="العرض" value={formData.width} onChange={(e) => setFormData({...formData, width: parseInt(e.target.value)})} className="rounded-xl" />
+                <Input type="number" placeholder="الطول" value={formData.height} onChange={(e) => setFormData({...formData, height: parseInt(e.target.value)})} className="rounded-xl" />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={editingProjectInfo ? handleUpdateProjectInfo : handleCreateProject}>{editingProjectInfo ? 'تحديث' : 'إنشاء'}</Button>
+                <Button variant="ghost" onClick={() => { setIsCreating(false); setEditingProjectInfo(null); }}>إلغاء</Button>
+              </div>
+            </div>
+          )}
           {projects.map(project => (
             <div key={project.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between group">
               <div className="flex items-center gap-4"><div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center"><MapIcon className="text-slate-400" /></div><div><h3 className="font-bold text-lg">{project.name}</h3><p className="text-sm text-slate-500">{project.mapWidth}x{project.mapHeight}</p></div></div>
