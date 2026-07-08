@@ -710,6 +710,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         onCancel={() => { setEditingMapProject(null); setIsEditingMainMap(false); }} 
         initialBackgroundColor={isEditingMainMap ? mainMapData?.backgroundColor : projectConfigs[editingMapProject?.id || '']?.backgroundColor}
         initialShowGrid={isEditingMainMap ? mainMapData?.showGrid : projectConfigs[editingMapProject?.id || '']?.showGrid}
+        projects={projects} // تمرير المشاريع للربط
       />
     );
   }
