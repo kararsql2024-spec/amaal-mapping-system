@@ -459,41 +459,53 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           throw new Error("لم يتم العثور على أي مشاريع مطابقة لأسماء المدن المدرجة في ملف الإكسل.");
         }
 
-        // 3. جلب الـ elements لكل مشروع مطابق بشكل فردي ومستهدف لتجنب Failed to fetch
+        // 3. جلب الـ elements لكل مشروع مطابق بشكل فردي ومستهدف مع وجود آلية تخطي (Fallback) في حال حدوث خطأ في الشبكة
         const projectsList: any[] = [];
         for (const proj of matchedProjects) {
           logs.push(`جاري جلب عناصر المخطط للمشروع: ${proj.name}...`);
           setProcessLogs([...logs]);
-          const { data: fullProj, error: fErr } = await supabase
-            .from('projects')
-            .select('id, name, elements')
-            .eq('id', proj.id)
-            .single();
-          if (fErr) throw fErr;
-          if (fullProj) projectsList.push(fullProj);
+          try {
+            const { data: fullProj, error: fErr } = await supabase
+              .from('projects')
+              .select('id, name, elements')
+              .eq('id', proj.id)
+              .single();
+            if (fErr) throw fErr;
+            if (fullProj) projectsList.push(fullProj);
+          } catch (fetchErr: any) {
+            // في حال حدوث خطأ في الشبكة لأي مشروع ضخم، نتابع المعالجة بدون إفشال العملية كلها ونعتمد أرقام الوحدات من الإكسل مباشرة
+            logs.push(`⚠️ تحذير: تعذر جلب المخطط للمشروع "${proj.name}" بسبب حجم البيانات أو بطء الشبكة. سيتم استخدام أرقام الوحدات من الإكسل مباشرة.`);
+            setProcessLogs([...logs]);
+            projectsList.push({ id: proj.id, name: proj.name, elements: [] });
+          }
         }
 
-        // 4. جلب بيانات الوحدات (houses_data) المستهدفة فقط لهذه المشاريع المحددة
+        // 4. جلب بيانات الوحدات (houses_data) المستهدفة فقط لهذه المشاريع المحددة مع آلية تخطي آمنة
         const matchedProjectIds = matchedProjects.map(p => p.id);
         logs.push("جاري جلب بيانات الوحدات الحالية للمشاريع المحددة...");
         setProcessLogs([...logs]);
         
         let existingHouses: any[] = [];
-        let hFrom = 0;
-        let hHasMore = true;
-        while (hHasMore) {
-          const { data: hChunk, error: hErr } = await supabase
-            .from('houses_data')
-            .select('unit_key, data')
-            .in('project_id', matchedProjectIds)
-            .range(hFrom, hFrom + 999);
-          if (hErr) throw hErr;
-          if (!hChunk || hChunk.length === 0) hHasMore = false;
-          else {
-            existingHouses = [...existingHouses, ...hChunk];
-            hFrom += 1000;
-            if (hChunk.length < 1000) hHasMore = false;
+        try {
+          let hFrom = 0;
+          let hHasMore = true;
+          while (hHasMore) {
+            const { data: hChunk, error: hErr } = await supabase
+              .from('houses_data')
+              .select('unit_key, data')
+              .in('project_id', matchedProjectIds)
+              .range(hFrom, hFrom + 999);
+            if (hErr) throw hErr;
+            if (!hChunk || hChunk.length === 0) hHasMore = false;
+            else {
+              existingHouses = [...existingHouses, ...hChunk];
+              hFrom += 1000;
+              if (hChunk.length < 1000) hHasMore = false;
+            }
           }
+        } catch (hFetchErr) {
+          logs.push(`⚠️ تحذير: فشل جلب البيانات الحالية للوحدات من السيرفر. سيتم تحديث الوحدات الجديدة مباشرة.`);
+          setProcessLogs([...logs]);
         }
 
         const updates: any[] = [];
@@ -962,15 +974,6 @@ const MappingInput = ({ label, value, onChange }: { label: string, value: string
   <div className="flex items-center justify-between gap-4">
     <Label className="text-xs font-bold text-slate-600">{label}</Label>
     <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
-  </div>
-);
-
-const PermissionToggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: () => void }) => (
-  <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100 hover:bg-white transition-colors">
-    <span className="text-xs font-bold text-slate-700">{label}</span>
-    <span className={cn("w-10 h-5 rounded-full transition-colors relative", checked ? "bg-indigo-600" : "bg-slate-200")}>
-      <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", checked ? "right-1" : "right-6")} />
-    </span>
   </div>
 );
 
