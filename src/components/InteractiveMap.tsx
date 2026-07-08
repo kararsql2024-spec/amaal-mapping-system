@@ -17,9 +17,21 @@ interface InteractiveMapProps {
   mapWidth: number;
   mapHeight: number;
   permissions?: any;
+  backgroundColor?: string; // خلفية انسيابية ممررة ديناميكياً
+  showGrid?: boolean;       // شبكة مربعات قابلة للتحكم
 }
 
-const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, mapWidth, mapHeight, permissions }: InteractiveMapProps) => {
+const InteractiveMap = ({ 
+  elements, 
+  onHouseClick, 
+  selectedHouseId, 
+  housesData, 
+  mapWidth, 
+  mapHeight, 
+  permissions,
+  backgroundColor = '#f1f5f9',
+  showGrid = true
+}: InteractiveMapProps) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -155,21 +167,18 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       const baseStroke = el.hasBorder ? (el.borderColor || '#94a3b8') : '#94a3b8';
       const colorMode = permissions?.colorMode || 'default';
 
-      // نمط تلوين الطابو
       if (colorMode === 'tabo') {
         const tabo = data?.taboStatus?.trim();
-        if (tabo === 'مستلم') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; // أخضر
-        if (tabo === 'مروج') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 }; // برتقالي
-        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; // أحمر (غير مروج)
+        if (tabo === 'مستلم') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; 
+        if (tabo === 'مروج') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 }; 
+        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; 
       }
 
-      // نمط تلوين الاستلام
       if (colorMode === 'handover') {
-        if (data?.handoverDate) return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; // أخضر (مستلم)
-        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; // أحمر (غير مستلم)
+        if (data?.handoverDate) return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; 
+        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; 
       }
 
-      // النمط الافتراضي (حالة الوحدة)
       if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: baseStroke, opacity: 1, strokeWidth: 2 };
       if (data?.status === 'investment') return { fill: '#d8b4fe', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : '#a855f7', opacity: 1, strokeWidth: 2 };
       if (!data || data.status === 'available') return { fill: el.color || '#10b981', stroke: el.hasBorder ? (el.borderColor || '#059669') : '#059669', opacity: 1, strokeWidth: 2 };
@@ -226,9 +235,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
     <div 
       ref={containerRef}
       className={cn(
-        "relative w-full bg-slate-100 border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
+        "relative w-full border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
         isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
       )}
+      /* تلوين الحاوية الخارجية بنفس لون الخلفية تماماً لمنع الحواف الرمادية عند التكبير والتحريك */
+      style={{ backgroundColor: backgroundColor }}
       onWheel={handleWheel}
       onMouseDown={(e) => { 
         setIsDragging(true); 
@@ -246,10 +257,11 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
       <svg 
         className="w-full h-full select-none overflow-visible"
         shapeRendering="geometricPrecision"
+        style={{ backgroundColor: backgroundColor }}
       >
         <g transform={`translate(${position.x}, ${position.y}) scale(${scale})`}>
           <defs>
-            <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5"/></pattern>
+            <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5" opacity="0.4"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
             
             <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -275,12 +287,15 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
               <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
             </pattern>
           </defs>
-          <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" />
+          
+          {showGrid && (
+            <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" />
+          )}
           
           {sortedElements.map((el) => {
             const styles = getElementStyles(el);
             const isSelected = selectedHouseId === el.id;
-            const isInteractive = el.type === 'house' || el.type === 'tower';
+            const isInteractive = el.type === 'house' || el.type === 'tower' || !!el.linkProjectId;
             const pts = getElementPoints(el);
             const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
             const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
@@ -325,7 +340,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
                 
                 {el.type !== 'text' ? (
                   <>
-                    <path d={pathD} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90")} />
+                    <path d={pathD} fill={el.isStroke ? "none" : styles.fill} stroke={el.isStroke ? styles.fill : styles.stroke} fillOpacity={styles.opacity} strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} strokeLinejoin="round" strokeLinecap="round" className={cn("transition-all duration-300", isSelected && "stroke-black stroke-[3px] filter brightness-90", !!el.linkProjectId && "hover:filter hover:brightness-110 active:scale-95 transition-transform duration-100")} />
                     {el.hasTexture && (
                       <g clipPath={`url(#clip-${el.id})`} style={{ color: el.textureColor || 'white' }}>
                         <rect 
@@ -404,7 +419,7 @@ const InteractiveMap = ({ elements, onHouseClick, selectedHouseId, housesData, m
         </g>
       </svg>
       
-      <div className="absolute top-6 left-6 flex flex-col gap-2">
+      <div className="absolute top-6 left-6 flex flex-col gap-2 z-10">
         <button onClick={() => {
           if (!containerRef.current) return;
           const rect = containerRef.current.getBoundingClientRect();

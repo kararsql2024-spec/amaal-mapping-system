@@ -1,8 +1,8 @@
 export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'text' | 'reference_image';
 
 export interface Point {
-  x: number;
   y: number;
+  x: number;
 }
 
 export interface MapElement {
@@ -36,6 +36,7 @@ export interface MapElement {
   textureType?: string;
   textureColor?: string;
   textureSize?: number;
+  linkProjectId?: string; // معرف المشروع السكني المرتبط بهذا العنصر كزر انتقال
 }
 
 export interface Project {

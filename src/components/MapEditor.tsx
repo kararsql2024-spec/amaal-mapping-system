@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { MapElement, ElementType, Point } from '@/types/project';
+import { MapElement, ElementType, Point, Project } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { 
   Trash2, Save, Home, Building2, Leaf, 
@@ -23,10 +23,14 @@ import { showSuccess, showError } from '@/utils/toast';
 
 interface MapEditorProps {
   initialElements: MapElement[];
-  onSave: (elements: MapElement[], width: number, height: number) => void;
+  onSave: (elements: MapElement[], width: number, height: number, backgroundColor?: string, showGrid?: boolean) => void;
   mapWidth: number;
   mapHeight: number;
   isSaving?: boolean;
+  projects?: Project[];
+  onCancel?: () => void;
+  initialBackgroundColor?: string;
+  initialShowGrid?: boolean;
 }
 
 const GRID_SIZE = 10;
@@ -73,7 +77,17 @@ const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; col
   { type: 'map_boundary', label: 'حدود الخريطة', icon: Frame, color: 'bg-orange-600' },
 ];
 
-const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = false }: MapEditorProps) => {
+const MapEditor = ({ 
+  initialElements, 
+  onSave, 
+  mapWidth, 
+  mapHeight, 
+  isSaving = false, 
+  projects = [], 
+  onCancel,
+  initialBackgroundColor = '#ffffff',
+  initialShowGrid = true
+}: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | null>(null);
@@ -84,6 +98,9 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
   const [gridLock, setGridLock] = useState(true);
   const [dims, setDims] = useState({ w: Math.round(mapWidth), h: Math.round(mapHeight) });
   const [isFullScreen, setIsFullScreen] = useState(false);
+  
+  const [backgroundColor, setBackgroundColor] = useState<string>(initialBackgroundColor);
+  const [showGrid, setShowGrid] = useState<boolean>(initialShowGrid);
   
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
@@ -325,7 +342,6 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
           y: el.y - minY
         })));
         
-        // إعادة ضبط الرؤية في المحرر لتظهر المنطقة الجديدة
         setViewPos({ x: 0, y: 0 });
         setScale(1);
         
@@ -544,7 +560,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
   };
 
   return (
-    <div className={cn("flex flex-col gap-4 transition-all duration-300", isFullScreen ? "fixed inset-0 z-50 bg-slate-50 p-6" : "h-[calc(100vh-120px)]")} dir="rtl">
+    <div className={cn("flex flex-col gap-4 transition-all duration-300 h-screen p-6 bg-slate-50")} dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-4">
           <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -557,14 +573,21 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
             {isFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
           </Button>
         </div>
-        <Button 
-          onClick={() => onSave(elements, dims.w, dims.h)} 
-          className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6"
-          disabled={isSaving}
-        >
-          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={18} />}
-          {isSaving ? "جاري الحفظ..." : "حفظ المخطط"}
-        </Button>
+        <div className="flex gap-2">
+          {onCancel && (
+            <Button variant="ghost" onClick={onCancel} className="rounded-xl px-6 h-12 font-bold">
+              إلغاء
+            </Button>
+          )}
+          <Button 
+            onClick={() => onSave(elements, dims.w, dims.h, backgroundColor, showGrid)} 
+            className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6 h-12 font-bold"
+            disabled={isSaving}
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={18} />}
+            {isSaving ? "جاري الحفظ..." : "حفظ المخطط"}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
@@ -593,11 +616,12 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
           </label>
         </div>
 
-        <div className="flex-1 relative bg-slate-200 rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none">
-          <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel}>
+        {/* الحاوية الخارجية والـ SVG تستخدم الآن لون الخلفية الانسيابي كخلفية موحدة لتجنب ظهور الفجوات الرمادية */}
+        <div className="flex-1 relative rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none transition-colors duration-300" style={{ backgroundColor: backgroundColor }}>
+          <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel} style={{ backgroundColor: backgroundColor }}>
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
               <defs>
-                <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5"/></pattern>
+                <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.3"/></pattern>
                 <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
                 
                 <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -623,7 +647,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
                   <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
                 </pattern>
               </defs>
-              <rect id="map-background" width={dims.w} height={dims.h} fill="url(#grid-editor)" />
+              <rect id="map-background" width={dims.w} height={dims.h} fill={showGrid ? "url(#grid-editor)" : "transparent"} />
               
               {sortedElements.map((el) => {
                 const pts = getElementPoints(el);
@@ -791,6 +815,41 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
             </div>
           )}
 
+          {/* لوحة تحكم بإعدادات المخطط العامة عند عدم اختيار أي عنصر */}
+          {!selectedElement && (
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص المخطط</h3></div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون خلفية المخطط</Label>
+                  <div className="flex gap-2">
+                    <Input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-12 h-12 p-1 rounded-xl border-slate-200 cursor-pointer" />
+                    <Input value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Grid3X3 size={16} className="text-indigo-600" />
+                    <Label className="font-bold text-sm text-slate-700">إظهار شبكة المربعات</Label>
+                  </div>
+                  <Switch checked={showGrid} onCheckedChange={setShowGrid} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">العرض الكلي</Label>
+                    <Input type="number" value={dims.w} onChange={(e) => setDims(prev => ({ ...prev, w: parseInt(e.target.value) }))} className="rounded-xl h-12 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الارتفاع الكلي</Label>
+                    <Input type="number" value={dims.h} onChange={(e) => setDims(prev => ({ ...prev, h: parseInt(e.target.value) }))} className="rounded-xl h-12 font-bold" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {selectedElement && (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -799,6 +858,28 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
+                  {/* ميزة ربط العنصر بمشروع سكني كزر انتقال تفاعلي ومباشر */}
+                  {projects && projects.length > 0 && (
+                    <div className="space-y-2 p-4 bg-indigo-50/35 rounded-2xl border border-indigo-100/50">
+                      <Label className="text-xs font-black text-indigo-700 uppercase tracking-wider">ربط كزر انتقال بمشروع</Label>
+                      <Select 
+                        value={selectedElement.linkProjectId || 'none'} 
+                        onValueChange={(val) => updateSelectedElement({ linkProjectId: val === 'none' ? undefined : val })}
+                      >
+                        <SelectTrigger className="rounded-xl h-12 border-indigo-200 font-bold bg-white text-indigo-900">
+                          <SelectValue placeholder="اختر المشروع للربط..." />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="none" className="font-bold text-slate-400">بدون ربط (عنصر عادي)</SelectItem>
+                          {projects.map(p => (
+                            <SelectItem key={p.id} value={p.id} className="font-bold">{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-indigo-500 font-bold mt-1">عند تفعيل هذا الخيار، سيتحول العنصر بالموقع لزر ينقل الزائر للمشروع فوراً.</p>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="flex items-center gap-2">
                       {selectedElement.locked ? <Lock size={16} className="text-rose-500" /> : <Unlock size={16} className="text-emerald-500" />}
@@ -841,14 +922,14 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
                       <div className="space-y-2">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون العنصر</Label>
                         <div className="flex gap-2">
-                          <Input type="color" value={selectedElement.color || '#1e293b'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input type="color" value={selectedElement.color || '#1e293b'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200 cursor-pointer" />
                           <Input value={selectedElement.color || '#1e293b'} onChange={(e) => updateSelectedElement({ color: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون النص / الأيقونة</Label>
                         <div className="flex gap-2">
-                          <Input type="color" value={selectedElement.textColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input type="color" value={selectedElement.textColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200 cursor-pointer" />
                           <Input value={selectedElement.textColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
                         </div>
                       </div>
@@ -869,7 +950,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
                         <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
                           <Label className="text-[10px] font-black text-slate-400 uppercase">لون الحدود</Label>
                           <div className="flex gap-2">
-                            <Input type="color" value={selectedElement.borderColor || '#000000'} onChange={(e) => updateSelectedElement({ borderColor: e.target.value })} className="w-10 h-10 p-1 rounded-lg" />
+                            <Input type="color" value={selectedElement.borderColor || '#000000'} onChange={(e) => updateSelectedElement({ borderColor: e.target.value })} className="w-10 h-10 p-1 rounded-lg cursor-pointer" />
                             <Input value={selectedElement.borderColor || '#000000'} onChange={(e) => updateSelectedElement({ borderColor: e.target.value })} className="flex-1 h-10 rounded-lg text-xs font-bold" />
                           </div>
                         </div>
@@ -895,7 +976,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
                           <div className="space-y-2">
                             <Label className="text-[10px] font-black text-slate-400 uppercase">لون المظهر</Label>
                             <div className="flex gap-2">
-                              <Input type="color" value={selectedElement.textureColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textureColor: e.target.value })} className="w-10 h-10 p-1 rounded-lg" />
+                              <Input type="color" value={selectedElement.textureColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textureColor: e.target.value })} className="w-10 h-10 p-1 rounded-lg cursor-pointer" />
                               <Input value={selectedElement.textureColor || '#ffffff'} onChange={(e) => updateSelectedElement({ textureColor: e.target.value })} className="flex-1 h-10 rounded-lg text-xs font-bold" />
                             </div>
                           </div>
@@ -926,7 +1007,7 @@ const MapEditor = ({ initialElements, onSave, mapWidth, mapHeight, isSaving = fa
                       <div className="space-y-2">
                         <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون النص</Label>
                         <div className="flex gap-2">
-                          <Input type="color" value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200" />
+                          <Input type="color" value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl border-slate-200 cursor-pointer" />
                           <Input value={selectedElement.textColor || '#000000'} onChange={(e) => updateSelectedElement({ textColor: e.target.value })} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
                         </div>
                       </div>

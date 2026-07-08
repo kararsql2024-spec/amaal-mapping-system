@@ -6,7 +6,7 @@ import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3 } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3, MapPin } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [loginData, setLoginData] = useState({ centerId: '', password: '' });
   const [currentCenter, setCurrentCenter] = useState<any>(null);
+  
+  const [mainMapData, setMainMapData] = useState<any>(null);
+  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
+
   const [permissions, setPermissions] = useState<any>({
     showPrice: true,
     showCustomerName: true,
@@ -71,19 +75,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     canEditUnitData: false
   });
 
-  // فلترة المشاريع بناءً على إعدادات القسم المباشرة
   const filteredProjects = React.useMemo(() => {
     if (!currentCenter || !currentCenter.allowed_projects || currentCenter.allowed_projects.length === 0) return projects;
     return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
   }, [projects, currentCenter]);
 
+  // تعيين المخطط العام كخيار افتراضي أولي عند فتح الواجهة ليعطي تجربة تصفح للمدينة كاملة
   useEffect(() => {
-    if (filteredProjects.length > 0 && !selectedProjectId) {
-      setSelectedProjectId(filteredProjects[0].id);
-    } else if (filteredProjects.length > 0 && selectedProjectId && !filteredProjects.find(p => p.id === selectedProjectId)) {
-      setSelectedProjectId(filteredProjects[0].id);
+    if (!selectedProjectId) {
+      setSelectedProjectId('main_map');
     }
-  }, [filteredProjects, selectedProjectId]);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     const fetchCentersAndPermissions = async () => {
@@ -98,10 +100,19 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           setIsLoggedIn(true);
           localStorage.setItem('marketing_center_name', center.name);
           
-          const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
-          if (settings && settings.value && center.type) {
-            const deptPerms = settings.value[center.type];
-            if (deptPerms) setPermissions(deptPerms);
+          const { data: settings } = await supabase.from('settings').select('*');
+          if (settings) {
+            const permsSetting = settings.find(s => s.key === 'dept_permissions');
+            if (permsSetting && permsSetting.value && center.type) {
+              const deptPerms = permsSetting.value[center.type];
+              if (deptPerms) setPermissions(deptPerms);
+            }
+
+            const mainMap = settings.find(s => s.key === 'main_map_config');
+            if (mainMap) setMainMapData(mainMap.value);
+
+            const configs = settings.find(s => s.key === 'project_configs');
+            if (configs) setProjectConfigs(configs.value || {});
           }
         }
       }
@@ -110,67 +121,88 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   }, []);
 
   useEffect(() => {
-    if (selectedProjectId) {
-      const fetchProjectData = async () => {
+    if (!selectedProjectId) return;
+
+    if (selectedProjectId === 'main_map') {
+      const fetchMainMap = async () => {
         setIsProjectLoading(true);
         try {
-          const { data: projectDetails, error: projectError } = await supabase
-            .from('projects')
-            .select('elements')
-            .eq('id', selectedProjectId)
-            .single();
-          
-          if (projectError) throw projectError;
-          setActiveElements(projectDetails?.elements || []);
-
-          const { data: notifs } = await supabase
-            .from('notifications')
-            .select('*')
-            .eq('project_id', selectedProjectId)
-            .order('created_at', { ascending: false })
-            .limit(50);
-          if (notifs) setNotifications(notifs);
-
-          let allUnits: any[] = [];
-          let from = 0;
-          const step = 1000;
-          let hasMore = true;
-
-          while (hasMore) {
-            const { data: chunk, error: unitsError } = await supabase
-              .from('houses_data')
-              .select('*')
-              .eq('project_id', selectedProjectId)
-              .range(from, from + step - 1);
-            
-            if (unitsError) throw unitsError;
-            
-            if (!chunk || chunk.length === 0) {
-              hasMore = false;
-            } else {
-              allUnits = [...allUnits, ...chunk];
-              from += step;
-              if (chunk.length < step) hasMore = false;
-            }
+          const { data, error } = await supabase.from('settings').select('*').eq('key', 'main_map_config').single();
+          if (data && data.value) {
+            setMainMapData(data.value);
+            setActiveElements(data.value.elements || []);
+          } else {
+            setActiveElements([]);
           }
-          
-          const formattedUnits: Record<string, any> = {};
-          allUnits.forEach(u => {
-            formattedUnits[u.unit_key] = u.data;
-          });
-          setHousesData(formattedUnits);
-          
-          checkExpiredBookings(allUnits, selectedProjectId);
-          
-        } catch (error) {
-          console.error("Error loading project data:", error);
-          showError("فشل في تحميل بيانات المشروع");
+        } catch (e) {
+          console.error("Error loading main map:", e);
         } finally {
           setIsProjectLoading(false);
         }
       };
-      fetchProjectData();
+      fetchMainMap();
+      return;
     }
+
+    const fetchProjectData = async () => {
+      setIsProjectLoading(true);
+      try {
+        const { data: projectDetails, error: projectError } = await supabase
+          .from('projects')
+          .select('elements')
+          .eq('id', selectedProjectId)
+          .single();
+        
+        if (projectError) throw projectError;
+        setActiveElements(projectDetails?.elements || []);
+
+        const { data: notifs } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('project_id', selectedProjectId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (notifs) setNotifications(notifs);
+
+        let allUnits: any[] = [];
+        let from = 0;
+        const step = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data: chunk, error: unitsError } = await supabase
+            .from('houses_data')
+            .select('*')
+            .eq('project_id', selectedProjectId)
+            .range(from, from + step - 1);
+          
+          if (unitsError) throw unitsError;
+          
+          if (!chunk || chunk.length === 0) {
+            hasMore = false;
+          } else {
+            allUnits = [...allUnits, ...chunk];
+            from += step;
+            if (chunk.length < step) hasMore = false;
+          }
+        }
+        
+        const formattedUnits: Record<string, any> = {};
+        allUnits.forEach(u => {
+          formattedUnits[u.unit_key] = u.data;
+        });
+        setHousesData(formattedUnits);
+        
+        checkExpiredBookings(allUnits, selectedProjectId);
+        
+      } catch (error) {
+        console.error("Error loading project data:", error);
+        showError("فشل في تحميل بيانات المشروع");
+      } finally {
+        setIsProjectLoading(false);
+      }
+    };
+    fetchProjectData();
   }, [selectedProjectId, setHousesData]);
 
   const checkExpiredBookings = async (units: any[], projectId: string) => {
@@ -227,10 +259,19 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       localStorage.setItem('marketing_center_session', center.id);
       localStorage.setItem('marketing_center_name', center.name);
       
-      const { data: settings } = await supabase.from('settings').select('*').eq('key', 'dept_permissions').single();
-      if (settings && settings.value && center.type) {
-        const deptPerms = settings.value[center.type];
-        if (deptPerms) setPermissions(deptPerms);
+      const { data: settings } = await supabase.from('settings').select('*');
+      if (settings) {
+        const permsSetting = settings.find(s => s.key === 'dept_permissions');
+        if (permsSetting && permsSetting.value && center.type) {
+          const deptPerms = permsSetting.value[center.type];
+          if (deptPerms) setPermissions(deptPerms);
+        }
+
+        const mainMap = settings.find(s => s.key === 'main_map_config');
+        if (mainMap) setMainMapData(mainMap.value);
+
+        const configs = settings.find(s => s.key === 'project_configs');
+        if (configs) setProjectConfigs(configs.value || {});
       }
       
       showSuccess(`مرحباً بك في مركز ${center.name}`);
@@ -272,14 +313,34 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const selectedElement = activeElements.find(el => el.id === selectedElementId);
 
   const handleElementClick = (id: string) => {
-    setSelectedElementId(id);
     const element = activeElements.find(el => el.id === id);
-    if (element?.type === 'tower') setIsTowerModalOpen(true);
+    if (!element) return;
+
+    // إذا كان للعنصر ارتباط مباشر بمشروع سكني، يتم الانتقال التلقائي دون فتح نافذة التفاصيل
+    if (element.linkProjectId) {
+      const linkedP = projects.find(p => p.id === element.linkProjectId);
+      if (linkedP) {
+        setSelectedProjectId(element.linkProjectId);
+        setSelectedElementId(null);
+        showSuccess(`تم الانتقال التلقائي لمخطط: ${linkedP.name}`);
+      } else {
+        showError("المشروع المرتبط لم يعد متوفراً");
+      }
+      return;
+    }
+
+    // إذا كنا نتصفح المخطط العام، ولا يوجد ارتباط للمجسم بالمشاريع، لا تفتح نوافذ الوحدات لعدم وجود مبيعات في المخطط العام نفسه
+    if (selectedProjectId === 'main_map') {
+      return;
+    }
+
+    setSelectedElementId(id);
+    if (element.type === 'tower') setIsTowerModalOpen(true);
     else setIsUnitModalOpen(true);
   };
 
   const handleSaveData = async (key: string, data: any) => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || selectedProjectId === 'main_map') return;
     try {
       await supabase.from('houses_data').upsert({ unit_key: key, project_id: selectedProjectId, data: data }, { onConflict: 'unit_key' });
       setHousesData(prev => ({ ...prev, [key]: data }));
@@ -288,7 +349,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const calculateStats = () => {
-    if (!activeProject || !activeElements) return { total: 0, sold: 0, investment: 0, promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0 };
+    if (selectedProjectId === 'main_map' || !activeProject || !activeElements) return { total: 0, sold: 0, investment: 0, promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0 };
     let total = 0; let sold = 0; let investment = 0;
     let promoted = 0; let notPromoted = 0; let receivedTabo = 0;
     let receivedUnit = 0; let notReceivedUnit = 0;
@@ -334,6 +395,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return 'bg-slate-50 border-slate-100 text-slate-700';
   };
 
+  // جلب إعدادات الخلفية والشبكة المخصصة بناءً على المشروع الحالي أو المخطط العام
+  const currentBgColor = selectedProjectId === 'main_map' 
+    ? (mainMapData?.backgroundColor || '#ffffff') 
+    : (projectConfigs[selectedProjectId || '']?.backgroundColor || '#ffffff');
+
+  const currentShowGrid = selectedProjectId === 'main_map'
+    ? (mainMapData?.showGrid !== false)
+    : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center p-4" dir="rtl">
@@ -374,37 +444,60 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             <div><h1 className="text-2xl font-black text-slate-800">نظام ادارة الوحدات السكنية التفاعلي</h1><p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p></div>
           </div>
           <div className="flex items-center gap-4">
-            {filteredProjects.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[160px]">
-                    {activeProject?.name || "اختر المشروع"}
-                    <ChevronDown size={16} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl">
-                  {filteredProjects.map(p => (
-                    <DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">
-                      {p.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-            <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[180px] font-black h-12 text-slate-700 shadow-sm">
+                  {selectedProjectId === 'main_map' ? "المخطط العام للمدينة" : (activeProject?.name || "اختر المخطط...")}
+                  <ChevronDown size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="rounded-xl">
+                {/* إتاحة خيار تصفح المخطط العام للمدينة كخيار تفاعلي وأساسي */}
+                <DropdownMenuItem onClick={() => setSelectedProjectId('main_map')} className="text-right font-black text-indigo-600 hover:bg-indigo-50 focus:bg-indigo-50">
+                  🌐 المخطط العام للمدينة
+                </DropdownMenuItem>
+                <div className="h-px bg-slate-100 my-1" />
+                {filteredProjects.map(p => (
+                  <DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">
+                    {p.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2 h-12 font-bold"><LogOut size={18} /> خروج</Button>
           </div>
         </header>
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className={cn("space-y-8", (permissions.showGeneralStats || permissions.showNotifications) ? "lg:col-span-2" : "lg:col-span-3")}>
+          <div className={cn("space-y-8", (selectedProjectId !== 'main_map' && (permissions.showGeneralStats || permissions.showNotifications)) ? "lg:col-span-2" : "lg:col-span-3")}>
             {isProjectLoading ? (
               <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4">
                 <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <h2 className="text-xl font-bold text-slate-600">جاري تحميل بيانات المشروع...</h2>
+                <h2 className="text-xl font-bold text-slate-600">جاري تحميل تفاصيل المخطط...</h2>
               </div>
+            ) : selectedProjectId === 'main_map' ? (
+              <InteractiveMap 
+                elements={activeElements} 
+                onHouseClick={handleElementClick} 
+                housesData={housesData} 
+                mapWidth={mainMapData?.width || 1200} 
+                mapHeight={mainMapData?.height || 800} 
+                backgroundColor={currentBgColor}
+                showGrid={currentShowGrid}
+              />
             ) : activeProject ? (
               <>
-                <InteractiveMap elements={activeElements} onHouseClick={handleElementClick} selectedHouseId={selectedElementId} housesData={housesData} mapWidth={activeProject.mapWidth} mapHeight={activeProject.mapHeight} permissions={permissions} />
+                <InteractiveMap 
+                  elements={activeElements} 
+                  onHouseClick={handleElementClick} 
+                  selectedHouseId={selectedElementId} 
+                  housesData={housesData} 
+                  mapWidth={activeProject.mapWidth} 
+                  mapHeight={activeProject.mapHeight} 
+                  permissions={permissions} 
+                  backgroundColor={currentBgColor}
+                  showGrid={currentShowGrid}
+                />
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>
             ) : (
@@ -412,8 +505,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             )}
           </div>
 
-          {(permissions.showGeneralStats || permissions.showNotifications) && (
-            <div className="space-y-6">
+          {selectedProjectId !== 'main_map' && (permissions.showGeneralStats || permissions.showNotifications) && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-left-4">
               {permissions.showGeneralStats && (
                 <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
                   <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات {activeProject?.name}</h3>
