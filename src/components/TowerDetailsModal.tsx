@@ -167,14 +167,13 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
       <UnitDetailsModal 
         isOpen={!!selectedAptKey}
         onClose={() => setSelectedAptKey(null)}
-        onSave={(data) => {
-          if (selectedAptKey) onSaveApartment(selectedAptKey, data);
+        onSave={(key, data) => {
+          onSaveApartment(key, data);
           setSelectedAptKey(null);
         }}
         unitId={selectedAptKey}
         unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
         initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
-        isApartment
         permissions={permissions}
       />
     </>

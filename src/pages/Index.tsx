@@ -423,7 +423,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return 'bg-slate-50 border-slate-100 text-slate-700';
   };
 
-  // جلب إعدادات الخلفية والشبكة المخصصة بناءً على المشروع الحالي أو المخطط العام
+  // جلب إعادات الخلفية والشبكة المخصصة بناءً على المشروع الحالي أو المخطط العام
   const currentBgColor = selectedProjectId === 'main_map' 
     ? (mainMapData?.backgroundColor || '#ffffff') 
     : (projectConfigs[selectedProjectId || '']?.backgroundColor || '#ffffff');
@@ -609,16 +609,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         <UnitDetailsModal 
           isOpen={isUnitModalOpen} 
           onClose={() => setIsUnitModalOpen(false)} 
-          onSave={(data) => handleSaveData(selectedElementId!, data)} 
-          unitId={selectedElementId} 
-          unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} 
-          initialData={selectedElementId ? housesData[selectedElementId] : undefined}
-          permissions={permissions}
-        />
-        <UnitDetailsModal 
-          isOpen={isUnitModalOpen} 
-          onClose={() => setIsUnitModalOpen(false)} 
-          onSave={(data) => handleSaveData(selectedElementId!, data)} 
+          onSave={(key, data) => handleSaveData(key, data)} 
           unitId={selectedElementId} 
           unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} 
           initialData={selectedElementId ? housesData[selectedElementId] : undefined}
