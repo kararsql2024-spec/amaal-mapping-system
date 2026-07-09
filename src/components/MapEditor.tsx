@@ -295,8 +295,23 @@ const MapEditor = ({
       const pts = getElementPoints(el);
       const dragIdx = dragMode.index;
       let newPoints = [...pts];
+      
       if (dragMode.type === 'vertex' && dragIdx !== undefined) {
-        newPoints[dragIdx] = { x: snap(pos.x), y: snap(pos.y) };
+        // حساب مركز العنصر الحالي قبل التغيير لإجراء إزاحة الدوران العكسية
+        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+        
+        // تحويل إحداثيات الماوس العالمية إلى إحداثيات محلية (إلغاء الدوران) لمنع القفز والإزاحة العشوائية
+        const angleRad = -(el.rotation || 0) * (Math.PI / 180);
+        const cos = Math.cos(angleRad);
+        const sin = Math.sin(angleRad);
+        const dx = pos.x - centerX;
+        const dy = pos.y - centerY;
+        
+        const localX = centerX + (dx * cos - dy * sin);
+        const localY = centerY + (dx * sin + dy * cos);
+        
+        newPoints[dragIdx] = { x: snap(localX), y: snap(localY) };
       } else if (dragMode.type === 'edge' && dragIdx !== undefined) {
         const idx1 = dragIdx;
         const idx2 = (dragIdx + 1) % pts.length;
@@ -766,7 +781,33 @@ const MapEditor = ({
                     
                     {isSelectedEl && (
                       <>
-                        {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
+                        {/* مقابض ذكية على الحواف لإضافة نقاط جديدة وزوايا بلمسة واحدة */}
+                        {pts.map((p, i) => {
+                          const nextP = pts[(i + 1) % pts.length];
+                          const midX = (p.x + nextP.x) / 2;
+                          const midY = (p.y + nextP.y) / 2;
+                          return (
+                            <g key={`midpoint-${i}`} className="cursor-pointer">
+                              <circle 
+                                cx={midX} 
+                                cy={midY} 
+                                r={5} 
+                                className="fill-emerald-500 stroke-white stroke-2 hover:scale-125 transition-transform" 
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  const newPoints = [...pts];
+                                  newPoints.splice(i + 1, 0, { x: snap(midX), y: snap(midY) });
+                                  updateSelectedElement({ points: newPoints });
+                                  showSuccess("تم إضافة زاوية جديدة للشكل بنجاح");
+                                }}
+                              />
+                            </g>
+                          );
+                        })}
+
+                        {/* مقابض الزوايا (Vertices) مع ميزة السحب الخالية من الـ Lag وميزة الحذف السريع بالنقر المزدوج */}
+                        {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:fill-blue-50 transition-colors" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />)}
+                        
                         <circle cx={centerX} cy={pts[0].y - 30} r={8} className="fill-blue-600 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
                       </>
                     )}
