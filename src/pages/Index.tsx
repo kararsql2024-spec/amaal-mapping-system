@@ -34,6 +34,17 @@ interface IndexProps {
   setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
 }
 
+// دالة ذكية لإعادة المحاولة عند الفشل المؤقت لضمان موثوقية الاتصال وقوة جلب البيانات
+const fetchWithRetry = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 1) throw error;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return fetchWithRetry(fn, retries - 1, delay * 1.5);
+  }
+};
+
 const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeElements, setActiveElements] = useState<MapElement[]>([]);
@@ -127,7 +138,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       const fetchMainMap = async () => {
         setIsProjectLoading(true);
         try {
-          const { data, error } = await supabase.from('settings').select('*').eq('key', 'main_map_config').single();
+          const data = await fetchWithRetry(async () => {
+            const { data, error } = await supabase.from('settings').select('*').eq('key', 'main_map_config').single();
+            if (error) throw error;
+            return data;
+          });
+          
           if (data && data.value) {
             setMainMapData(data.value);
             setActiveElements(data.value.elements || []);
@@ -136,6 +152,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           }
         } catch (e) {
           console.error("Error loading main map:", e);
+          showError("تعذر تحميل المخطط العام حالياً، يرجى المحاولة مرة أخرى.");
         } finally {
           setIsProjectLoading(false);
         }
@@ -147,36 +164,47 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const fetchProjectData = async () => {
       setIsProjectLoading(true);
       try {
-        const { data: projectDetails, error: projectError } = await supabase
-          .from('projects')
-          .select('elements')
-          .eq('id', selectedProjectId)
-          .single();
-        
-        if (projectError) throw projectError;
+        // 1. جلب تفاصيل مخطط المشروع مع إعادة محاولة تلقائية في حال الفشل
+        const projectDetails = await fetchWithRetry(async () => {
+          const { data, error } = await supabase
+            .from('projects')
+            .select('elements')
+            .eq('id', selectedProjectId)
+            .single();
+          if (error) throw error;
+          return data;
+        });
         setActiveElements(projectDetails?.elements || []);
 
-        const { data: notifs } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('project_id', selectedProjectId)
-          .order('created_at', { ascending: false })
-          .limit(50);
+        // 2. جلب الإشعارات
+        const notifs = await fetchWithRetry(async () => {
+          const { data, error } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('project_id', selectedProjectId)
+            .order('created_at', { ascending: false })
+            .limit(50);
+          if (error) throw error;
+          return data;
+        }).catch(() => []); // فشل الإشعارات البسيط لا يجب أن يعيق المخطط بالكامل
         if (notifs) setNotifications(notifs);
 
+        // 3. جلب بيانات الوحدات والمبيعات مع إعادة محاولة لكل دفعة
         let allUnits: any[] = [];
         let from = 0;
         const step = 1000;
         let hasMore = true;
 
         while (hasMore) {
-          const { data: chunk, error: unitsError } = await supabase
-            .from('houses_data')
-            .select('*')
-            .eq('project_id', selectedProjectId)
-            .range(from, from + step - 1);
-          
-          if (unitsError) throw unitsError;
+          const chunk = await fetchWithRetry(async () => {
+            const { data, error } = await supabase
+              .from('houses_data')
+              .select('*')
+              .eq('project_id', selectedProjectId)
+              .range(from, from + step - 1);
+            if (error) throw error;
+            return data;
+          });
           
           if (!chunk || chunk.length === 0) {
             hasMore = false;
@@ -196,8 +224,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         checkExpiredBookings(allUnits, selectedProjectId);
         
       } catch (error) {
-        console.error("Error loading project data:", error);
-        showError("فشل في تحميل بيانات المشروع");
+        console.error("Error loading project data after retries:", error);
+        showError("فشل في تحميل بيانات المشروع بالكامل بعدة محاولات، يرجى المحاولة مجدداً.");
       } finally {
         setIsProjectLoading(false);
       }
@@ -578,6 +606,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           )}
         </main>
 
+        <UnitDetailsModal 
+          isOpen={isUnitModalOpen} 
+          onClose={() => setIsUnitModalOpen(false)} 
+          onSave={(data) => handleSaveData(selectedElementId!, data)} 
+          unitId={selectedElementId} 
+          unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} 
+          initialData={selectedElementId ? housesData[selectedElementId] : undefined}
+          permissions={permissions}
+        />
         <UnitDetailsModal 
           isOpen={isUnitModalOpen} 
           onClose={() => setIsUnitModalOpen(false)} 
