@@ -487,7 +487,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           while (hHasMore) {
             const { data: hChunk, error: hErr } = await supabase
               .from('houses_data')
-              .select('unit_key, data')
+              .select('unit_key, project_id, data')
               .in('project_id', matchedProjectIds)
               .range(hFrom, hFrom + 999);
             if (hErr) throw hErr;
@@ -504,6 +504,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         }
 
         const updates: any[] = [];
+        const updatedUnitKeys = new Set<string>(); // لتتبع جميع الوحدات التي تم تحديثها من الإكسل
         const parseExcelDate = (val: any) => {
           if (!val) return '';
           if (typeof val === 'number') {
@@ -587,7 +588,37 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             handoverDate: parseExcelDate(row[excelMapping.handoverDateCol]),
           };
 
+          updatedUnitKeys.add(realUnitKey);
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
+        });
+
+        // مطابقة طبق الأصل: تحديد الوحدات السابقة في السيرفر والتي ليست في ملف الإكسل وإعادتها "متوفرة"
+        logs.push("جاري مطابقة الوحدات القديمة والبحث عن الوحدات التي تم إخلاؤها أو نقل أصحابها منها...");
+        setProcessLogs([...logs]);
+
+        existingHouses.forEach((eh: any) => {
+          if (!updatedUnitKeys.has(eh.unit_key)) {
+            const currentStatus = eh.data?.status;
+            // الحفاظ على الوحدات المجمدة (فروزن) كما هي دون تصفيرها لأنها تدار خصيصاً من النظام
+            if (currentStatus && currentStatus.startsWith('frozen')) {
+              return;
+            }
+
+            // إعادة تصفير بيانات الوحدة لتصبح متوفرة طبق الأصل مع الإكسل
+            const resetData = {
+              ...eh.data,
+              status: 'available',
+              name: '',
+              phone: '',
+              saleDate: '',
+              price: '',
+              currency: 'IQD',
+              taboNum: '',
+              taboStatus: 'غير مروج',
+              handoverDate: ''
+            };
+            updates.push({ unit_key: eh.unit_key, project_id: eh.project_id, data: resetData });
+          }
         });
 
         logs.push("جاري تصفية وتجهيز السجلات المكررة لمنع حدوث أخطاء تعارض البيانات...");
@@ -614,9 +645,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const now = new Date().toISOString();
         await supabase.from('settings').upsert({ key: 'last_excel_update', value: now });
         setLastUpdate(now);
-        logs.push("🎉 تم الانتهاء بنجاح وحفظ كامل البيانات دون تكرار!");
+        logs.push("🎉 تم الانتهاء بنجاح وحفظ كامل البيانات دون تكرار وبالمطابقة التامة!");
         setProcessLogs([...logs]);
-        showSuccess("تم تحديث البيانات بنجاح وتجاوز السجلات المكررة");
+        showSuccess("تم تحديث ومطابقة البيانات بنجاح وإخلاء الوحدات السابقة");
       } catch (error: any) {
         logs.push(`❌ خطأ: ${error.message || error}`);
         setProcessLogs([...logs]);
@@ -797,10 +828,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                       <h3 className="font-black text-lg text-slate-700">{editingCenterId ? 'تعديل قسم' : 'إضافة قسم جديد'}</h3>
                       <div className="space-y-4">
-                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase">اسم القسم</Label><Input value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12 font-bold" placeholder="مثال: قسم المبيعات" /></div>
-                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase">كلمة المرور</Label><Input type="password" value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12 font-bold" placeholder="****" /></div>
+                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">اسم القسم</Label><Input value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} className="rounded-xl h-12 font-bold" placeholder="مثال: قسم المبيعات" /></div>
+                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">كلمة المرور</Label><Input type="password" value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} className="rounded-xl h-12 font-bold" placeholder="****" /></div>
                         <div className="space-y-2">
-                          <Label className="text-xs font-black text-slate-400 uppercase">نوع القسم (للصلاحيات)</Label>
+                          <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع القسم (للصلاحيات)</Label>
                           <Select value={newCenter.type} onValueChange={(val) => setNewCenter({...newCenter, type: val})}>
                             <SelectTrigger className="rounded-xl h-12 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
                             <SelectContent className="rounded-xl">
@@ -809,7 +840,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-xs font-black text-slate-400 uppercase">المشاريع المسموحة</Label>
+                          <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">المشاريع المسموحة</Label>
                           <ScrollArea className="h-32 border rounded-xl p-3 bg-white">
                             <div className="space-y-2">
                               {projects.map(p => (
