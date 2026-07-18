@@ -592,35 +592,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
         });
 
-        // مطابقة طبق الأصل: تحديد الوحدات السابقة في السيرفر والتي ليست في ملف الإكسل وإعادتها "متوفرة"
-        logs.push("جاري مطابقة الوحدات القديمة والبحث عن الوحدات التي تم إخلاؤها أو نقل أصحابها منها...");
-        setProcessLogs([...logs]);
-
-        existingHouses.forEach((eh: any) => {
-          if (!updatedUnitKeys.has(eh.unit_key)) {
-            const currentStatus = eh.data?.status;
-            // الحفاظ على الوحدات المجمدة (فروزن) كما هي دون تصفيرها لأنها تدار خصيصاً من النظام
-            if (currentStatus && currentStatus.startsWith('frozen')) {
-              return;
-            }
-
-            // إعادة تصفير بيانات الوحدة لتصبح متوفرة طبق الأصل مع الإكسل
-            const resetData = {
-              ...eh.data,
-              status: 'available',
-              name: '',
-              phone: '',
-              saleDate: '',
-              price: '',
-              currency: 'IQD',
-              taboNum: '',
-              taboStatus: 'غير مروج',
-              handoverDate: ''
-            };
-            updates.push({ unit_key: eh.unit_key, project_id: eh.project_id, data: resetData });
-          }
-        });
-
         logs.push("جاري تصفية وتجهيز السجلات المكررة لمنع حدوث أخطاء تعارض البيانات...");
         setProcessLogs([...logs]);
         
@@ -628,16 +599,67 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         updates.forEach(u => uniqueUpdatesMap.set(u.unit_key, u));
         const finalUpdates = Array.from(uniqueUpdatesMap.values());
 
-        logs.push(`تم تصفية البيانات بنجاح. إجمالي السجلات الفريدة: ${finalUpdates.length} سجل (تم تصفية ${updates.length - finalUpdates.length} مكرر).`);
+        // مطابقة ذكية ودقيقة (Surgical Matching):
+        // نقوم بإخلاء الوحدة السابقة للزبون فقط وحصراً إذا تم رصد اسمه في الإكسل منقولاً إلى وحدة جديدة
+        logs.push("جاري فحص النقل الذكي للزبائن لتفريغ وحداتهم السابقة دون المساس بالحجوزات الأخرى...");
+        setProcessLogs([...logs]);
+
+        // 1. بناء خريطة بالأسماء والوحدات الجديدة المخصصة لهم في الإكسل
+        const nameToExcelUnit = new Map<string, string>();
+        finalUpdates.forEach(u => {
+          if (u.data?.name) {
+            const cleanName = u.data.name.trim().toLowerCase();
+            if (cleanName) {
+              nameToExcelUnit.set(cleanName, u.unit_key);
+            }
+          }
+        });
+
+        // 2. فحص الوحدات الحالية في السيرفر وتفريغ السابقة فقط لمن انتقلوا
+        existingHouses.forEach((eh: any) => {
+          const currentName = eh.data?.name?.trim()?.toLowerCase();
+          if (currentName && nameToExcelUnit.has(currentName)) {
+            const newAssignedUnit = nameToExcelUnit.get(currentName);
+            // إذا كان الاسم مسجلاً في الإكسل لوحدة جديدة تختلف عن وحدته الحالية بالسيرفر، نقوم بتفريغ الحالية
+            if (newAssignedUnit && newAssignedUnit !== eh.unit_key) {
+              const currentStatus = eh.data?.status;
+              if (currentStatus && currentStatus.startsWith('frozen')) {
+                return; // عدم لمس المجمدات
+              }
+
+              logs.push(`🔄 رصد انتقال الزبون (${eh.data.name}) من الوحدة القديمة (${eh.unit_key}) إلى الجديدة (${newAssignedUnit}). تم تصفير القديمة تلقائياً.`);
+              
+              const resetData = {
+                ...eh.data,
+                status: 'available',
+                name: '',
+                phone: '',
+                saleDate: '',
+                price: '',
+                currency: 'IQD',
+                taboNum: '',
+                taboStatus: 'غير مروج',
+                handoverDate: ''
+              };
+              
+              // إضافة التصفير إلى قائمة التحديثات النهائية
+              uniqueUpdatesMap.set(eh.unit_key, { unit_key: eh.unit_key, project_id: eh.project_id, data: resetData });
+            }
+          }
+        });
+
+        const sortedFinalUpdates = Array.from(uniqueUpdatesMap.values());
+
+        logs.push(`تم تصفية البيانات بنجاح. إجمالي السجلات الفريدة للتحديث: ${sortedFinalUpdates.length} سجل.`);
         logs.push(`جاري حفظ السجلات النهائية في قاعدة البيانات...`);
         setProcessLogs([...logs]);
 
-        for (let i = 0; i < finalUpdates.length; i += 100) {
-          const chunk = finalUpdates.slice(i, i + 100);
+        for (let i = 0; i < sortedFinalUpdates.length; i += 100) {
+          const chunk = sortedFinalUpdates.slice(i, i + 100);
           const { error: upsertError } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
           if (upsertError) throw upsertError;
-          if (i % 500 === 0 || i + chunk.length === finalUpdates.length) {
-            logs.push(`تم حفظ ${Math.min(i + chunk.length, finalUpdates.length)} سجل بنجاح...`);
+          if (i % 500 === 0 || i + chunk.length === sortedFinalUpdates.length) {
+            logs.push(`تم حفظ ${Math.min(i + chunk.length, sortedFinalUpdates.length)} سجل بنجاح...`);
             setProcessLogs([...logs]);
           }
         }
@@ -647,7 +669,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         setLastUpdate(now);
         logs.push("🎉 تم الانتهاء بنجاح وحفظ كامل البيانات دون تكرار وبالمطابقة التامة!");
         setProcessLogs([...logs]);
-        showSuccess("تم تحديث ومطابقة البيانات بنجاح وإخلاء الوحدات السابقة");
+        showSuccess("تم تحديث ومطابقة البيانات بنجاح وإخلاء الوحدات السابقة للمنقولين فقط");
       } catch (error: any) {
         logs.push(`❌ خطأ: ${error.message || error}`);
         setProcessLogs([...logs]);
