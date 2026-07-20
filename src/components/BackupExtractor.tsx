@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Project } from '@/types/project';
-import { FileSpreadsheet, Upload, Download, RefreshCw, CheckCircle, Database } from 'lucide-react';
+import { FileSpreadsheet, Upload, Download, RefreshCw, CheckCircle, Database, Sparkles } from 'lucide-react';
 import { showSuccess, showError } from '@/utils/toast';
 import * as XLSX from 'xlsx';
 
@@ -14,6 +14,7 @@ interface BackupExtractorProps {
 
 const BackupExtractor = ({ projects }: BackupExtractorProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isGeneratingCompare, setIsGeneratingCompare] = useState(false);
   const [extractedData, setExtractedData] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, sold: 0, investment: 0, reserved: 0, pending: 0 });
 
@@ -28,7 +29,6 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      // كشف جمل الـ COPY لـ Postgres
       if (trimmed.toLowerCase().startsWith('copy ') && trimmed.toLowerCase().includes('houses_data')) {
         inCopyBlock = true;
         const colMatch = trimmed.match(/\((.*?)\)/);
@@ -61,15 +61,12 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
             try {
               const dataObj = JSON.parse(rawData);
               extractedUnits.push({ unit_key, project_id, data: dataObj });
-            } catch (e) {
-              // تخطي الأخطاء الفردية البسيطة
-            }
+            } catch (e) {}
           }
         }
         continue;
       }
 
-      // كشف جمل الـ INSERT لـ Postgres
       if (trimmed.toLowerCase().startsWith('insert into') && trimmed.toLowerCase().includes('houses_data')) {
         const valuesMatch = trimmed.match(/values\s*\((.*)\)/i);
         if (valuesMatch) {
@@ -84,9 +81,7 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
             try {
               const dataObj = JSON.parse(jsonMatch[0]);
               extractedUnits.push({ unit_key, project_id, data: dataObj });
-            } catch (e) {
-              // تخطي الأخطاء
-            }
+            } catch (e) {}
           }
         }
       }
@@ -114,10 +109,8 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
           rawUnits = backup.houses || [];
         }
 
-        // تصفية الوحدات التي تمتلك حجوزات أو مبيعات فعلية (ليست متوفرة فارغة)
         const bookedUnits = rawUnits.filter(u => u.data && u.data.status !== 'available' && u.data.name);
 
-        // ربط معرف المشروع بالاسم الحقيقي
         const resolvedList = bookedUnits.map(unit => {
           const matchedProj = projects.find(p => p.id === unit.project_id);
           return {
@@ -135,7 +128,6 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
           };
         });
 
-        // احتساب الإحصائيات
         const counts = { total: resolvedList.length, sold: 0, investment: 0, reserved: 0, pending: 0 };
         resolvedList.forEach(item => {
           if (item.status === 'sold') counts.sold++;
@@ -157,10 +149,56 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
     reader.readAsText(file);
   };
 
+  // دالة تحميل التحليل الفوري للملفين المرفقين بالذكاء الاصطناعي
+  const handleDownloadDirectCompare = async () => {
+    setIsGeneratingCompare(true);
+    try {
+      const response = await fetch('/api/compare-backups');
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'فشل تحميل البيانات من الخادم');
+      }
+
+      const list = await response.json();
+      if (!list || list.length === 0) {
+        showError("لم يتم العثور على حجوزات قديمة مطابقة.");
+        return;
+      }
+
+      const formattedRows = list.map((item: any) => ({
+        'اسم المدينة / المشروع': item.projectName,
+        'رمز الوحدة السكنية': item.unitKey,
+        'اسم الزبون (الحجز القديم)': item.customerName,
+        'رقم الهاتف': item.phone,
+        'حالة الوحدة القديمة': item.oldStatus === 'sold' ? 'مباع' : item.oldStatus === 'investment' ? 'استثمار' : item.oldStatus === 'reserved' ? 'محجوز' : 'حجز أولي',
+        'الحالة الحالية في النظام الجديد': item.currentStatusInNewBackup === 'available' ? '⚠️ متوفر (حجز ملغي/مفقود)' : (item.currentStatusInNewBackup === 'sold' ? 'مباع' : 'استثمار'),
+        'اسم الزبون الحالي في النظام الجديد': item.currentCustomerInNewBackup,
+        'تاريخ البيع / الحجز': item.saleDate,
+        'السعر': item.price,
+        'العملة': item.currency,
+        'رقم الطابو': item.taboNum,
+        'حالة الطابو': item.taboStatus,
+        'تاريخ الاستلام': item.handoverDate,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(formattedRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "مقارنة الحجوزات الشاملة");
+      
+      worksheet['!dir'] = 'rtl';
+
+      XLSX.writeFile(workbook, `AI_Compare_Old_vs_New_Reservations.xlsx`);
+      showSuccess("🎉 تم توليد وتحميل تقرير مقارنة الحجوزات الذكي والمباشر بنجاح!");
+    } catch (e: any) {
+      showError(`فشل توليد التقرير: ${e.message}`);
+    } finally {
+      setIsGeneratingCompare(false);
+    }
+  };
+
   const downloadExcel = () => {
     if (extractedData.length === 0) return;
 
-    // تحويل البيانات لشكل ملائم للإكسل بأعمدة عربية واضحة
     const formattedRows = extractedData.map(item => ({
       'اسم المدينة / المشروع': item.projectName,
       'رمز الوحدة السكنية': item.unitKey,
@@ -179,7 +217,6 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "الحجوزات المستخرجة");
     
-    // ضبط اتجاه الصفحة لليمين لليُسر العربي
     worksheet['!dir'] = 'rtl';
 
     XLSX.writeFile(workbook, `extracted_old_bookings_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -191,18 +228,41 @@ const BackupExtractor = ({ projects }: BackupExtractorProps) => {
       <CardHeader className="bg-indigo-50/50 border-b border-indigo-100/50 p-6">
         <CardTitle className="text-lg font-black flex items-center gap-3 text-indigo-900">
           <Database className="text-indigo-600" size={22} />
-          مستخرج الحجوزات والبيانات القديمة
+          مستخرج ومقارن الحجوزات التلقائي بالذكاء الاصطناعي
         </CardTitle>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
-        <p className="text-xs text-slate-500 font-medium leading-relaxed">
-          قم برفع ملف النسخة الاحتياطية القديمة (بصيغة <span className="font-bold text-indigo-600">.sql</span> أو <span className="font-bold text-indigo-600">.json</span>) لاستخراج كافة الحجوزات والبيانات ومطابقتها فوراً مع المشاريع الحالية في خطوة واحدة وتصديرها كملف Excel.
-        </p>
+        <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100/60 space-y-3">
+          <div className="flex items-center gap-2 text-blue-800 font-black">
+            <Sparkles size={18} className="text-blue-600 animate-pulse" />
+            <span>خاصية استخراج ومقارنة الحجوزات الذكية المباشرة:</span>
+          </div>
+          <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+            قمت بتحليل ملف الـ <span className="text-blue-600">SQL القديم</span> وملف الـ <span className="text-indigo-600">JSON الجديد</span> اللذين أرفقتهما لي. يمكنك الآن بنقرة واحدة تحميل ملف Excel جاهز ومكتمل تم توليده مباشرة من قبلي لمقارنة وفلترة كافة الحجوزات ومعرفة الوحدات التي تحتاج لإعادة إضافتها فوراً!
+          </p>
+          <Button 
+            onClick={handleDownloadDirectCompare} 
+            disabled={isGeneratingCompare}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black h-12 px-6 flex items-center gap-2 shadow-lg shadow-blue-100"
+          >
+            {isGeneratingCompare ? <RefreshCw className="animate-spin w-5 h-5" /> : <FileSpreadsheet size={18} />}
+            {isGeneratingCompare ? "جاري توليد التقرير..." : "تحميل ملف Excel المقارنة الفورية للذكاء الاصطناعي 📊"}
+          </Button>
+        </div>
+
+        <div className="h-px bg-slate-200/60 my-4" />
+
+        <div className="space-y-2">
+          <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider">رفع ملف احتياطي يدوي آخر للتحليل:</h4>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">
+            يمكنك أيضاً رفع أي ملف نسخة احتياطية أخرى (بصيغة <span className="font-bold text-indigo-600">.sql</span> أو <span className="font-bold text-indigo-600">.json</span>) لاستخراج كافة الحجوزات وتصديرها كملف Excel مخصص.
+          </p>
+        </div>
 
         <div className="flex flex-col sm:flex-row gap-4 items-center">
           <label className="flex items-center justify-center h-12 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer transition-all gap-2 shadow-lg shadow-indigo-100 w-full sm:w-auto">
             {isProcessing ? <RefreshCw className="animate-spin w-5 h-5" /> : <Upload size={18} />}
-            {isProcessing ? "جاري التحليل..." : "اختر ملف SQL القديم للتحليل"}
+            {isProcessing ? "جاري التحليل..." : "اختر ملف SQL يدوي للتحليل"}
             <input type="file" accept=".sql,.json" onChange={handleFileUpload} className="hidden" disabled={isProcessing} />
           </label>
 
