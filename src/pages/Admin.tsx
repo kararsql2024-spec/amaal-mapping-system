@@ -803,6 +803,24 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
+  const handleDownloadBackup = async () => {
+    setIsGeneratingBackup(true);
+    try {
+      const { data: projects } = await supabase.from('projects').select('*');
+      const { data: houses } = await supabase.from('houses_data').select('*');
+      const { data: settings } = await supabase.from('settings').select('*');
+      const { data: centers } = await supabase.from('marketing_centers').select('*');
+      const backup = { timestamp: new Date().toISOString(), projects, houses, settings, centers };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      showSuccess("تم إنشاء النسخة الاحتياطية بنجاح");
+    } catch (error) { showError("فشل في إنشاء النسخة الاحتياطية"); } finally { setIsGeneratingBackup(false); }
+  };
+
   const handleSendBackupToTelegram = async () => {
     if (!telegramConfig.botToken || !telegramConfig.chatId) {
       showError("يرجى إدخال توكن البوت ومعرف القناة وحفظهما أولاً.");
