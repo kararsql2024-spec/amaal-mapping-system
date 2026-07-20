@@ -867,11 +867,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (response.ok && resData.ok) {
         showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
       } else {
-        throw new Error(resData.description || "فشل إرسال الملف");
+        // قراءة وعرض الوصف الدقيق للخطأ المرتجع من سيرفر تليجرام
+        const detailedError = resData.description || `رمز الخطأ: ${resData.error_code || 'غير معروف'}`;
+        throw new Error(detailedError);
       }
     } catch (error: any) {
       console.error(error);
-      showError(`فشل في الإرسال: ${error.message || error}`);
+      showError(`فشل في الإرسال لتيليجرام: ${error.message || error}`);
     } finally {
       setIsSendingToTelegram(false);
     }
