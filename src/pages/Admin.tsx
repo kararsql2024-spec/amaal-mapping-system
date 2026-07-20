@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, FileText
+  Palette, MessageSquare, MapPin, Info, Send
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -23,7 +23,6 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { parseHousesFromSql, parseProjectsFromSql, ParsedHouseData, ParsedProject } from '@/utils/sqlParser';
 import {
   Select,
   SelectContent,
@@ -50,6 +49,7 @@ interface AdminProps {
   housesData: Record<string, any>;
 }
 
+// دالة توحيد ومطابقة الأسماء العربية بدقة متناهية لحل مشكلة فروقات الإملاء والمسافات
 const normalizeArabicName = (name: string): string => {
   if (!name) return "";
   return name
@@ -107,11 +107,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const [isSendingToTelegram, setIsSendingToTelegram] = useState(false);
-
-  // SQL Restore States
-  const [sqlParsedUnits, setSqlParsedUnits] = useState<ParsedHouseData[]>([]);
-  const [isParsingSql, setIsParsingSql] = useState(false);
-  const [isSavingSqlUnits, setIsSavingSqlUnits] = useState(false);
 
   // Telegram Config
   const [telegramConfig, setTelegramConfig] = useState({
@@ -834,6 +829,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     setIsSendingToTelegram(true);
     try {
+      // 1. تجميع البيانات للنسخة الاحتياطية
       const { data: projectsData } = await supabase.from('projects').select('*');
       const { data: housesData } = await supabase.from('houses_data').select('*');
       const { data: settingsData } = await supabase.from('settings').select('*');
@@ -847,16 +843,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         centers: centersData
       };
 
+      // 2. تحويلها لملف Blob
       const backupString = JSON.stringify(backup, null, 2);
       const blob = new Blob([backupString], { type: 'application/json' });
+      
+      // اسم الملف الاحتياطي
       const filename = `backup_${new Date().toISOString().split('T')[0]}_manual.json`;
       const file = new File([blob], filename, { type: 'application/json' });
 
+      // 3. تجهيز FormData لإرساله عبر Telegram API
       const formData = new FormData();
       formData.append('chat_id', telegramConfig.chatId);
       formData.append('document', file);
       formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات.\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
 
+      // 4. إرسال الطلب من المتصفح مباشرة لـ Telegram API
       const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendDocument`, {
         method: 'POST',
         body: formData
@@ -866,6 +867,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (response.ok && resData.ok) {
         showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
       } else {
+        // قراءة وعرض الوصف الدقيق للخطأ المرتجع من سيرفر تليجرام
         const detailedError = resData.description || `رمز الخطأ: ${resData.error_code || 'غير معروف'}`;
         throw new Error(detailedError);
       }
@@ -893,6 +895,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             throw new Error("ملف النسخة الاحتياطية غير صالح أو تالف.");
           }
 
+          // استعادة المشاريع السكنية
           if (backup.projects && backup.projects.length > 0) {
             const formattedProjects = backup.projects.map((p: any) => ({
               id: p.id,
@@ -905,6 +908,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             await supabase.from('projects').upsert(formattedProjects);
           }
 
+          // استعادة بيانات الوحدات السكنية والحجوزات على دفعات صغيرة لتفادي ثقل البيانات
           if (backup.houses && backup.houses.length > 0) {
             for (let i = 0; i < backup.houses.length; i += 100) {
               const chunk = backup.houses.slice(i, i + 100);
@@ -912,10 +916,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             }
           }
 
+          // استعادة الإعدادات العامة
           if (backup.settings && backup.settings.length > 0) {
             await supabase.from('settings').upsert(backup.settings);
           }
 
+          // استعادة المراكز التسويقية والأقسام
           if (backup.centers && backup.centers.length > 0) {
             await supabase.from('marketing_centers').upsert(backup.centers);
           }
@@ -934,164 +940,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) {
       showError("فشل في قراءة ملف النسخة الاحتياطية");
       setIsRestoringBackup(false);
-    }
-  };
-
-  const handleSqlFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsParsingSql(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-        try {
-          const text = evt.target?.result as string;
-          
-          // 1. استخراج المشاريع من ملف الـ SQL لبناء خريطة الهياكل الهندسية القديمة
-          const oldProjects = parseProjectsFromSql(text);
-          // 2. تفكيك الوحدات القديمة
-          const rawParsedUnits = parseHousesFromSql(text);
-
-          if (rawParsedUnits.length === 0) {
-            throw new Error("لم يتم العثور على أي مبيعات في ملف الـ SQL المختار.");
-          }
-
-          // 3. تطبيق المطابقة الجغرافية الهندسية الفائقة (Super Matcher)
-          const matchedUnits: ParsedHouseData[] = [];
-          let successMatches = 0;
-          let unresolved = 0;
-
-          // جلب المشاريع الحالية كاملة بما فيها العناصر من جدول السيرفر بدقة لتفادي الحجم
-          const { data: currentFullProjects } = await supabase.from('projects').select('id, name, elements');
-
-          rawParsedUnits.forEach((oldUnit) => {
-            // البحث عن المشروع القديم في الـ SQL
-            const oldProj = oldProjects.find(p => p.id === oldUnit.project_id);
-            if (!oldProj) {
-              // إذا لم نعثر على اسم المشروع القديم، نحاول البحث بالمعرف الحالي كخيار تراجع
-              const currentProj = currentFullProjects?.find(p => p.id === oldUnit.project_id);
-              if (currentProj) {
-                // تطابق المعرفات مباشرة
-                matchedUnits.push(oldUnit);
-                successMatches++;
-              } else {
-                unresolved++;
-              }
-              return;
-            }
-
-            // البحث عن المشروع الحالي الذي يحمل نفس اسم المشروع القديم
-            const currentProj = currentFullProjects?.find(p => p.name === oldProj.name);
-            if (!currentProj) {
-              unresolved++;
-              return;
-            }
-
-            const oldElements = oldProj.elements || [];
-            const currentElements = currentProj.elements || [];
-
-            // فحص نوع الوحدة (شقة في برج أم منزل عادي)
-            if (oldUnit.unit_key.includes('_F') && oldUnit.unit_key.includes('_A')) {
-              // هذه شقة في عمارة
-              const parts = oldUnit.unit_key.split('_F');
-              const oldTowerId = parts[0];
-              const floorAndApt = 'F' + parts[1]; // F5_A2 مثلاً
-
-              // البحث عن البرج القديم في عناصر المشروع القديم لاستخراج اسمه
-              const oldTower = oldElements.find(el => el.id === oldTowerId && el.type === 'tower');
-              if (!oldTower) {
-                unresolved++;
-                return;
-              }
-
-              // البحث عن البرج الحالي الذي يحمل نفس الاسم في المشروع الحالي
-              const currentTower = currentElements.find(el => el.label === oldTower.label && el.type === 'tower');
-              if (!currentTower) {
-                unresolved++;
-                return;
-              }
-
-              // بناء مفتاح الوحدة الجديد الفعال
-              const newUnitKey = `${currentTower.id}_${floorAndApt}`;
-              matchedUnits.push({
-                unit_key: newUnitKey,
-                project_id: currentProj.id,
-                data: oldUnit.data
-              });
-              successMatches++;
-            } else {
-              // هذا منزل عادي
-              const oldHouse = oldElements.find(el => el.id === oldUnit.unit_key && el.type === 'house');
-              if (!oldHouse) {
-                // إذا لم نعثر عليه، قد يكون الـ unit_key في الـ SQL القديم هو اسم المنزل مباشرة
-                const currentHouseByName = currentElements.find(el => el.label === oldUnit.unit_key && el.type === 'house');
-                if (currentHouseByName) {
-                  matchedUnits.push({
-                    unit_key: currentHouseByName.id,
-                    project_id: currentProj.id,
-                    data: oldUnit.data
-                  });
-                  successMatches++;
-                } else {
-                  unresolved++;
-                }
-                return;
-              }
-
-              // البحث عن المنزل الحالي بنفس الاسم والترميز الهندسي
-              const currentHouse = currentElements.find(el => el.label === oldHouse.label && el.type === 'house');
-              if (!currentHouse) {
-                unresolved++;
-                return;
-              }
-
-              matchedUnits.push({
-                unit_key: currentHouse.id,
-                project_id: currentProj.id,
-                data: oldUnit.data
-              });
-              successMatches++;
-            }
-          });
-
-          setSqlParsedUnits(matchedUnits);
-          
-          if (matchedUnits.length > 0) {
-            showSuccess(`🎉 تم المطابقة الهندسية بنجاح! تم مطابقة وتسكين ${successMatches} وحدة بدقة متناهية، وتخطي ${unresolved} وحدة غير مطابقة.`);
-          } else {
-            showError("لم يتم العثور على مطابقة لترميزات الوحدات في ملف الـ SQL مع الهياكل الهندسية الحالية للمخطط.");
-          }
-        } catch (err: any) {
-          showError("فشل تحليل محتوى الـ SQL: " + err.message);
-        } finally {
-          setIsParsingSql(false);
-        }
-      };
-      reader.readAsText(file);
-    } catch (error) {
-      showError("فشل في قراءة ملف الـ SQL");
-      setIsParsingSql(false);
-    }
-  };
-
-  const handleSaveSqlUnits = async () => {
-    if (sqlParsedUnits.length === 0) return;
-    setIsSavingSqlUnits(true);
-
-    try {
-      for (let i = 0; i < sqlParsedUnits.length; i += 100) {
-        const chunk = sqlParsedUnits.slice(i, i + 100);
-        const { error } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
-        if (error) throw error;
-      }
-      
-      showSuccess(`🎉 تم بنجاح استعادة مبيعات وحجوزات ${sqlParsedUnits.length} وحدة سكنية دون المساس بالمخططات الهندسية الحالية.`);
-      setSqlParsedUnits([]);
-    } catch (err: any) {
-      showError("فشل أثناء حفظ بيانات الحجوزات: " + err.message);
-    } finally {
-      setIsSavingSqlUnits(false);
     }
   };
 
@@ -1141,7 +989,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div className="flex gap-4">
                     <label className="flex items-center justify-center h-12 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer transition-all gap-2 shadow-lg shadow-emerald-100">
                       {isRestoringBackup ? <RefreshCcw className="animate-spin" /> : <Upload size={18} />}
-                      {isRestoringBackup ? "جاري استعادة البيانات..." : "استعادة نسخة احتياطية JSON"}
+                      {isRestoringBackup ? "جاري استعادة البيانات..." : "استعادة نسخة احتياطية"}
                       <input type="file" accept=".json" onChange={handleRestoreBackup} className="hidden" disabled={isRestoringBackup} />
                     </label>
 
@@ -1153,42 +1001,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* أداة معالجة واستيراد ملفات الـ SQL القديمة */}
-                  <div className="lg:col-span-1 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
-                    <h3 className="font-black text-lg flex items-center gap-2 text-slate-800">
-                      <FileText size={18} className="text-amber-600" /> استيراد SQL القديم (حجوزات فقط)
-                    </h3>
-                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                      تسمح لك هذه الأداة برفع ملف الـ SQL القديم لاستخراج الحجوزات والمبيعات والزبائن فقط، وتنزيلها في المخططات والوحدات الحالية دون المساس بالمخططات.
-                    </p>
-                    
-                    <div className="space-y-4 pt-2">
-                      <label className="flex items-center justify-center w-full h-14 px-4 transition bg-white border-2 border-slate-200 border-dashed rounded-xl cursor-pointer hover:border-amber-500">
-                        <span className="flex items-center space-x-2 rtl:space-x-reverse text-amber-600 font-bold">
-                          {isParsingSql ? <RefreshCcw className="animate-spin w-5 h-5" /> : <Upload size={18} />}
-                          <span>{isParsingSql ? "جاري تحليل الملف..." : "اختر ملف .sql القديم"}</span>
-                        </span>
-                        <input type="file" accept=".sql" onChange={handleSqlFileSelected} className="hidden" disabled={isParsingSql} />
-                      </label>
-
-                      {sqlParsedUnits.length > 0 && (
-                        <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl space-y-3 animate-in fade-in">
-                          <p className="text-xs font-bold text-amber-800">
-                            📊 تم العثور على <strong>{sqlParsedUnits.length}</strong> وحدة سكنية ومبيعات جاهزة للاستيراد في مشاريعها.
-                          </p>
-                          <Button 
-                            onClick={handleSaveSqlUnits} 
-                            disabled={isSavingSqlUnits}
-                            className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-xl h-10 font-black flex items-center justify-center gap-2"
-                          >
-                            {isSavingSqlUnits ? <RefreshCcw className="animate-spin w-4 h-4" /> : <Save size={16} />}
-                            بدء دمج واستعادة المبيعات
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
                   <div className="lg:col-span-1 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                     <h3 className="font-black text-lg flex items-center gap-2 text-slate-800">
                       <Send size={18} className="text-blue-600" /> إرسال للتيليجرام
@@ -1234,12 +1046,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     </div>
                   </div>
 
-                  <div className="lg:col-span-1 bg-slate-50 rounded-3xl p-6 border border-slate-100 flex flex-col justify-center text-center space-y-4">
+                  <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-6 border border-slate-100 flex flex-col justify-center text-center space-y-4">
                     <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-md mx-auto">
                       <Database className="text-blue-600 w-8 h-8" />
                     </div>
                     <div className="max-w-md mx-auto space-y-2">
-                      <h4 className="font-black text-slate-800">حفظ نسخة احتياطية دورية</h4>
+                      <h4 className="font-black text-slate-800">هل ترغب في حفظ نسخة احتياطية دورية؟</h4>
                       <p className="text-xs text-slate-500 leading-relaxed font-medium">
                         احرص دوماً على استخدام زر الإرسال إلى تيليجرام أو زر التحميل لحفظ بيانات الحجوزات وملاحظاتها وتحديثات الإكسل اليومية ضد أي فقدان طارئ.
                       </p>
