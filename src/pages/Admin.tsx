@@ -49,6 +49,14 @@ interface AdminProps {
   housesData: Record<string, any>;
 }
 
+// مكون مساعد لإدخال وتعيين أحرف أعمدة الإكسل
+const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
+  <div className="flex items-center justify-between gap-4">
+    <Label className="text-xs font-bold text-slate-600">{label}</Label>
+    <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
+  </div>
+);
+
 // دالة توحيد ومطابقة الأسماء العربية بدقة متناهية لحل مشكلة فروقات الإملاء والمسافات
 const normalizeArabicName = (name: string): string => {
   if (!name) return "";
@@ -185,45 +193,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     fetchData();
   }, [session]);
-
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" dir="rtl">
-        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 mx-auto mb-4">
-              <Settings2 className="text-white w-8 h-8" />
-            </div>
-            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول الإدارة</h1>
-            <p className="text-slate-500 font-medium mt-2">يرجى إدخال بيانات الاعتماد للوصول</p>
-          </div>
-          <Auth
-            supabaseClient={supabase}
-            providers={[]}
-            view="sign_in"
-            showLinks={false}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: '#4f46e5',
-                    brandAccent: '#4338ca',
-                  },
-                },
-              },
-              className: {
-                container: 'font-bold',
-                button: 'rounded-xl h-12 font-bold',
-                input: 'rounded-xl h-12 border-slate-200',
-              }
-            }}
-            theme="light"
-          />
-        </div>
-      </div>
-    );
-  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
