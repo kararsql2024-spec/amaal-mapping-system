@@ -49,6 +49,18 @@ interface AdminProps {
   housesData: Record<string, any>;
 }
 
+// دالة توحيد ومطابقة الأسماء العربية بدقة متناهية لحل مشكلة فروقات الإملاء والمسافات
+const normalizeArabicName = (name: string): string => {
+  if (!name) return "";
+  return name
+    .trim()
+    .replace(/[\u064B-\u065F]/g, "") // إزالة الحركات والتنوين
+    .replace(/[أإآ]/g, "ا")          // توحيد الألفات
+    .replace(/ة/g, "ه")              // توحيد التاء المربوطة
+    .replace(/[ىي]/g, "ي")           // توحيد الياء والألف المقصورة
+    .replace(/\s+/g, "");            // إزالة جميع المسافات الإضافية والفاصلة
+};
+
 const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminProps) => {
   const [session, setSession] = useState<any>(null);
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
@@ -91,8 +103,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
 
-  // Backup States
+  // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -599,51 +612,53 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         updates.forEach(u => uniqueUpdatesMap.set(u.unit_key, u));
         const finalUpdates = Array.from(uniqueUpdatesMap.values());
 
-        // مطابقة ذكية ودقيقة (Surgical Matching):
-        // نقوم بإخلاء الوحدة السابقة للزبون فقط وحصراً إذا تم رصد اسمه في الإكسل منقولاً إلى وحدة جديدة
-        logs.push("جاري فحص النقل الذكي للزبائن لتفريغ وحداتهم السابقة دون المساس بالحجوزات الأخرى...");
+        // مطابقة ذكية ودقيقة (Surgical Matching) مع معالجة وتوحيد الأسماء العربية لمنع الماتش غير الدقيق:
+        logs.push("جاري فحص النقل الذكي والمطابقة الدقيقة للزبائن لتفريغ وحداتهم السابقة دون المساس بالحجوزات الأخرى...");
         setProcessLogs([...logs]);
 
-        // 1. بناء خريطة بالأسماء والوحدات الجديدة المخصصة لهم في الإكسل
+        // 1. بناء خريطة بالأسماء الموحدة والوحدات الجديدة المخصصة لهم في الإكسل
         const nameToExcelUnit = new Map<string, string>();
         finalUpdates.forEach(u => {
           if (u.data?.name) {
-            const cleanName = u.data.name.trim().toLowerCase();
-            if (cleanName) {
-              nameToExcelUnit.set(cleanName, u.unit_key);
+            const normalizedName = normalizeArabicName(u.data.name);
+            if (normalizedName) {
+              nameToExcelUnit.set(normalizedName, u.unit_key);
             }
           }
         });
 
         // 2. فحص الوحدات الحالية في السيرفر وتفريغ السابقة فقط لمن انتقلوا
         existingHouses.forEach((eh: any) => {
-          const currentName = eh.data?.name?.trim()?.toLowerCase();
-          if (currentName && nameToExcelUnit.has(currentName)) {
-            const newAssignedUnit = nameToExcelUnit.get(currentName);
-            // إذا كان الاسم مسجلاً في الإكسل لوحدة جديدة تختلف عن وحدته الحالية بالسيرفر، نقوم بتفريغ الحالية
-            if (newAssignedUnit && newAssignedUnit !== eh.unit_key) {
-              const currentStatus = eh.data?.status;
-              if (currentStatus && currentStatus.startsWith('frozen')) {
-                return; // عدم لمس المجمدات
-              }
+          const currentName = eh.data?.name;
+          if (currentName) {
+            const normalizedCurrent = normalizeArabicName(currentName);
+            // إذا تطابق الاسم الموحد في الإكسل ولكنه في وحدة جديدة، نقوم بتصفير وحدته السابقة فقط وحصراً
+            if (normalizedCurrent && nameToExcelUnit.has(normalizedCurrent)) {
+              const newAssignedUnit = nameToExcelUnit.get(normalizedCurrent);
+              if (newAssignedUnit && newAssignedUnit !== eh.unit_key) {
+                const currentStatus = eh.data?.status;
+                if (currentStatus && currentStatus.startsWith('frozen')) {
+                  return; // عدم لمس المجمدات
+                }
 
-              logs.push(`🔄 رصد انتقال الزبون (${eh.data.name}) من الوحدة القديمة (${eh.unit_key}) إلى الجديدة (${newAssignedUnit}). تم تصفير القديمة تلقائياً.`);
-              
-              const resetData = {
-                ...eh.data,
-                status: 'available',
-                name: '',
-                phone: '',
-                saleDate: '',
-                price: '',
-                currency: 'IQD',
-                taboNum: '',
-                taboStatus: 'غير مروج',
-                handoverDate: ''
-              };
-              
-              // إضافة التصفير إلى قائمة التحديثات النهائية
-              uniqueUpdatesMap.set(eh.unit_key, { unit_key: eh.unit_key, project_id: eh.project_id, data: resetData });
+                logs.push(`🔄 رصد انتقال الزبون (${eh.data.name}) من الوحدة القديمة (${eh.unit_key}) إلى الجديدة (${newAssignedUnit}). تم تصفير القديمة تلقائياً لتبادل الوحدات.`);
+                
+                const resetData = {
+                  ...eh.data,
+                  status: 'available',
+                  name: '',
+                  phone: '',
+                  saleDate: '',
+                  price: '',
+                  currency: 'IQD',
+                  taboNum: '',
+                  taboStatus: 'غير مروج',
+                  handoverDate: ''
+                };
+                
+                // إضافة التصفير إلى قائمة التحديثات النهائية
+                uniqueUpdatesMap.set(eh.unit_key, { unit_key: eh.unit_key, project_id: eh.project_id, data: resetData });
+              }
             }
           }
         });
@@ -787,6 +802,70 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) { showError("فشل في إنشاء النسخة الاحتياطية"); } finally { setIsGeneratingBackup(false); }
   };
 
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsRestoringBackup(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const content = evt.target?.result as string;
+          const backup = JSON.parse(content);
+
+          if (!backup.projects || !backup.houses || !backup.settings || !backup.centers) {
+            throw new Error("ملف النسخة الاحتياطية غير صالح أو تالف.");
+          }
+
+          // استعادة المشاريع السكنية
+          if (backup.projects && backup.projects.length > 0) {
+            const formattedProjects = backup.projects.map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              description: p.description || '',
+              elements: p.elements || [],
+              map_width: p.map_width,
+              map_height: p.map_height
+            }));
+            await supabase.from('projects').upsert(formattedProjects);
+          }
+
+          // استعادة بيانات الوحدات السكنية والحجوزات على دفعات صغيرة لتفادي ثقل البيانات
+          if (backup.houses && backup.houses.length > 0) {
+            for (let i = 0; i < backup.houses.length; i += 100) {
+              const chunk = backup.houses.slice(i, i + 100);
+              await supabase.from('houses_data').upsert(chunk);
+            }
+          }
+
+          // استعادة الإعدادات العامة
+          if (backup.settings && backup.settings.length > 0) {
+            await supabase.from('settings').upsert(backup.settings);
+          }
+
+          // استعادة المراكز التسويقية والأقسام
+          if (backup.centers && backup.centers.length > 0) {
+            await supabase.from('marketing_centers').upsert(backup.centers);
+          }
+
+          showSuccess("تم استعادة النسخة الاحتياطية بالكامل بنجاح!");
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } catch (err: any) {
+          showError("فشل في استعادة البيانات: " + err.message);
+        } finally {
+          setIsRestoringBackup(false);
+        }
+      };
+      reader.readAsText(file);
+    } catch (error) {
+      showError("فشل في قراءة ملف النسخة الاحتياطية");
+      setIsRestoringBackup(false);
+    }
+  };
+
   if (editingMapProject || isEditingMainMap) {
     return (
       <MapEditor 
@@ -829,10 +908,19 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-100"><Database className="text-white" /></div>
                     <h2 className="text-2xl font-black text-slate-800">النسخ الاحتياطي وإدارة البيانات</h2>
                   </div>
-                  <Button onClick={handleDownloadBackup} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2 h-12 px-6 font-bold">
-                    {isGeneratingBackup ? <RefreshCcw className="animate-spin" /> : <Download size={18} />}
-                    إنشاء نسخة احتياطية كاملة
-                  </Button>
+                  
+                  <div className="flex gap-4">
+                    <label className="flex items-center justify-center h-12 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer transition-all gap-2 shadow-lg shadow-emerald-100">
+                      {isRestoringBackup ? <RefreshCcw className="animate-spin" /> : <Upload size={18} />}
+                      {isRestoringBackup ? "جاري استعادة البيانات..." : "استعادة نسخة احتياطية"}
+                      <input type="file" accept=".json" onChange={handleRestoreBackup} className="hidden" disabled={isRestoringBackup} />
+                    </label>
+
+                    <Button onClick={handleDownloadBackup} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2 h-12 px-6 font-bold shadow-lg shadow-blue-100">
+                      {isGeneratingBackup ? <RefreshCcw className="animate-spin" /> : <Download size={18} />}
+                      إنشاء نسخة احتياطية جديدة
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
