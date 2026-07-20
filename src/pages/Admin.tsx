@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send
+  Palette, MessageSquare, MapPin, Info, Send, Check
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -23,6 +23,7 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -133,6 +134,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     chatId: ''
   });
 
+  // القسم النشط حالياً في لوحة الصلاحيات التفصيلية
+  const [activePermsTab, setActivePermsTab] = useState<string>('');
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -165,7 +169,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           if (investments) setInvestmentNames(investments.value || []);
 
           const deptTypes = settingsData.find(s => s.key === 'department_types');
-          if (deptTypes) setDepartmentTypes(deptTypes.value || []);
+          if (deptTypes) {
+            setDepartmentTypes(deptTypes.value || []);
+            if (deptTypes.value && deptTypes.value.length > 0) {
+              setActivePermsTab(deptTypes.value[0]);
+            }
+          }
 
           const permissions = settingsData.find(s => s.key === 'dept_permissions');
           if (permissions) setDeptPermissions(permissions.value || {});
@@ -193,6 +202,45 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     fetchData();
   }, [session]);
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 mx-auto mb-4">
+              <Settings2 className="text-white w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول الإدارة</h1>
+            <p className="text-slate-500 font-medium mt-2">يرجى إدخال بيانات الاعتماد للوصول</p>
+          </div>
+          <Auth
+            supabaseClient={supabase}
+            providers={[]}
+            view="sign_in"
+            showLinks={false}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: '#4f46e5',
+                    brandAccent: '#4338ca',
+                  },
+                },
+              },
+              className: {
+                container: 'font-bold',
+                button: 'rounded-xl h-12 font-bold',
+                input: 'rounded-xl h-12 border-slate-200',
+              }
+            }}
+            theme="light"
+          />
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -264,6 +312,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     try {
       await supabase.from('settings').upsert({ key: 'department_types', value: updated });
       setDepartmentTypes(updated);
+      if (!activePermsTab) setActivePermsTab(newDeptType);
       setNewDeptType('');
       showSuccess("تم إضافة نوع القسم");
     } catch (error) {
@@ -282,6 +331,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       await supabase.from('settings').upsert({ key: 'dept_permissions', value: updatedPerms });
       setDepartmentTypes(updated);
       setDeptPermissions(updatedPerms);
+      if (activePermsTab === typeToDelete && updated.length > 0) {
+        setActivePermsTab(updated[0]);
+      }
       showSuccess("تم حذف النوع وصلاحياته");
     } catch (error) {
       showError("فشل في التحديث");
@@ -919,6 +971,22 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     );
   }
 
+  // مصفوفة الصلاحيات المتاحة للعرض والتحكم في واجهة المستخدم
+  const availablePermissions = [
+    { key: 'showPrice', label: 'رؤية السعر والعملة' },
+    { key: 'showCustomerName', label: 'رؤية اسم الزبون' },
+    { key: 'showCustomerPhone', label: 'رؤية رقم الهاتف' },
+    { key: 'showSaleDate', label: 'رؤية تاريخ البيع / الحجز' },
+    { key: 'showTaboNum', label: 'رؤية رقم الطابو' },
+    { key: 'showTaboStatus', label: 'رؤية وتعديل حالة الطابو' },
+    { key: 'showHandoverInfo', label: 'رؤية وتعديل تاريخ الاستلام' },
+    { key: 'canEditUnitData', label: 'تعديل بيانات الوحدات وحفظ التغييرات' },
+    { key: 'showStatusField', label: 'رؤية وتغيير حالة الوحدة (مباع / متاح ...)' },
+    { key: 'showNotifications', label: 'عرض شريط الإشعارات الجانبي' },
+    { key: 'showStatsTable', label: 'رؤية جدول الإحصائيات المفصلة السفلي' },
+    { key: 'showGeneralStats', label: 'رؤية كارت الإحصائيات العام الجانبي' },
+  ];
+
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -1030,7 +1098,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <h2 className="text-2xl font-black text-slate-800">إدارة الأقسام والصلاحيات</h2>
                   </div>
                 </div>
+                
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* العمود الأيمن: إضافة الأقسام وإدارة الأنواع */}
                   <div className="lg:col-span-1 space-y-6">
                     <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                       <h3 className="font-black text-lg text-slate-700">{editingCenterId ? 'تعديل قسم' : 'إضافة قسم جديد'}</h3>
@@ -1065,7 +1135,40 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         {editingCenterId && <Button variant="ghost" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '', allowed_projects: [] }); }} className="w-full rounded-xl">إلغاء التعديل</Button>}
                       </div>
                     </div>
+
+                    {/* مربع إدارة أنواع الأقسام الفعلي */}
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                      <h3 className="font-black text-lg text-slate-700">إدارة أنواع الأقسام</h3>
+                      <div className="flex gap-2">
+                        <Input 
+                          value={newDeptType} 
+                          onChange={(e) => setNewDeptType(e.target.value)} 
+                          placeholder="مثال: حسابات، مبيعات..." 
+                          className="rounded-xl h-11 font-bold"
+                        />
+                        <Button onClick={handleAddDeptType} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-11 px-4 font-bold">
+                          إضافة
+                        </Button>
+                      </div>
+                      <ScrollArea className="h-40 border rounded-xl p-2 bg-white">
+                        <div className="space-y-1">
+                          {departmentTypes.map((type, idx) => (
+                            <div key={type} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border text-xs font-bold">
+                              <span>{type}</span>
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteDeptType(idx)} className="h-6 w-6 text-rose-500 hover:bg-rose-50">
+                                <X size={12} />
+                              </Button>
+                            </div>
+                          ))}
+                          {departmentTypes.length === 0 && (
+                            <p className="text-center text-slate-400 py-6 text-xs font-semibold">لا يوجد أنواع أقسام مضافة بعد</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
                   </div>
+
+                  {/* العمود الأيسر: الأقسام الحالية وصلاحياتها */}
                   <div className="lg:col-span-2 space-y-6">
                     <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
                       <div className="p-6 border-b border-slate-200 bg-white"><h3 className="font-black text-lg text-slate-700">الأقسام الحالية</h3></div>
@@ -1082,9 +1185,78 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </div>
                             </div>
                           ))}
+                          {marketingCenters.length === 0 && (
+                            <div className="col-span-2 text-center py-8 text-slate-400 font-bold">لا يوجد أقسام مسجلة حالياً</div>
+                          )}
                         </div>
                       </div>
                     </div>
+
+                    {/* لوحة التحكم التفصيلية بالصلاحيات لكل نوع قسم */}
+                    {departmentTypes.length > 0 && (
+                      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="text-indigo-600" />
+                            <h3 className="font-black text-lg text-slate-800">الصلاحيات التفصيلية لكل قسم</h3>
+                          </div>
+                          <div className="flex gap-2">
+                            {departmentTypes.map(type => (
+                              <Button 
+                                key={type} 
+                                variant={activePermsTab === type ? "default" : "outline"} 
+                                onClick={() => setActivePermsTab(type)}
+                                className={cn("rounded-xl font-bold h-10", activePermsTab === type && "bg-indigo-600")}
+                              >
+                                {type}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {activePermsTab && (
+                          <div className="p-6 space-y-6">
+                            {/* إعداد نمط تلوين المخطط الافتراضي لهذا القسم */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100 gap-4">
+                              <div>
+                                <h4 className="font-black text-indigo-900 text-sm">تلوين المخطط الافتراضي</h4>
+                                <p className="text-[11px] text-indigo-500 font-semibold mt-0.5">اختر كيف تظهر ألوان الوحدات سكنية تلقائياً لهذا القسم عند تصفح الخريطة.</p>
+                              </div>
+                              <Select 
+                                value={deptPermissions[activePermsTab]?.colorMode || 'default'} 
+                                onValueChange={(val) => setColorMode(activePermsTab, val)}
+                              >
+                                <SelectTrigger className="w-[180px] rounded-xl bg-white font-bold text-indigo-950 border-indigo-200">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl">
+                                  <SelectItem value="default" className="font-bold">حسب حالة البيع (مباع/متاح)</SelectItem>
+                                  <SelectItem value="tabo" className="font-bold">حسب حالة الطابو</SelectItem>
+                                  <SelectItem value="handover" className="font-bold">حسب حالة الاستلام</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* مفاتيح الصلاحيات التفصيلية */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {availablePermissions.map(perm => {
+                                const isPermEnabled = deptPermissions[activePermsTab]?.[perm.key] !== false;
+                                return (
+                                  <div key={perm.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <Label htmlFor={`perm-${perm.key}`} className="font-bold text-slate-700 cursor-pointer">{perm.label}</Label>
+                                    <Switch 
+                                      id={`perm-${perm.key}`} 
+                                      checked={isPermEnabled} 
+                                      onCheckedChange={() => togglePermission(activePermsTab, perm.key)}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
