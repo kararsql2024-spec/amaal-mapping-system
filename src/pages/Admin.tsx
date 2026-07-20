@@ -661,46 +661,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const uniqueUpdatesMap = new Map<string, any>();
         updates.forEach(u => uniqueUpdatesMap.set(u.unit_key, u));
 
-        // 5. النقل والمطابقة الذكية وتصفير الوحدات السابقة بدقة متناهية
-        logs.push("جاري فحص عمليات تبادل وانتقال الزبائن لتصفير وحداتهم السابقة بدقة جراحية...");
-        setProcessLogs([...logs]);
-
-        const nameToExcelUnit = new Map<string, string>();
-        Array.from(uniqueUpdatesMap.values()).forEach(u => {
-          if (u.data?.name) {
-            const normalizedName = normalizeArabicName(u.data.name);
-            if (normalizedName) nameToExcelUnit.set(normalizedName, u.unit_key);
-          }
-        });
-
-        existingHouses.forEach((eh: any) => {
-          const currentName = eh.data?.name;
-          if (currentName) {
-            const normalizedCurrent = normalizeArabicName(currentName);
-            if (normalizedCurrent && nameToExcelUnit.has(normalizedCurrent)) {
-              const newAssignedUnit = nameToExcelUnit.get(normalizedCurrent);
-              if (newAssignedUnit && newAssignedUnit !== eh.unit_key) {
-                if (eh.data?.status?.startsWith('frozen')) return;
-
-                logs.push(`🔄 رصد انتقال الزبون (${eh.data.name}) للوحدة (${newAssignedUnit}). تم تصفير الوحدة القديمة (${eh.unit_key}) تلقائياً.`);
-                
-                const resetData = {
-                  ...eh.data,
-                  status: 'available',
-                  name: '',
-                  phone: '',
-                  saleDate: '',
-                  price: '',
-                  currency: 'IQD',
-                  taboNum: '',
-                  taboStatus: 'غير مروج',
-                  handoverDate: ''
-                };
-                uniqueUpdatesMap.set(eh.unit_key, { unit_key: eh.unit_key, project_id: eh.project_id, data: resetData });
-              }
-            }
-          }
-        });
+        // [ملاحظة]: تم إلغاء منطق التصفير التلقائي بالكامل من هذه الخطوة لضمان حماية بيانات الملاك المتعددين والتشابهات الإملائية وتطابق النظام مع الإكسل 100%
 
         const sortedFinalUpdates = Array.from(uniqueUpdatesMap.values());
         logs.push(`تجهيز السجلات النهائية للرفع. إجمالي السجلات الفريدة: ${sortedFinalUpdates.length} سجل.`);
@@ -1281,12 +1242,5 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     </div>
   );
 };
-
-const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
-  <div className="flex items-center justify-between gap-4">
-    <Label className="text-xs font-bold text-slate-600">{label}</Label>
-    <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
-  </div>
-);
 
 export default Admin;
