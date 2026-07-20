@@ -9,6 +9,12 @@ export interface ParsedHouseData {
   data: any;
 }
 
+export interface ParsedProject {
+  id: string;
+  name: string;
+  elements: any[];
+}
+
 /**
  * دالة ذكية لإصلاح وتفكيك نصوص الـ JSON من نصوص الـ SQL بمرونة عالية
  */
@@ -51,11 +57,59 @@ const robustJsonParse = (rawStr: string): any => {
   }
 };
 
-export const parseHousesFromSql = (sqlText: string): ParsedHouseData[] => {
-  const results: ParsedHouseData[] = [];
+/**
+ * تفكيك ذكي لقيم أسطر الـ SQL بمراعاة النصوص والاقتباسات والفواصل
+ */
+const parseSqlValues = (str: string): string[] => {
+  const result: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let isEscaped = false;
+
+  for (let j = 0; j < str.length; j++) {
+    const char = str[j];
+
+    if (isEscaped) {
+      current += char;
+      isEscaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      isEscaped = true;
+      current += char;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+
+    if (char === ',' && !inSingleQuote && !inDoubleQuote) {
+      result.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+  result.push(current.trim());
+  return result;
+};
+
+/**
+ * استخراج المشاريع من ملف الـ SQL لبناء خريطة مطابقة المعرفات بالأسماء الهندسية
+ */
+export const parseProjectsFromSql = (sqlText: string): ParsedProject[] => {
+  const projects: ParsedProject[] = [];
   const lines = sqlText.split('\n');
-  
-  // تتبع حالة الـ COPY إن وُجدت
   let inCopyBlock = false;
   let copyColumns: string[] = [];
 
@@ -63,15 +117,102 @@ export const parseHousesFromSql = (sqlText: string): ParsedHouseData[] => {
     const line = lines[i].trim();
     if (!line || line.startsWith('--') || line.startsWith('/*')) continue;
 
-    // 1. التعامل مع صيغة COPY (أسرع وأكثر شيوعاً في نسخ postgres الاحتياطية)
-    if (line.toUpperCase().startsWith('COPY ') && line.toLowerCase().includes('houses_data')) {
+    if (line.toUpperCase().startsWith('COPY ') && line.toLowerCase().includes('projects')) {
       inCopyBlock = true;
-      // استخراج ترتيب الأعمدة من جملة الـ COPY
       const colMatch = line.match(/\(([^)]+)\)/);
       if (colMatch) {
         copyColumns = colMatch[1].split(',').map(c => c.trim().replace(/['"`]/g, ''));
       } else {
-        copyColumns = ['unit_key', 'project_id', 'data']; // الافتراضي
+        copyColumns = ['id', 'name', 'description', 'elements'];
+      }
+      continue;
+    }
+
+    if (inCopyBlock) {
+      if (line === '\\.') {
+        inCopyBlock = false;
+        continue;
+      }
+      const values = line.split('\t');
+      const rowData: any = {};
+      copyColumns.forEach((col, idx) => {
+        rowData[col] = values[idx];
+      });
+
+      if (rowData.id && rowData.name) {
+        try {
+          const elements = rowData.elements ? robustJsonParse(rowData.elements) : [];
+          projects.push({
+            id: rowData.id,
+            name: rowData.name.replace(/^'|'$/g, '').trim(),
+            elements: Array.isArray(elements) ? elements : []
+          });
+        } catch (e) {
+          console.warn("فشل تحليل عناصر المشروع في COPY:", rowData.name, e);
+        }
+      }
+      continue;
+    }
+
+    if (line.toUpperCase().startsWith('INSERT INTO ') && line.toLowerCase().includes('projects')) {
+      const valuesPartMatch = line.match(/VALUES\s*\((.*)\);?/i);
+      if (!valuesPartMatch) continue;
+
+      const extractedValues = parseSqlValues(valuesPartMatch[1]);
+      const cleanValue = (val: string) => {
+        if (val.toUpperCase() === 'NULL') return null;
+        return val.replace(/^'|'$/g, '').replace(/^"|"$/g, '').trim();
+      };
+
+      let colOrder = ['id', 'name', 'description', 'elements'];
+      const colHeaderMatch = line.match(/\(([^)]+)\)\s*VALUES/i);
+      if (colHeaderMatch) {
+        colOrder = colHeaderMatch[1].split(',').map(c => c.trim().replace(/['"`]/g, ''));
+      }
+
+      const rowMap: any = {};
+      colOrder.forEach((col, idx) => {
+        if (extractedValues[idx] !== undefined) {
+          rowMap[col] = cleanValue(extractedValues[idx]);
+        }
+      });
+
+      if (rowMap.id && rowMap.name) {
+        try {
+          const elements = rowMap.elements ? robustJsonParse(rowMap.elements) : [];
+          projects.push({
+            id: rowMap.id,
+            name: rowMap.name,
+            elements: Array.isArray(elements) ? elements : []
+          });
+        } catch (err) {
+          console.warn("فشل تفكيك عناصر المشروع INSERT:", rowMap.name, err);
+        }
+      }
+    }
+  }
+
+  return projects;
+};
+
+export const parseHousesFromSql = (sqlText: string): ParsedHouseData[] => {
+  const results: ParsedHouseData[] = [];
+  const lines = sqlText.split('\n');
+  let inCopyBlock = false;
+  let copyColumns: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith('--') || line.startsWith('/*')) continue;
+
+    // 1. التعامل مع صيغة COPY
+    if (line.toUpperCase().startsWith('COPY ') && line.toLowerCase().includes('houses_data')) {
+      inCopyBlock = true;
+      const colMatch = line.match(/\(([^)]+)\)/);
+      if (colMatch) {
+        copyColumns = colMatch[1].split(',').map(c => c.trim().replace(/['"`]/g, ''));
+      } else {
+        copyColumns = ['unit_key', 'project_id', 'data'];
       }
       continue;
     }
@@ -82,7 +223,6 @@ export const parseHousesFromSql = (sqlText: string): ParsedHouseData[] => {
         continue;
       }
       
-      // تفكيك الأسطر المفصولة بـ Tab في نظام COPY
       const values = line.split('\t');
       const rowData: any = {};
       copyColumns.forEach((col, idx) => {
@@ -106,60 +246,12 @@ export const parseHousesFromSql = (sqlText: string): ParsedHouseData[] => {
 
     // 2. التعامل مع جمل الـ INSERT INTO التقليدية
     if (line.toUpperCase().startsWith('INSERT INTO ') && line.toLowerCase().includes('houses_data')) {
-      // استخراج القيم المحصورة بين القوسين بعد VALUES
       const valuesPartMatch = line.match(/VALUES\s*\((.*)\);?/i);
       if (!valuesPartMatch) continue;
 
       const valuesStr = valuesPartMatch[1];
-      
-      // تفكيك ذكي للقيم بمراعاة الفواصل والاقتباسات
-      const parseSqlValues = (str: string): string[] => {
-        const result: string[] = [];
-        let current = '';
-        let inSingleQuote = false;
-        let inDoubleQuote = false;
-        let isEscaped = false;
-
-        for (let j = 0; j < str.length; j++) {
-          const char = str[j];
-
-          if (isEscaped) {
-            current += char;
-            isEscaped = false;
-            continue;
-          }
-
-          if (char === '\\') {
-            isEscaped = true;
-            current += char;
-            continue;
-          }
-
-          if (char === "'" && !inDoubleQuote) {
-            inSingleQuote = !inSingleQuote;
-            continue;
-          }
-
-          if (char === '"' && !inSingleQuote) {
-            inDoubleQuote = !inDoubleQuote;
-            continue;
-          }
-
-          if (char === ',' && !inSingleQuote && !inDoubleQuote) {
-            result.push(current.trim());
-            current = '';
-            continue;
-          }
-
-          current += char;
-        }
-        result.push(current.trim());
-        return result;
-      };
-
       const extractedValues = parseSqlValues(valuesStr);
 
-      // تنظيف القيم
       const cleanValue = (val: string) => {
         if (val.toUpperCase() === 'NULL') return null;
         return val.replace(/^'|'$/g, '').replace(/^"|"$/g, '');

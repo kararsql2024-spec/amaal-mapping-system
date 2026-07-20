@@ -23,7 +23,7 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { parseHousesFromSql, ParsedHouseData } from '@/utils/sqlParser';
+import { parseHousesFromSql, parseProjectsFromSql, ParsedHouseData, ParsedProject } from '@/utils/sqlParser';
 import {
   Select,
   SelectContent,
@@ -50,7 +50,6 @@ interface AdminProps {
   housesData: Record<string, any>;
 }
 
-// دالة توحيد ومطابقة الأسماء العربية بدقة متناهية لحل مشكلة فروقات الإملاء والمسافات
 const normalizeArabicName = (name: string): string => {
   if (!name) return "";
   return name
@@ -835,7 +834,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     setIsSendingToTelegram(true);
     try {
-      // 1. تجميع البيانات للنسخة الاحتياطية
       const { data: projectsData } = await supabase.from('projects').select('*');
       const { data: housesData } = await supabase.from('houses_data').select('*');
       const { data: settingsData } = await supabase.from('settings').select('*');
@@ -849,21 +847,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         centers: centersData
       };
 
-      // 2. تحويلها لملف Blob
       const backupString = JSON.stringify(backup, null, 2);
       const blob = new Blob([backupString], { type: 'application/json' });
-      
-      // اسم الملف الاحتياطي
       const filename = `backup_${new Date().toISOString().split('T')[0]}_manual.json`;
       const file = new File([blob], filename, { type: 'application/json' });
 
-      // 3. تجهيز FormData لإرساله عبر Telegram API
       const formData = new FormData();
       formData.append('chat_id', telegramConfig.chatId);
       formData.append('document', file);
       formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات.\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
 
-      // 4. إرسال الطلب من المتصفح مباشرة لـ Telegram API
       const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendDocument`, {
         method: 'POST',
         body: formData
@@ -873,7 +866,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (response.ok && resData.ok) {
         showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
       } else {
-        // قراءة وعرض الوصف الدقيق للخطأ المرتجع من سيرفر تليجرام
         const detailedError = resData.description || `رمز الخطأ: ${resData.error_code || 'غير معروف'}`;
         throw new Error(detailedError);
       }
@@ -901,7 +893,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             throw new Error("ملف النسخة الاحتياطية غير صالح أو تالف.");
           }
 
-          // استعادة المشاريع السكنية
           if (backup.projects && backup.projects.length > 0) {
             const formattedProjects = backup.projects.map((p: any) => ({
               id: p.id,
@@ -914,7 +905,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             await supabase.from('projects').upsert(formattedProjects);
           }
 
-          // استعادة بيانات الوحدات السكنية والحجوزات على دفعات صغيرة لتفادي ثقل البيانات
           if (backup.houses && backup.houses.length > 0) {
             for (let i = 0; i < backup.houses.length; i += 100) {
               const chunk = backup.houses.slice(i, i + 100);
@@ -922,12 +912,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             }
           }
 
-          // استعادة الإعدادات العامة
           if (backup.settings && backup.settings.length > 0) {
             await supabase.from('settings').upsert(backup.settings);
           }
 
-          // استعادة المراكز التسويقية والأقسام
           if (backup.centers && backup.centers.length > 0) {
             await supabase.from('marketing_centers').upsert(backup.centers);
           }
@@ -959,12 +947,120 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       reader.onload = async (evt) => {
         try {
           const text = evt.target?.result as string;
-          const parsed = parseHousesFromSql(text);
-          setSqlParsedUnits(parsed);
-          if (parsed.length > 0) {
-            showSuccess(`تم تحليل الملف بنجاح واكتشاف ${parsed.length} وحدة سكنية جاهزة للاستيراد.`);
+          
+          // 1. استخراج المشاريع من ملف الـ SQL لبناء خريطة الهياكل الهندسية القديمة
+          const oldProjects = parseProjectsFromSql(text);
+          // 2. تفكيك الوحدات القديمة
+          const rawParsedUnits = parseHousesFromSql(text);
+
+          if (rawParsedUnits.length === 0) {
+            throw new Error("لم يتم العثور على أي مبيعات في ملف الـ SQL المختار.");
+          }
+
+          // 3. تطبيق المطابقة الجغرافية الهندسية الفائقة (Super Matcher)
+          const matchedUnits: ParsedHouseData[] = [];
+          let successMatches = 0;
+          let unresolved = 0;
+
+          // جلب المشاريع الحالية كاملة بما فيها العناصر من جدول السيرفر بدقة لتفادي الحجم
+          const { data: currentFullProjects } = await supabase.from('projects').select('id, name, elements');
+
+          rawParsedUnits.forEach((oldUnit) => {
+            // البحث عن المشروع القديم في الـ SQL
+            const oldProj = oldProjects.find(p => p.id === oldUnit.project_id);
+            if (!oldProj) {
+              // إذا لم نعثر على اسم المشروع القديم، نحاول البحث بالمعرف الحالي كخيار تراجع
+              const currentProj = currentFullProjects?.find(p => p.id === oldUnit.project_id);
+              if (currentProj) {
+                // تطابق المعرفات مباشرة
+                matchedUnits.push(oldUnit);
+                successMatches++;
+              } else {
+                unresolved++;
+              }
+              return;
+            }
+
+            // البحث عن المشروع الحالي الذي يحمل نفس اسم المشروع القديم
+            const currentProj = currentFullProjects?.find(p => p.name === oldProj.name);
+            if (!currentProj) {
+              unresolved++;
+              return;
+            }
+
+            const oldElements = oldProj.elements || [];
+            const currentElements = currentProj.elements || [];
+
+            // فحص نوع الوحدة (شقة في برج أم منزل عادي)
+            if (oldUnit.unit_key.includes('_F') && oldUnit.unit_key.includes('_A')) {
+              // هذه شقة في عمارة
+              const parts = oldUnit.unit_key.split('_F');
+              const oldTowerId = parts[0];
+              const floorAndApt = 'F' + parts[1]; // F5_A2 مثلاً
+
+              // البحث عن البرج القديم في عناصر المشروع القديم لاستخراج اسمه
+              const oldTower = oldElements.find(el => el.id === oldTowerId && el.type === 'tower');
+              if (!oldTower) {
+                unresolved++;
+                return;
+              }
+
+              // البحث عن البرج الحالي الذي يحمل نفس الاسم في المشروع الحالي
+              const currentTower = currentElements.find(el => el.label === oldTower.label && el.type === 'tower');
+              if (!currentTower) {
+                unresolved++;
+                return;
+              }
+
+              // بناء مفتاح الوحدة الجديد الفعال
+              const newUnitKey = `${currentTower.id}_${floorAndApt}`;
+              matchedUnits.push({
+                unit_key: newUnitKey,
+                project_id: currentProj.id,
+                data: oldUnit.data
+              });
+              successMatches++;
+            } else {
+              // هذا منزل عادي
+              const oldHouse = oldElements.find(el => el.id === oldUnit.unit_key && el.type === 'house');
+              if (!oldHouse) {
+                // إذا لم نعثر عليه، قد يكون الـ unit_key في الـ SQL القديم هو اسم المنزل مباشرة
+                const currentHouseByName = currentElements.find(el => el.label === oldUnit.unit_key && el.type === 'house');
+                if (currentHouseByName) {
+                  matchedUnits.push({
+                    unit_key: currentHouseByName.id,
+                    project_id: currentProj.id,
+                    data: oldUnit.data
+                  });
+                  successMatches++;
+                } else {
+                  unresolved++;
+                }
+                return;
+              }
+
+              // البحث عن المنزل الحالي بنفس الاسم والترميز الهندسي
+              const currentHouse = currentElements.find(el => el.label === oldHouse.label && el.type === 'house');
+              if (!currentHouse) {
+                unresolved++;
+                return;
+              }
+
+              matchedUnits.push({
+                unit_key: currentHouse.id,
+                project_id: currentProj.id,
+                data: oldUnit.data
+              });
+              successMatches++;
+            }
+          });
+
+          setSqlParsedUnits(matchedUnits);
+          
+          if (matchedUnits.length > 0) {
+            showSuccess(`🎉 تم المطابقة الهندسية بنجاح! تم مطابقة وتسكين ${successMatches} وحدة بدقة متناهية، وتخطي ${unresolved} وحدة غير مطابقة.`);
           } else {
-            showError("لم يتم العثور على أي بيانات حجوزات أو مبيعات متوافقة في ملف الـ SQL المختار.");
+            showError("لم يتم العثور على مطابقة لترميزات الوحدات في ملف الـ SQL مع الهياكل الهندسية الحالية للمخطط.");
           }
         } catch (err: any) {
           showError("فشل تحليل محتوى الـ SQL: " + err.message);
@@ -984,7 +1080,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     setIsSavingSqlUnits(true);
 
     try {
-      // حفظ الوحدات على دفعات صغيرة وآمنة لضمان الاستقرار الكلي
       for (let i = 0; i < sqlParsedUnits.length; i += 100) {
         const chunk = sqlParsedUnits.slice(i, i + 100);
         const { error } = await supabase.from('houses_data').upsert(chunk, { onConflict: 'unit_key' });
