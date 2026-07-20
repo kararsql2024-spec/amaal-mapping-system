@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info
+  Palette, MessageSquare, MapPin, Info, Send
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -106,6 +106,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [isSendingToTelegram, setIsSendingToTelegram] = useState(false);
+
+  // Telegram Config
+  const [telegramConfig, setTelegramConfig] = useState({
+    botToken: '',
+    chatId: ''
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -149,6 +156,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           const configs = settingsData.find(s => s.key === 'project_configs');
           if (configs) setProjectConfigs(configs.value || {});
+
+          const teleConfig = settingsData.find(s => s.key === 'telegram_config');
+          if (teleConfig) setTelegramConfig(prev => ({ ...prev, ...teleConfig.value }));
         }
 
         const { data: centersData } = await supabase
@@ -784,22 +794,69 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) { showError("فشل في تحميل تفاصيل المخطط"); }
   };
 
-  const handleDownloadBackup = async () => {
-    setIsGeneratingBackup(true);
+  const handleSaveTelegramConfig = async () => {
     try {
-      const { data: projects } = await supabase.from('projects').select('*');
-      const { data: houses } = await supabase.from('houses_data').select('*');
-      const { data: settings } = await supabase.from('settings').select('*');
-      const { data: centers } = await supabase.from('marketing_centers').select('*');
-      const backup = { timestamp: new Date().toISOString(), projects, houses, settings, centers };
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      showSuccess("تم إنشاء النسخة الاحتياطية بنجاح");
-    } catch (error) { showError("فشل في إنشاء النسخة الاحتياطية"); } finally { setIsGeneratingBackup(false); }
+      await supabase.from('settings').upsert({ key: 'telegram_config', value: telegramConfig });
+      showSuccess("تم حفظ إعدادات تيليجرام بنجاح");
+    } catch (e) {
+      showError("فشل في حفظ الإعدادات");
+    }
+  };
+
+  const handleSendBackupToTelegram = async () => {
+    if (!telegramConfig.botToken || !telegramConfig.chatId) {
+      showError("يرجى إدخال توكن البوت ومعرف القناة وحفظهما أولاً.");
+      return;
+    }
+
+    setIsSendingToTelegram(true);
+    try {
+      // 1. تجميع البيانات للنسخة الاحتياطية
+      const { data: projectsData } = await supabase.from('projects').select('*');
+      const { data: housesData } = await supabase.from('houses_data').select('*');
+      const { data: settingsData } = await supabase.from('settings').select('*');
+      const { data: centersData } = await supabase.from('marketing_centers').select('*');
+      
+      const backup = {
+        timestamp: new Date().toISOString(),
+        projects: projectsData,
+        houses: housesData,
+        settings: settingsData,
+        centers: centersData
+      };
+
+      // 2. تحويلها لملف Blob
+      const backupString = JSON.stringify(backup, null, 2);
+      const blob = new Blob([backupString], { type: 'application/json' });
+      
+      // اسم الملف الاحتياطي
+      const filename = `backup_${new Date().toISOString().split('T')[0]}_manual.json`;
+      const file = new File([blob], filename, { type: 'application/json' });
+
+      // 3. تجهيز FormData لإرساله عبر Telegram API
+      const formData = new FormData();
+      formData.append('chat_id', telegramConfig.chatId);
+      formData.append('document', file);
+      formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات.\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
+
+      // 4. إرسال الطلب من المتصفح مباشرة لـ Telegram API
+      const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendDocument`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const resData = await response.json();
+      if (response.ok && resData.ok) {
+        showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
+      } else {
+        throw new Error(resData.description || "فشل إرسال الملف");
+      }
+    } catch (error: any) {
+      console.error(error);
+      showError(`فشل في الإرسال: ${error.message || error}`);
+    } finally {
+      setIsSendingToTelegram(false);
+    }
   };
 
   const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -903,7 +960,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           <div className="md:col-span-3 space-y-6">
             {showDatabaseInspector && (
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-8 animate-in fade-in slide-in-from-top-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between border-b pb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-100"><Database className="text-white" /></div>
                     <h2 className="text-2xl font-black text-slate-800">النسخ الاحتياطي وإدارة البيانات</h2>
@@ -918,8 +975,67 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                     <Button onClick={handleDownloadBackup} disabled={isGeneratingBackup} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2 h-12 px-6 font-bold shadow-lg shadow-blue-100">
                       {isGeneratingBackup ? <RefreshCcw className="animate-spin" /> : <Download size={18} />}
-                      إنشاء نسخة احتياطية جديدة
+                      تحميل نسخة احتياطية للجهاز
                     </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-1 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                    <h3 className="font-black text-lg flex items-center gap-2 text-slate-800">
+                      <Send size={18} className="text-blue-600" /> إرسال للتيليجرام
+                    </h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      يمكنك ربط النظام ببوت وقناة تليجرام وإرسال النسخة الاحتياطية بضغطة زر مباشرة من هنا.
+                    </p>
+                    
+                    <div className="space-y-4 pt-2">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">توكن البوت (Bot Token)</Label>
+                        <Input 
+                          value={telegramConfig.botToken} 
+                          onChange={(e) => setTelegramConfig({ ...telegramConfig, botToken: e.target.value })} 
+                          placeholder="مثال: 123456:ABC-DEF..." 
+                          className="rounded-xl h-11 font-bold text-xs" 
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">معرف القناة أو الدردشة (Chat ID)</Label>
+                        <Input 
+                          value={telegramConfig.chatId} 
+                          onChange={(e) => setTelegramConfig({ ...telegramConfig, chatId: e.target.value })} 
+                          placeholder="مثال: -100123456789" 
+                          className="rounded-xl h-11 font-bold text-xs" 
+                        />
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <Button onClick={handleSaveTelegramConfig} className="flex-1 bg-slate-900 hover:bg-black rounded-xl h-11 font-bold text-sm">
+                          حفظ الإعدادات
+                        </Button>
+                        <Button 
+                          onClick={handleSendBackupToTelegram} 
+                          disabled={isSendingToTelegram} 
+                          className="bg-blue-600 hover:bg-blue-700 rounded-xl h-11 px-4 flex items-center gap-2 font-bold shadow-lg shadow-blue-100"
+                        >
+                          {isSendingToTelegram ? <RefreshCcw className="animate-spin w-4 h-4" /> : <Send size={16} />}
+                          إرسال الآن
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-6 border border-slate-100 flex flex-col justify-center text-center space-y-4">
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-md mx-auto">
+                      <Database className="text-blue-600 w-8 h-8" />
+                    </div>
+                    <div className="max-w-md mx-auto space-y-2">
+                      <h4 className="font-black text-slate-800">هل ترغب في حفظ نسخة احتياطية دورية؟</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                        احرص دوماً على استخدام زر الإرسال إلى تيليجرام أو زر التحميل لحفظ بيانات الحجوزات وملاحظاتها وتحديثات الإكسل اليومية ضد أي فقدان طارئ.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
