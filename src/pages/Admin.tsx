@@ -11,59 +11,6 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles
-} from 'lucide-react';
-import MapEditor from '@/components/MapEditor';
-import { showSuccess, showError } from '@/utils/toast';
-import { Link } from 'react-router-dom';
-import { supabase } from "@/integrations/supabase/client";
-import * as XLSX from 'xlsx';
-import { cn } from '@/lib/utils';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-
-interface AdminProps {
-  projects: Project[];
-  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
-  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
-  housesData: Record<string, any>;
-}
-
-// مكون مساعد لإدخال وتعي<dyad-write path="src/pages/Admin.tsx" description="إعادة كتابة وتحديث ملف لوحة الإدارة بالكامل لتطبيق منطق المزامنة الكاملة الذكية (السيناريو الثاني) وحماية حجوزات الوحدات المباشرة من التصفير">
-"use client";
-
-import React, { useState, useEffect } from 'react';
-import { Project, MapElement } from '@/types/project';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { 
-  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
-  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
-  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
-  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
-  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
   Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
@@ -72,8 +19,6 @@ import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
