@@ -956,35 +956,64 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  if (editingMapProject || isEditingMainMap) {
-    return (
-      <MapEditor 
-        initialElements={isEditingMainMap ? (mainMapData?.elements || []) : (editingMapProject?.elements || [])} 
-        mapWidth={isEditingMainMap ? (mainMapData?.width || 1200) : (editingMapProject?.mapWidth || 1000)}
-        mapHeight={isEditingMainMap ? (mainMapData?.height || 800) : (editingMapProject?.mapHeight || 800)}
-        onSave={handleSaveMap} 
-        onCancel={() => { setEditingMapProject(null); setIsEditingMainMap(false); }} 
-        initialBackgroundColor={isEditingMainMap ? mainMapData?.backgroundColor : projectConfigs[editingMapProject?.id || '']?.backgroundColor}
-        initialShowGrid={isEditingMainMap ? mainMapData?.showGrid : projectConfigs[editingMapProject?.id || '']?.showGrid}
-        projects={projects} // إرسال المشاريع كـ Prop لتفعيل ميزة ربط العناصر
-      />
-    );
-  }
-
-  // مصفوفة الصلاحيات المتاحة للعرض والتحكم في واجهة المستخدم
-  const availablePermissions = [
-    { key: 'showPrice', label: 'رؤية السعر والعملة' },
-    { key: 'showCustomerName', label: 'رؤية اسم الزبون' },
-    { key: 'showCustomerPhone', label: 'رؤية رقم الهاتف' },
-    { key: 'showSaleDate', label: 'رؤية تاريخ البيع / الحجز' },
-    { key: 'showTaboNum', label: 'رؤية رقم الطابو' },
-    { key: 'showTaboStatus', label: 'رؤية وتعديل حالة الطابو' },
-    { key: 'showHandoverInfo', label: 'رؤية وتعديل تاريخ الاستلام' },
-    { key: 'canEditUnitData', label: 'تعديل بيانات الوحدات وحفظ التغييرات' },
-    { key: 'showStatusField', label: 'رؤية وتغيير حالة الوحدة (مباع / متاح ...)' },
-    { key: 'showNotifications', label: 'عرض شريط الإشعارات الجانبي' },
-    { key: 'showStatsTable', label: 'رؤية جدول الإحصائيات المفصلة السفلي' },
-    { key: 'showGeneralStats', label: 'رؤية كارت الإحصائيات العام الجانبي' },
+  // مصفوفة الصلاحيات المتاحة ومصنّفة لتسهيل التحكم
+  const permissionsCategories = [
+    {
+      title: "الصلاحيات العامة وعرض الحقول في الوحدة",
+      perms: [
+        { key: 'canEditUnitData', label: 'تعديل بيانات الوحدات وحفظ التغييرات' },
+        { key: 'showStatusField', label: 'رؤية وتغيير حالة الوحدة (مباع / متاح ...)' },
+        { key: 'showPrice', label: 'رؤية السعر والعملة داخل الوحدة' },
+        { key: 'showCustomerName', label: 'رؤية اسم الزبون' },
+        { key: 'showCustomerPhone', label: 'رؤية رقم الهاتف' },
+        { key: 'showSaleDate', label: 'رؤية تاريخ البيع / الحجز' },
+        { key: 'showTaboNum', label: 'رؤية رقم الطابو' },
+        { key: 'showTaboStatus', label: 'رؤية وتعديل حالة الطابو' },
+        { key: 'showHandoverInfo', label: 'رؤية وتعديل تاريخ الاستلام' },
+        { key: 'showNotifications', label: 'عرض شريط الإشعارات الجانبي بالكامل' },
+        { key: 'showStatsTable', label: 'عرض جدول الإحصائيات المفصلة السفلي بالكامل' },
+        { key: 'showGeneralStats', label: 'عرض كارت الإحصائيات العام الجانبي بالكامل' },
+      ]
+    },
+    {
+      title: "صلاحيات أعمدة جدول الإحصائيات السفلي",
+      perms: [
+        { key: 'showStatsAvailable', label: 'إظهار عمود الوحدات المتاحة' },
+        { key: 'showStatsSold', label: 'إظهار عمود الوحدات المباعة' },
+        { key: 'showStatsInvestment', label: 'إظهار عمود الاستثمار' },
+        { key: 'showStatsReserved', label: 'إظهار عمود المحجوز' },
+        { key: 'showStatsPending', label: 'إظهار عمود الحجز الأولي' },
+        { key: 'showStatsTotal', label: 'إظهار عمود المجموع' },
+        { key: 'showStatsPromoted', label: 'إظهار عمود مروج' },
+        { key: 'showStatsNotPromoted', label: 'إظهار عمود غير مروج' },
+        { key: 'showStatsReceivedTabo', label: 'إظهار عمود مستلم الطابو' },
+        { key: 'showStatsReceivedUnit', label: 'إظهار عمود مستلم الوحدة' },
+        { key: 'showStatsNotReceivedUnit', label: 'إظهار عمود غير مستلم الوحدة' },
+        { key: 'showStatsPriceIQD', label: 'إظهار عمود الإجمالي بالدينار العراقي' },
+        { key: 'showStatsPriceUSD', label: 'إظهار عمود الإجمالي بالدولار الأمريكي' },
+      ]
+    },
+    {
+      title: "صلاحيات عناصر كارت الإحصائيات الجانبي",
+      perms: [
+        { key: 'showSideTotal', label: 'عرض إحصائية إجمالي الوحدات' },
+        { key: 'showSideSold', label: 'عرض إحصائية الوحدات المباعة' },
+        { key: 'showSideInvestment', label: 'عرض إحصائية الوحدات المستثمرة' },
+        { key: 'showSideAvailable', label: 'عرض إحصائية الوحدات المتاحة' },
+        { key: 'showSidePromoted', label: 'عرض إحصائية مروج' },
+        { key: 'showSideNotPromoted', label: 'عرض إحصائية غير مروج' },
+        { key: 'showSideReceivedTabo', label: 'عرض إحصائية مستلم الطابو' },
+        { key: 'showSideReceivedUnit', label: 'عرض إحصائية مستلم الوحدة' },
+        { key: 'showSideNotReceivedUnit', label: 'عرض إحصائية غير مستلم الوحدة' },
+      ]
+    },
+    {
+      title: "صلاحيات الملاحظات والسرية",
+      perms: [
+        { key: 'showOtherDeptsNotes', label: 'رؤية ملاحظات الأقسام الأخرى' },
+        { key: 'canDeleteNotes', label: 'السماح بحذف الملاحظات المسجلة' },
+      ]
+    }
   ];
 
   return (
@@ -1215,7 +1244,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         </div>
 
                         {activePermsTab && (
-                          <div className="p-6 space-y-6">
+                          <div className="p-6 space-y-8">
                             {/* إعداد نمط تلوين المخطط الافتراضي لهذا القسم */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100 gap-4">
                               <div>
@@ -1237,21 +1266,34 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </Select>
                             </div>
 
-                            {/* مفاتيح الصلاحيات التفصيلية */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {availablePermissions.map(perm => {
-                                const isPermEnabled = deptPermissions[activePermsTab]?.[perm.key] !== false;
-                                return (
-                                  <div key={perm.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <Label htmlFor={`perm-${perm.key}`} className="font-bold text-slate-700 cursor-pointer">{perm.label}</Label>
-                                    <Switch 
-                                      id={`perm-${perm.key}`} 
-                                      checked={isPermEnabled} 
-                                      onCheckedChange={() => togglePermission(activePermsTab, perm.key)}
-                                    />
+                            {/* عرض مجموعات الصلاحيات الـ 36 المكتشفة كاملة */}
+                            <div className="space-y-8">
+                              {permissionsCategories.map((category, catIdx) => (
+                                <div key={catIdx} className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
+                                  <h4 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                                    <div className="w-1.5 h-4 bg-indigo-600 rounded-full" />
+                                    {category.title}
+                                  </h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {category.perms.map(perm => {
+                                      // إذا لم تكن القيمة مسجلة، نعتبر الافتراضي تفعيل (true) لعدم تعطيل الأنظمة القائمة
+                                      const isPermEnabled = deptPermissions[activePermsTab]?.[perm.key] !== false;
+                                      return (
+                                        <div key={perm.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100/50 transition-colors">
+                                          <Label htmlFor={`perm-${perm.key}-${activePermsTab}`} className="font-bold text-slate-700 cursor-pointer text-xs leading-relaxed">
+                                            {perm.label}
+                                          </Label>
+                                          <Switch 
+                                            id={`perm-${perm.key}-${activePermsTab}`} 
+                                            checked={isPermEnabled} 
+                                            onCheckedChange={() => togglePermission(activePermsTab, perm.key)}
+                                          />
+                                        </div>
+                                      );
+                                    })}
                                   </div>
-                                );
-                              })}
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
