@@ -113,13 +113,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     currencyCol: 'G',
     taboNumCol: 'J',
     taboStatusCol: 'K',
-    handoverDateCol: 'L',
-    statusCol: 'H' // العمود الجديد للحالة
+    handoverDateCol: 'L'
   });
   const [investmentNames, setInvestmentNames] = useState<string[]>([]);
   const [newInvestmentName, setNewInvestmentName] = useState('');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
 
@@ -533,7 +533,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const matchedProjects = Array.from(matchedProjectsMap.values());
         if (matchedProjects.length === 0) {
-          throw new Error("لم تتطابق أي مدينة في ملف الإكسل مع المشاريع الحالية في النظام.");
+          throw new Error("لم تتطابق أي مدينة في ملف الإكسل مع المشاريع الحالية في النظام (تأكد من مطابقة الأسماء).");
         }
 
         logs.push(`تمت مطابقة ${matchedProjects.length} مشروع بنجاح: ${matchedProjects.map(p => p.name).join('، ')}`);
@@ -652,31 +652,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           if (!realUnitKey) realUnitKey = unitLabel;
 
-          // فحص ذكي لحالة الوحدة بناءً على العمود المخصص أو المنطق القديم التلقائي
           let status = 'available';
-          const statusVal = excelMapping.statusCol ? row[excelMapping.statusCol]?.toString().trim() : null;
-
-          if (statusVal) {
-            const sNormalized = statusVal.toLowerCase();
-            if (sNormalized.includes('مباع') || sNormalized.includes('sold')) {
-              status = 'sold';
-            } else if (sNormalized.includes('محجوز') || sNormalized.includes('reserved')) {
-              status = 'reserved';
-            } else if (sNormalized.includes('مبدئي') || sNormalized.includes('أولي') || sNormalized.includes('حجز') || sNormalized.includes('pending')) {
-              status = 'pending';
-            } else if (sNormalized.includes('استثمار') || sNormalized.includes('investment')) {
-              status = 'investment';
-            } else if (sNormalized.includes('متوفر') || sNormalized.includes('متاح') || sNormalized.includes('available')) {
-              status = 'available';
-            }
-          } else {
-            // العودة للمنطق القديم التلقائي في حال عدم مطابقة عمود الحالة
-            if (customerName && customerName.length > 1) {
-              const isInvestment = investmentNames.some(name => 
-                customerName.toLowerCase().includes(name.toLowerCase().trim())
-              );
-              status = isInvestment ? 'investment' : 'sold';
-            }
+          if (customerName && customerName.length > 1) {
+            const isInvestment = investmentNames.some(name => 
+              customerName.toLowerCase().includes(name.toLowerCase().trim())
+            );
+            status = isInvestment ? 'investment' : 'sold';
           }
 
           const existingUnit = existingHouses?.find(h => h.unit_key === realUnitKey);
@@ -700,6 +681,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const uniqueUpdatesMap = new Map<string, any>();
         updates.forEach(u => uniqueUpdatesMap.set(u.unit_key, u));
+
+        // [ملاحظة]: تم إلغاء منطق التصفير التلقائي بالكامل من هذه الخطوة لضمان حماية بيانات الملاك المتعددين والتشابهات الإملائية وتطابق النظام مع الإكسل 100%
 
         const sortedFinalUpdates = Array.from(uniqueUpdatesMap.values());
         logs.push(`تجهيز السجلات النهائية للرفع. إجمالي السجلات الفريدة: ${sortedFinalUpdates.length} سجل.`);
@@ -860,6 +843,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     setIsSendingToTelegram(true);
     try {
+      // 1. تجميع البيانات للنسخة الاحتياطية
       const { data: projectsData } = await supabase.from('projects').select('*');
       const { data: housesData } = await supabase.from('houses_data').select('*');
       const { data: settingsData } = await supabase.from('settings').select('*');
@@ -873,17 +857,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         centers: centersData
       };
 
+      // 2. تحويلها لملف Blob
       const backupString = JSON.stringify(backup, null, 2);
       const blob = new Blob([backupString], { type: 'application/json' });
       
+      // اسم الملف الاحتياطي
       const filename = `backup_${new Date().toISOString().split('T')[0]}_manual.json`;
       const file = new File([blob], filename, { type: 'application/json' });
 
+      // 3. تجهيز FormData لإرساله عبر Telegram API
       const formData = new FormData();
       formData.append('chat_id', telegramConfig.chatId);
       formData.append('document', file);
       formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات.\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
 
+      // 4. إرسال الطلب من المتصفح مباشرة لـ Telegram API
       const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendDocument`, {
         method: 'POST',
         body: formData
@@ -893,6 +881,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (response.ok && resData.ok) {
         showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
       } else {
+        // قراءة وعرض الوصف الدقيق للخطأ المرتجع من سيرفر تليجرام
         const detailedError = resData.description || `رمز الخطأ: ${resData.error_code || 'غير معروف'}`;
         throw new Error(detailedError);
       }
@@ -920,6 +909,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             throw new Error("ملف النسخة الاحتياطية غير صالح أو تالف.");
           }
 
+          // استعادة المشاريع السكنية
           if (backup.projects && backup.projects.length > 0) {
             const formattedProjects = backup.projects.map((p: any) => ({
               id: p.id,
@@ -932,6 +922,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             await supabase.from('projects').upsert(formattedProjects);
           }
 
+          // استعادة بيانات الوحدات السكنية والحجوزات على دفعات صغيرة لتفادي ثقل البيانات
           if (backup.houses && backup.houses.length > 0) {
             for (let i = 0; i < backup.houses.length; i += 100) {
               const chunk = backup.houses.slice(i, i + 100);
@@ -939,6 +930,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             }
           }
 
+          //... استعادة الإعدادات العامة والمراكز التسويقية
           if (backup.settings && backup.settings.length > 0) {
             await supabase.from('settings').upsert(backup.settings);
           }
@@ -964,6 +956,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
+  // مصفوفة الصلاحيات المتاحة ومصنّفة لتسهيل التحكم
   const permissionsCategories = [
     {
       title: "الصلاحيات العامة وعرض الحقول في الوحدة",
@@ -1273,7 +1266,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </Select>
                             </div>
 
-                            {/* عرض مجموعات الصلاحيات المكتشفة كاملة */}
+                            {/* عرض مجموعات الصلاحيات الـ 36 المكتشفة كاملة */}
                             <div className="space-y-8">
                               {permissionsCategories.map((category, catIdx) => (
                                 <div key={catIdx} className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
@@ -1283,6 +1276,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   </h4>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {category.perms.map(perm => {
+                                      // إذا لم تكن القيمة مسجلة، نعتبر الافتراضي تفعيل (true) لعدم تعطيل الأنظمة القائمة
                                       const isPermEnabled = deptPermissions[activePermsTab]?.[perm.key] !== false;
                                       return (
                                         <div key={perm.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100/50 transition-colors">
@@ -1345,7 +1339,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         <MappingInput label="عمود رقم الطابو" value={excelMapping.taboNumCol} onChange={(v) => setExcelMapping({...excelMapping, taboNumCol: v})} />
                         <MappingInput label="عمود حالة الطابو" value={excelMapping.taboStatusCol} onChange={(v) => setExcelMapping({...excelMapping, taboStatusCol: v})} />
                         <MappingInput label="عمود تاريخ الاستلام" value={excelMapping.handoverDateCol} onChange={(v) => setExcelMapping({...excelMapping, handoverDateCol: v})} />
-                        <MappingInput label="عمود حالة الوحدة" value={excelMapping.statusCol} onChange={(v) => setExcelMapping({...excelMapping, statusCol: v})} />
                       </div>
                     </div>
 
