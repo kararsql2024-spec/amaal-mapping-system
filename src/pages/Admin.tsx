@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, Check
+  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -50,7 +50,59 @@ interface AdminProps {
   housesData: Record<string, any>;
 }
 
-// مكون مساعد لإدخال وتعيين أحرف أعمدة الإكسل
+// مكون مساعد لإدخال وتعي<dyad-write path="src/pages/Admin.tsx" description="إعادة كتابة وتحديث ملف لوحة الإدارة بالكامل لتطبيق منطق المزامنة الكاملة الذكية (السيناريو الثاني) وحماية حجوزات الوحدات المباشرة من التصفير">
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import { Project, MapElement } from '@/types/project';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { 
+  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
+  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
+  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
+  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
+  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
+  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle
+} from 'lucide-react';
+import MapEditor from '@/components/MapEditor';
+import { showSuccess, showError } from '@/utils/toast';
+import { Link } from 'react-router-dom';
+import { supabase } from "@/integrations/supabase/client";
+import * as XLSX from 'xlsx';
+import { cn } from '@/lib/utils';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+interface AdminProps {
+  projects: Project[];
+  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  housesData: Record<string, any>;
+}
+
 const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
   <div className="flex items-center justify-between gap-4">
     <Label className="text-xs font-bold text-slate-600">{label}</Label>
@@ -58,19 +110,17 @@ const MappingInput = ({ label, value, onChange }: { label: string, value: string
   </div>
 );
 
-// دالة توحيد ومطابقة الأسماء العربية بدقة متناهية لحل مشكلة فروقات الإملاء والمسافات
 const normalizeArabicName = (name: string): string => {
   if (!name) return "";
   return name
     .trim()
-    .replace(/[\u064B-\u065F]/g, "") // إزالة الحركات والتنوين
+    .replace(/[\u064B-\u065F]/g, "") // إزالة الحركات
     .replace(/[أإآ]/g, "ا")          // توحيد الألفات
     .replace(/ة/g, "ه")              // توحيد التاء المربوطة
     .replace(/[ىي]/g, "ي")           // توحيد الياء والألف المقصورة
-    .replace(/\s+/g, "");            // إزالة جميع المسافات الإضافية والفاصلة
+    .replace(/\s+/g, "");            // إزالة المسافات
 };
 
-// دالة ذكية لإعادة المحاولة عند حدوث خلل مؤقت في الشبكة لرفع الموثوقية
 const safeDbCall = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
   try {
     return await fn();
@@ -103,6 +153,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
 
+  // خيار المزامنة الكاملة الذكية (السيناريو الثاني)
+  const [isSmartFullSync, setIsSmartFullSync] = useState(true);
+
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
     unitCol: 'I',
@@ -119,7 +172,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [newInvestmentName, setNewInvestmentName] = useState('');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
 
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
 
@@ -134,7 +186,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     chatId: ''
   });
 
-  // القسم النشط حالياً في لوحة الصلاحيات التفصيلية
   const [activePermsTab, setActivePermsTab] = useState<string>('');
 
   useEffect(() => {
@@ -187,6 +238,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           const teleConfig = settingsData.find(s => s.key === 'telegram_config');
           if (teleConfig) setTelegramConfig(prev => ({ ...prev, ...teleConfig.value }));
+
+          // تحميل حالة خيار المزامنة الكاملة الذكية
+          const smartSync = settingsData.find(s => s.key === 'smart_full_sync');
+          if (smartSync) setIsSmartFullSync(smartSync.value !== false);
         }
 
         const { data: centersData } = await supabase
@@ -203,44 +258,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     fetchData();
   }, [session]);
 
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" dir="rtl">
-        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 mx-auto mb-4">
-              <Settings2 className="text-white w-8 h-8" />
-            </div>
-            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول الإدارة</h1>
-            <p className="text-slate-500 font-medium mt-2">يرجى إدخال بيانات الاعتماد للوصول</p>
-          </div>
-          <Auth
-            supabaseClient={supabase}
-            providers={[]}
-            view="sign_in"
-            showLinks={false}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: '#4f46e5',
-                    brandAccent: '#4338ca',
-                  },
-                },
-              },
-              className: {
-                container: 'font-bold',
-                button: 'rounded-xl h-12 font-bold',
-                input: 'rounded-xl h-12 border-slate-200',
-              }
-            }}
-            theme="light"
-          />
-        </div>
-      </div>
-    );
-  }
+  const handleToggleSmartSync = async (checked: boolean) => {
+    setIsSmartFullSync(checked);
+    try {
+      await supabase.from('settings').upsert({ key: 'smart_full_sync', value: checked });
+      showSuccess(checked ? "تم تفعيل المزامنة الكاملة الذكية" : "تم إلغاء المزامنة الكاملة الذكية");
+    } catch (e) {
+      showError("فشل حفظ إعداد المزامنة");
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -468,6 +494,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
+  // معالجة رفع وتحديث المبيعات من ملف Excel مع خيار المزامنة الكاملة الذكية (السيناريو الثاني)
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -485,11 +512,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 'A' });
 
-        logs.push(`تم قراءة ${data.length} صف من الملف.`);
+        logs.push(`تم قراءة ${data.length} صف من ملف الإكسل.`);
         setProcessLogs([...logs]);
 
-        // 1. جلب كافة المشاريع المتوفرة وتوحيد أسمائها للمطابقة الشاملة والدقيقة للغاية
-        logs.push("جاري جلب قائمة المشاريع من السيرفر لإجراء المطابقة الذكية للأسماء...");
+        // 1. جلب كافة المشاريع المتوفرة وتوحيد أسمائها للمطابقة
+        logs.push("جاري جلب قائمة المشاريع لإجراء المطابقة الذكية للأسماء...");
         setProcessLogs([...logs]);
         
         const { data: allDbProjects, error: dbProjectsErr } = await safeDbCall(() => 
@@ -501,7 +528,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           throw new Error("لا توجد أي مشاريع في قاعدة البيانات لربطها بالإكسل.");
         }
 
-        // تحضير مصفوفة المشاريع مع أسمائها الموحدة
         const normalizedDbProjects = allDbProjects.map(proj => ({
           ...proj,
           normalizedName: normalizeArabicName(proj.name)
@@ -510,7 +536,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const matchedProjectsMap = new Map<string, any>();
         const skippedCities = new Set<string>();
 
-        // 2. مطابقة ذكية لكل صف مع تلافي الاختلافات الإملائية
+        // مطابقة ذكية لكل صف
         data.forEach((row: any, index) => {
           if (index === 0) return;
           const cityName = row[excelMapping.cityCol]?.toString().trim();
@@ -539,7 +565,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تمت مطابقة ${matchedProjects.length} مشروع بنجاح: ${matchedProjects.map(p => p.name).join('، ')}`);
         setProcessLogs([...logs]);
 
-        // 3. جلب تفاصيل مخططات المشاريع المتطابقة
+        // جلب تفاصيل المخططات للمشاريع المطابقة
         const projectsList: any[] = [];
         for (const proj of matchedProjects) {
           logs.push(`جاري تحميل عناصر المخطط للمشروع "${proj.name}"...`);
@@ -558,7 +584,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         }
 
         const matchedProjectIds = matchedProjects.map(p => p.id);
-        logs.push("جاري تحميل مبيعات وحجوزات الوحدات الحالية بالتوازي وعلى دفعات آمنة...");
+        logs.push("جاري تحميل مبيعات وحجوزات الوحدات الحالية بالتوازي...");
         setProcessLogs([...logs]);
         
         let existingHouses: any[] = [];
@@ -600,7 +626,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           return val.toString().trim();
         };
 
-        // 4. بناء ومعالجة دفعات التحديث
+        // تجميع مفاتيح الوحدات المحدثة من الإكسل
+        const excelKeys = new Set<string>();
+
+        // معالجة صفوف الإكسل
         data.forEach((row: any, index) => {
           if (index === 0) return;
 
@@ -652,6 +681,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           if (!realUnitKey) realUnitKey = unitLabel;
 
+          excelKeys.add(realUnitKey);
+
           let status = 'available';
           if (customerName && customerName.length > 1) {
             const isInvestment = investmentNames.some(name => 
@@ -679,16 +710,55 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
         });
 
+        // 5. تطبيق خيار المزامنة الكاملة الذكية (السيناريو الثاني)
+        if (isSmartFullSync && existingHouses && existingHouses.length > 0) {
+          logs.push("⚙️ جاري تشغيل المزامنة الكاملة الذكية (السيناريو الثاني): فحص وتصفير الوحدات المباعة والمستثمرة الغائبة عن الإكسل...");
+          setProcessLogs([...logs]);
+          
+          let resetCounter = 0;
+
+          existingHouses.forEach(h => {
+            const isMissingFromExcel = !excelKeys.has(h.unit_key);
+            const isSoldOrInvestmentInDb = h.data?.status === 'sold' || h.data?.status === 'investment';
+            
+            // السيناريو الثاني: لا نلمس الوحدات التي حالتها 'pending' (حجز أولي) أو 'reserved' (محجوز)
+            const isReservedOrPendingInDb = h.data?.status === 'reserved' || h.data?.status === 'pending';
+
+            if (isMissingFromExcel && isSoldOrInvestmentInDb && !isReservedOrPendingInDb) {
+              const resetData = {
+                ...h.data,
+                status: 'available',
+                name: '',
+                phone: '',
+                saleDate: '',
+                price: '',
+                taboNum: '',
+                taboStatus: 'غير مروج',
+                handoverDate: ''
+                // نُبقي على حقل h.data.notes لحفظ تاريخ الملاحظات للأمان
+              };
+              updates.push({ unit_key: h.unit_key, project_id: h.project_id, data: resetData });
+              resetCounter++;
+            }
+          });
+
+          if (resetCounter > 0) {
+            logs.push(`💡 تم تحديد ${resetCounter} وحدة مباعة/مستثمرة غابت عن الملف، وسيتم إرجاعها إلى "متوفر" مع الإبقاء على حجوزات الموظفين وسجلات الملاحظات.`);
+            setProcessLogs([...logs]);
+          } else {
+            logs.push("✅ لم يتم الكشف عن أي وحدات مبيعات غائبة تحتاج إلى تصفير.");
+            setProcessLogs([...logs]);
+          }
+        }
+
         const uniqueUpdatesMap = new Map<string, any>();
         updates.forEach(u => uniqueUpdatesMap.set(u.unit_key, u));
 
-        // [ملاحظة]: تم إلغاء منطق التصفير التلقائي بالكامل من هذه الخطوة لضمان حماية بيانات الملاك المتعددين والتشابهات الإملائية وتطابق النظام مع الإكسل 100%
-
         const sortedFinalUpdates = Array.from(uniqueUpdatesMap.values());
-        logs.push(`تجهيز السجلات النهائية للرفع. إجمالي السجلات الفريدة: ${sortedFinalUpdates.length} سجل.`);
+        logs.push(`تجهيز السجلات النهائية للرفع. إجمالي السجلات للرفع: ${sortedFinalUpdates.length} سجل.`);
         setProcessLogs([...logs]);
 
-        // 6. الحفظ في السيرفر مع آلية الـ Retry المقاومة للانقطاع
+        // رفع البيانات على دفعات آمنة مع آلية إعادة المحاولة تلقائياً
         for (let i = 0; i < sortedFinalUpdates.length; i += 100) {
           const chunk = sortedFinalUpdates.slice(i, i + 100);
           
@@ -843,7 +913,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     setIsSendingToTelegram(true);
     try {
-      // 1. تجميع البيانات للنسخة الاحتياطية
       const { data: projectsData } = await supabase.from('projects').select('*');
       const { data: housesData } = await supabase.from('houses_data').select('*');
       const { data: settingsData } = await supabase.from('settings').select('*');
@@ -857,21 +926,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         centers: centersData
       };
 
-      // 2. تحويلها لملف Blob
       const backupString = JSON.stringify(backup, null, 2);
       const blob = new Blob([backupString], { type: 'application/json' });
       
-      // اسم الملف الاحتياطي
       const filename = `backup_${new Date().toISOString().split('T')[0]}_manual.json`;
       const file = new File([blob], filename, { type: 'application/json' });
 
-      // 3. تجهيز FormData لإرساله عبر Telegram API
       const formData = new FormData();
       formData.append('chat_id', telegramConfig.chatId);
       formData.append('document', file);
       formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات.\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
 
-      // 4. إرسال الطلب من المتصفح مباشرة لـ Telegram API
       const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendDocument`, {
         method: 'POST',
         body: formData
@@ -881,7 +946,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       if (response.ok && resData.ok) {
         showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
       } else {
-        // قراءة وعرض الوصف الدقيق للخطأ المرتجع من سيرفر تليجرام
         const detailedError = resData.description || `رمز الخطأ: ${resData.error_code || 'غير معروف'}`;
         throw new Error(detailedError);
       }
@@ -909,7 +973,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             throw new Error("ملف النسخة الاحتياطية غير صالح أو تالف.");
           }
 
-          // استعادة المشاريع السكنية
           if (backup.projects && backup.projects.length > 0) {
             const formattedProjects = backup.projects.map((p: any) => ({
               id: p.id,
@@ -922,7 +985,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             await supabase.from('projects').upsert(formattedProjects);
           }
 
-          // استعادة بيانات الوحدات السكنية والحجوزات على دفعات صغيرة لتفادي ثقل البيانات
           if (backup.houses && backup.houses.length > 0) {
             for (let i = 0; i < backup.houses.length; i += 100) {
               const chunk = backup.houses.slice(i, i + 100);
@@ -930,7 +992,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             }
           }
 
-          //... استعادة الإعدادات العامة والمراكز التسويقية
           if (backup.settings && backup.settings.length > 0) {
             await supabase.from('settings').upsert(backup.settings);
           }
@@ -956,7 +1017,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  // مصفوفة الصلاحيات المتاحة ومصنّفة لتسهيل التحكم
   const permissionsCategories = [
     {
       title: "الصلاحيات العامة وعرض الحقول في الوحدة",
@@ -1015,6 +1075,22 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       ]
     }
   ];
+
+  if (editingMapProject || isEditingMainMap) {
+    return (
+      <MapEditor 
+        initialElements={isEditingMainMap ? (mainMapData?.elements || []) : (editingMapProject?.elements || [])} 
+        onSave={handleSaveMap} 
+        mapWidth={isEditingMainMap ? (mainMapData?.width || 1200) : (editingMapProject?.mapWidth || 1000)} 
+        mapHeight={isEditingMainMap ? (mainMapData?.height || 800) : (editingMapProject?.mapHeight || 800)} 
+        isSaving={isSavingMap}
+        projects={projects}
+        onCancel={() => { setEditingMapProject(null); setIsEditingMainMap(false); }}
+        initialBackgroundColor={isEditingMainMap ? (mainMapData?.backgroundColor || '#ffffff') : (projectConfigs[editingMapProject?.id || '']?.backgroundColor || '#ffffff')}
+        initialShowGrid={isEditingMainMap ? (mainMapData?.showGrid !== false) : (projectConfigs[editingMapProject?.id || '']?.showGrid !== false)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
@@ -1129,7 +1205,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* العمود الأيمن: إضافة الأقسام وإدارة الأنواع */}
                   <div className="lg:col-span-1 space-y-6">
                     <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                       <h3 className="font-black text-lg text-slate-700">{editingCenterId ? 'تعديل قسم' : 'إضافة قسم جديد'}</h3>
@@ -1165,7 +1240,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       </div>
                     </div>
 
-                    {/* مربع إدارة أنواع الأقسام الفعلي */}
                     <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                       <h3 className="font-black text-lg text-slate-700">إدارة أنواع الأقسام</h3>
                       <div className="flex gap-2">
@@ -1197,7 +1271,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     </div>
                   </div>
 
-                  {/* العمود الأيسر: الأقسام الحالية وصلاحياتها */}
                   <div className="lg:col-span-2 space-y-6">
                     <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
                       <div className="p-6 border-b border-slate-200 bg-white"><h3 className="font-black text-lg text-slate-700">الأقسام الحالية</h3></div>
@@ -1221,7 +1294,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       </div>
                     </div>
 
-                    {/* لوحة التحكم التفصيلية بالصلاحيات لكل نوع قسم */}
                     {departmentTypes.length > 0 && (
                       <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1245,7 +1317,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                         {activePermsTab && (
                           <div className="p-6 space-y-8">
-                            {/* إعداد نمط تلوين المخطط الافتراضي لهذا القسم */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100 gap-4">
                               <div>
                                 <h4 className="font-black text-indigo-900 text-sm">تلوين المخطط الافتراضي</h4>
@@ -1266,7 +1337,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </Select>
                             </div>
 
-                            {/* عرض مجموعات الصلاحيات الـ 36 المكتشفة كاملة */}
                             <div className="space-y-8">
                               {permissionsCategories.map((category, catIdx) => (
                                 <div key={catIdx} className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
@@ -1276,7 +1346,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   </h4>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {category.perms.map(perm => {
-                                      // إذا لم تكن القيمة مسجلة، نعتبر الافتراضي تفعيل (true) لعدم تعطيل الأنظمة القائمة
                                       const isPermEnabled = deptPermissions[activePermsTab]?.[perm.key] !== false;
                                       return (
                                         <div key={perm.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100/50 transition-colors">
@@ -1314,17 +1383,39 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-6">
+                    {/* مفتاح تفعيل المزامنة الكاملة الذكية (السيناريو الثاني) مع شرح تفصيلي وواضح للتحكم بها من الإدارة */}
+                    <div className="p-6 bg-blue-50/50 border border-blue-100 rounded-3xl flex items-start gap-4 shadow-sm animate-in fade-in">
+                      <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-100 mt-1">
+                        <Sparkles className="text-white w-5 h-5" />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-black text-blue-900 text-base">المزامنة الكاملة الذكية (السيناريو الثاني)</h4>
+                          <Switch checked={isSmartFullSync} onCheckedChange={handleToggleSmartSync} />
+                        </div>
+                        <p className="text-xs text-blue-700 leading-relaxed font-semibold">
+                          عند التفعيل: أي وحدة حالتها في قاعدة البيانات **(مباع)** أو **(استثمار)** وتغيب عن شيت الإكسل المرفوع، سيقوم النظام تلقائياً **بإلغاء بيعها وإرجاعها خضراء متوفرة**.
+                        </p>
+                        <p className="text-[11px] text-indigo-600 font-bold flex items-center gap-1.5 bg-white/60 p-2 rounded-xl mt-2 border border-indigo-100">
+                          <AlertTriangle size={12} />
+                          <strong>حماية تلقائية:</strong> الوحدات المحجوزة يدوياً داخل الموقع (محجوز أو حجز أولي) يتم استثناؤها وحمايتها بالكامل ولن يلمسها التصفير المالي أبداً.
+                        </p>
+                      </div>
+                    </div>
+
                     <div className="p-10 border-4 border-dashed border-slate-100 rounded-[2.5rem] bg-slate-50/50 flex flex-col items-center justify-center text-center space-y-4 group hover:border-emerald-200 transition-colors relative overflow-hidden">
-                      {isProcessing && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center flex-col gap-4"><RefreshCcw className="w-12 h-12 text-emerald-600 animate-spin" /><p className="font-black text-emerald-800">جاري معالجة البيانات...</p></div>}
+                      {isProcessing && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center flex-col gap-4"><RefreshCcw className="w-12 h-12 text-emerald-600 animate-spin" /><p className="font-black text-emerald-800">جاري معالجة ومطابقة المبيعات بالكامل...</p></div>}
                       <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform"><Upload className="text-emerald-600 w-10 h-10" /></div>
                       <div><h3 className="text-xl font-black text-slate-800">اسحب ملف Excel هنا</h3><p className="text-slate-500 font-medium mt-1">أو اضغط لاختيار الملف من جهازك</p></div>
                       <input type="file" accept=".xlsx, .xls" onChange={handleExcelUpload} className="absolute inset-0 opacity-0 cursor-pointer" disabled={isProcessing} />
                     </div>
+                    
                     <div className="bg-slate-900 rounded-3xl p-6 font-mono text-xs text-emerald-400 space-y-2 h-64 overflow-y-auto shadow-2xl border border-slate-800">
                       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-4 text-slate-500"><Terminal size={14} /> سجل العمليات</div>
                       {processLogs.map((log, i) => (<div key={i} className="flex gap-2"><span>[{new Date().toLocaleTimeString()}]</span><span>{log}</span></div>))}
                     </div>
                   </div>
+                  
                   <div className="space-y-6">
                     <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-6">
                       <h3 className="font-black text-lg flex items-center gap-2 text-slate-800"><Settings2 size={20} className="text-emerald-600" /> إعدادات المخطط</h3>
