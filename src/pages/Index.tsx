@@ -6,7 +6,7 @@ import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3, MapPin } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3, MapPin, Search, RefreshCcw } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,6 +62,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   
   const [mainMapData, setMainMapData] = useState<any>(null);
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
+
+  // متغيرات البحث والآخر تحديث المضافين بشكل مخصص
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [pendingOpen, setPendingOpen] = useState<{ elementId: string; isTower: boolean } | null>(null);
 
   const [permissions, setPermissions] = useState<any>({
     showPrice: true,
@@ -124,6 +131,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
             const configs = settings.find(s => s.key === 'project_configs');
             if (configs) setProjectConfigs(configs.value || {});
+
+            const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
+            if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
           }
         }
       }
@@ -233,6 +243,64 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     fetchProjectData();
   }, [selectedProjectId, setHousesData]);
 
+  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح
+  useEffect(() => {
+    if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
+      const { elementId, isTower } = pendingOpen;
+      const exists = activeElements.some(el => el.id === elementId);
+      if (exists) {
+        setSelectedElementId(elementId);
+        if (isTower) {
+          setIsTowerModalOpen(true);
+        } else {
+          setIsUnitModalOpen(true);
+        }
+      } else {
+        showError("تعذر عرض الوحدة على المخطط الحالي");
+      }
+      setPendingOpen(null);
+    }
+  }, [isProjectLoading, activeElements, pendingOpen]);
+
+  const handleSearch = async (query: string) => {
+    if (!query || query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const { data, error } = await supabase
+        .from('houses_data')
+        .select('unit_key, project_id, data')
+        .or(`unit_key.ilike.%${query}%,data->>name.ilike.%${query}%`)
+        .limit(10);
+      
+      if (error) throw error;
+      setSearchResults(data || []);
+    } catch (e) {
+      console.error("Error in general search:", e);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const parseSearchClick = (item: any) => {
+    const unitKey = item.unit_key;
+    const projectId = item.project_id;
+    
+    setSelectedProjectId(projectId);
+    
+    if (unitKey.includes('_F') && unitKey.includes('_A')) {
+      const towerId = unitKey.split('_F')[0];
+      setPendingOpen({ elementId: towerId, isTower: true });
+    } else {
+      setPendingOpen({ elementId: unitKey, isTower: false });
+    }
+    setSearchQuery('');
+    setSearchResults([]);
+    showSuccess(`جاري الانتقال وعرض الوحدة ${unitKey}...`);
+  };
+
   const checkExpiredBookings = async (units: any[], projectId: string) => {
     const now = new Date();
     const expiredUnits: any[] = [];
@@ -300,6 +368,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
         const configs = settings.find(s => s.key === 'project_configs');
         if (configs) setProjectConfigs(configs.value || {});
+
+        const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
+        if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
       }
       
       showSuccess(`مرحباً بك في مركز ${center.name}`);
@@ -466,17 +537,104 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   return (
     <div className="min-h-screen bg-[#f0f4f8] p-4 md:p-8" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-8">
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
-          <div className="flex items-center gap-4">
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4 shrink-0">
             <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><MapIcon className="text-white w-8 h-8" /></div>
-            <div><h1 className="text-2xl font-black text-slate-800">نظام ادارة الوحدات السكنية التفاعلي</h1><p className="text-slate-500 font-medium">خريطة تفاعلية للمخطط السكني</p></div>
+            <div>
+              <h1 className="text-xl font-black text-slate-800 leading-tight">نظام ادارة الوحدات السكنية</h1>
+              <p className="text-slate-500 text-xs font-bold mt-0.5">خريطة تفاعلية للمخطط السكني</p>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          {/* مربع البحث العام الذكي والمحسن في المنتصف */}
+          <div className="relative flex-1 max-w-md w-full mx-auto lg:mx-0">
+            <div className="relative">
+              <Search className="absolute right-4 top-3.5 text-slate-400 w-5 h-5" />
+              <Input 
+                type="text" 
+                placeholder="ابحث عن اسم زبون أو رقم وحدة سكنية..." 
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  handleSearch(e.target.value);
+                }}
+                className="pr-12 pl-4 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-xs bg-slate-50/50" 
+              />
+              {isSearching && (
+                <div className="absolute left-4 top-3.5">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+            </div>
+            
+            {/* قائمة نتائج البحث السريعة والتفاعلية */}
+            {searchResults.length > 0 && (
+              <div className="absolute z-[999] right-0 left-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                {searchResults.map((item) => {
+                  const projName = projects.find(p => p.id === item.project_id)?.name || "المخطط العام";
+                  const isInvestment = item.data?.status === 'investment';
+                  const isSold = item.data?.status === 'sold';
+                  const isReserved = item.data?.status === 'reserved';
+                  const isPending = item.data?.status === 'pending';
+                  
+                  let statusBadge = "متاح";
+                  let statusClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                  if (isSold) {
+                    statusBadge = "مباع";
+                    statusClass = "bg-rose-50 text-rose-700 border-rose-100";
+                  } else if (isInvestment) {
+                    statusBadge = "استثمار";
+                    statusClass = "bg-purple-50 text-purple-700 border-purple-100";
+                  } else if (isReserved) {
+                    statusBadge = "محجوز";
+                    statusClass = "bg-amber-50 text-amber-700 border-amber-100";
+                  } else if (isPending) {
+                    statusBadge = "حجز أولي";
+                    statusClass = "bg-blue-50 text-blue-700 border-blue-100";
+                  }
+
+                  return (
+                    <button 
+                      key={item.unit_key}
+                      onClick={() => parseSearchClick(item)}
+                      className="w-full text-right p-4 hover:bg-slate-50 transition-colors flex flex-col gap-1"
+                    >
+                      <div className="flex justify-between items-center w-full">
+                        <span className="font-black text-slate-800 text-xs">
+                          {item.data?.name ? item.data.name : `الوحدة ${item.unit_key}`}
+                        </span>
+                        <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full border", statusClass)}>
+                          {statusBadge}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold w-full mt-0.5">
+                        <span>الرمز: <strong className="text-slate-700 font-black">{item.unit_key}</strong></span>
+                        <span className="text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-lg text-[10px] font-black">📍 {projName}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-3 shrink-0">
+            {/* زر وزر إظهار آخر مزامنة للبيانات المالية */}
+            {lastUpdate && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-emerald-50/50 px-3 py-2.5 rounded-xl border border-emerald-100/50 font-black">
+                <RefreshCcw size={12} className="text-emerald-500 animate-spin-slow" />
+                <span>آخر مزامنة:</span>
+                <span className="text-slate-700 font-black">
+                  {new Date(lastUpdate).toLocaleString('ar-EG', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                </span>
+              </div>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[180px] font-black h-12 text-slate-700 shadow-sm">
+                <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[180px] font-black h-12 text-slate-700 shadow-sm text-xs">
                   {selectedProjectId === 'main_map' ? "المخطط العام للمدينة" : (activeProject?.name || "اختر المخطط...")}
-                  <ChevronDown size={16} />
+                  <ChevronDown size={14} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="rounded-xl">
@@ -492,7 +650,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2 h-12 font-bold"><LogOut size={18} /> خروج</Button>
+            <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2 h-12 font-bold text-xs"><LogOut size={16} /> خروج</Button>
           </div>
         </header>
 
