@@ -9,24 +9,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   ArrowRight, BarChart3, TrendingUp, DollarSign, Coins, FileText, 
   Home, Building2, CheckCircle2, Clock, ShieldCheck, PieChart as PieIcon,
-  TrendingDown, Percent, Calendar, Loader2
+  Percent, Loader2
 } from 'lucide-react';
 import { 
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, 
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
   CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
-import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 
 interface ReportsProps {
   projects: Project[];
 }
 
-const COLORS = ['#10b981', '#f43f5e', '#a855f7', '#fbbf24', '#3b82f6', '#64748b'];
-
 const Reports = ({ projects }: ReportsProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [housesData, setHousesData] = useState<Record<string, any>>({});
+  const [fetchedElements, setFetchedElements] = useState<MapElement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // جلب البيانات حياً ومباشرة من قاعدة البيانات لضمان عمل التقارير بشكل مستقل وموثوق دائماً
@@ -34,6 +32,34 @@ const Reports = ({ projects }: ReportsProps) => {
     const fetchReportsData = async () => {
       setLoading(true);
       try {
+        // 1. جلب عناصر المخطط (elements) كاملة من جدول المشاريع
+        let elementsList: MapElement[] = [];
+        if (selectedProjectId === 'all') {
+          const { data: projData, error: projErr } = await supabase
+            .from('projects')
+            .select('elements');
+          if (projErr) throw projErr;
+          if (projData) {
+            projData.forEach(p => {
+              if (p.elements && Array.isArray(p.elements)) {
+                elementsList = [...elementsList, ...(p.elements as MapElement[])];
+              }
+            });
+          }
+        } else {
+          const { data: projData, error: projErr } = await supabase
+            .from('projects')
+            .select('elements')
+            .eq('id', selectedProjectId)
+            .single();
+          if (projErr) throw projErr;
+          if (projData && projData.elements && Array.isArray(projData.elements)) {
+            elementsList = projData.elements as MapElement[];
+          }
+        }
+        setFetchedElements(elementsList);
+
+        // 2. جلب بيانات المبيعات (houses_data)
         let allUnits: any[] = [];
         let from = 0;
         const step = 1000;
@@ -75,20 +101,6 @@ const Reports = ({ projects }: ReportsProps) => {
 
     fetchReportsData();
   }, [selectedProjectId]);
-
-  // تصفية المشاريع المتاحة
-  const activeProject = useMemo(() => {
-    return projects.find(p => p.id === selectedProjectId);
-  }, [projects, selectedProjectId]);
-
-  // جلب كافة العناصر للمشروع المحدد أو لجميع المشاريع
-  const elementsToAnalyze = useMemo(() => {
-    if (selectedProjectId === 'all') {
-      // دمج كافة العناصر من جميع المشاريع
-      return projects.reduce((acc, p) => [...acc, ...(p.elements || [])], [] as MapElement[]);
-    }
-    return activeProject?.elements || [];
-  }, [projects, activeProject, selectedProjectId]);
 
   // دالة مساعدة لتحليل الأسعار
   const parsePrice = (price: any) => {
@@ -170,7 +182,7 @@ const Reports = ({ projects }: ReportsProps) => {
       }
     };
 
-    elementsToAnalyze.forEach(el => {
+    fetchedElements.forEach(el => {
       if (el.type === 'house') {
         processUnit(el.id);
       } else if (el.type === 'tower') {
@@ -190,7 +202,7 @@ const Reports = ({ projects }: ReportsProps) => {
       promotedTabo, receivedTabo, notPromotedTabo,
       receivedUnit, notReceivedUnit
     };
-  }, [elementsToAnalyze, housesData]);
+  }, [fetchedElements, housesData]);
 
   // 2. بيانات مخطط توزيع الحالات (Pie Chart)
   const statusDistributionData = useMemo(() => {
@@ -207,7 +219,7 @@ const Reports = ({ projects }: ReportsProps) => {
   const zonePerformanceData = useMemo(() => {
     const zones: Record<string, { total: number, sold: number, investment: number }> = {};
 
-    elementsToAnalyze.forEach(el => {
+    fetchedElements.forEach(el => {
       if (el.type === 'house') {
         const parts = el.label.split('-');
         const zone = parts[0] || "عام";
@@ -232,7 +244,7 @@ const Reports = ({ projects }: ReportsProps) => {
       'الاستثمار': z.investment,
       'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
     })).slice(0, 10); // عرض أول 10 زونات كحد أقصى
-  }, [elementsToAnalyze, housesData]);
+  }, [fetchedElements, housesData]);
 
   // 4. بيانات منحنى المبيعات الزمني (Line Chart)
   const salesTrendData = useMemo(() => {
@@ -257,7 +269,7 @@ const Reports = ({ projects }: ReportsProps) => {
       }
     };
 
-    elementsToAnalyze.forEach(el => {
+    fetchedElements.forEach(el => {
       if (el.type === 'house') {
         processUnitDate(el.id);
       } else if (el.type === 'tower') {
@@ -277,7 +289,7 @@ const Reports = ({ projects }: ReportsProps) => {
       'الإيرادات (مليون د.ع)': Math.round(data.revenueIQD / 1000000),
       'الإيرادات (ألف $)': Math.round(data.revenueUSD / 1000)
     })).reverse(); // ترتيب زمني تصاعدي
-  }, [elementsToAnalyze, housesData]);
+  }, [fetchedElements, housesData]);
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('en-US').format(Math.round(num));
@@ -495,7 +507,7 @@ const Reports = ({ projects }: ReportsProps) => {
                 </CardContent>
               </Card>
 
-              {/* التحليل القانوني واستلاف الوحدات */}
+              {/* التحليل القانوني واستلام الوحدات */}
               <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-1">
                 <CardHeader>
                   <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
