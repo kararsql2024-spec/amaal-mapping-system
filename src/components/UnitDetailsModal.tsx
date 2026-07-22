@@ -123,16 +123,16 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl flex flex-col" dir="rtl">
-        <DialogHeader className="bg-blue-600 p-4 md:p-6 text-white shrink-0">
-          <DialogTitle className="text-xl md:text-2xl font-black flex items-center gap-3">
+      <DialogContent className="max-w-2xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl" dir="rtl">
+        <DialogHeader className="bg-blue-600 p-6 text-white">
+          <DialogTitle className="text-2xl font-black flex items-center gap-3">
             <HomeIcon size={24} />
             تفاصيل الوحدة: {unitLabel || unitId}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="p-4 md:p-6 space-y-6 overflow-y-auto flex-1">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {permissions.showStatusField && (
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><ShieldCheck size={16} /> حالة الوحدة</Label>
@@ -286,22 +286,22 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
           <div className="space-y-4 pt-4 border-t border-slate-100">
             <Label className="font-black text-slate-800 text-lg flex items-center gap-2"><MessageSquare size={20} className="text-blue-600" /> سجل الملاحظات</Label>
             
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex gap-2">
               <Textarea 
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 placeholder="أضف ملاحظة جديدة هنا..."
-                className="rounded-xl border-slate-200 font-bold min-h-[80px] resize-none flex-1"
+                className="rounded-xl border-slate-200 font-bold min-h-[80px] resize-none"
               />
               <Button 
                 onClick={handleAddNote}
-                className="bg-blue-600 hover:bg-blue-700 rounded-xl h-12 sm:h-auto px-6 font-black shrink-0"
+                className="bg-blue-600 hover:bg-blue-700 rounded-xl h-auto px-6 font-black"
               >
                 إضافة
               </Button>
             </div>
 
-            <ScrollArea className="h-[180px] w-full rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+            <ScrollArea className="h-[200px] w-full rounded-xl border border-slate-100 bg-slate-50/50 p-4">
               <div className="space-y-4">
                 {formData.notes.length > 0 ? formData.notes.map((note, idx) => (
                   <div key={idx} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm space-y-1">
@@ -319,13 +319,13 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
           </div>
         </div>
 
-        <DialogFooter className="p-4 md:p-6 bg-slate-50 border-t border-slate-100 flex flex-row-reverse gap-3 shrink-0">
+        <DialogFooter className="p-6 bg-slate-50 border-t border-slate-100 flex-row-reverse gap-3">
           {canEdit && (
-            <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 rounded-xl h-12 px-8 font-black shadow-lg shadow-blue-100 flex-1 sm:flex-none">
+            <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 rounded-xl h-12 px-8 font-black shadow-lg shadow-blue-100">
               حفظ التغييرات
             </Button>
           )}
-          <Button variant="ghost" onClick={onClose} className="rounded-xl h-12 px-6 font-bold flex-1 sm:flex-none">
+          <Button variant="ghost" onClick={onClose} className="rounded-xl h-12 px-6 font-bold">
             إغلاق
           </Button>
         </DialogFooter>
