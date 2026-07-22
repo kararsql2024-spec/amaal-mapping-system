@@ -152,11 +152,14 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                         {formData.status === 'investment' && <SelectItem value="investment" className="font-bold text-purple-600">استثمار</SelectItem>}
                       </>
                     ) : (
-                      // إذا كانت الحالة متاح أو محجوز أو حجز أولي، تظهر فقط هذه الخيارات الثلاثة ويُمنع اختيار مباع أو استثمار
+                      // إذا كانت الحالة متاح أو محجوز أو حجز أولي أو مجمدة، تظهر الخيارات المسموحة مع خيارات التجميد الثلاثة
                       <>
                         <SelectItem value="available" className="font-bold text-emerald-600">متوفر</SelectItem>
                         <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
                         <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
+                        <SelectItem value="frozen_counted" className="font-bold text-slate-500">مجمدة (داخل المجموع)</SelectItem>
+                        <SelectItem value="frozen_uncounted" className="font-bold text-slate-500">مجمدة (خارج المجموع)</SelectItem>
+                        <SelectItem value="frozen_hidden" className="font-bold text-slate-500">مجمدة (مخفية من العدد)</SelectItem>
                       </>
                     )}
                   </SelectContent>
