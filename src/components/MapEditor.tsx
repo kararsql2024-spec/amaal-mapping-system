@@ -11,7 +11,7 @@ import {
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
-  Frame
+  Frame, Ruler
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -225,6 +225,8 @@ const MapEditor = ({
       x: pts[0].x, y: pts[0].y, width: 0, height: 0,
       floors: type === 'tower' ? 5 : undefined,
       apartmentsPerFloor: type === 'tower' ? 4 : undefined,
+      groundFloorSizes: type === 'tower' ? Array(4).fill(0) : undefined,
+      typicalFloorSizes: type === 'tower' ? Array(4).fill(0) : undefined,
       amenityType: type === 'amenity' ? 'shop' : undefined,
       strokeWidth: isStroke ? brushSize : undefined,
       isStroke: isStroke,
@@ -297,11 +299,9 @@ const MapEditor = ({
       let newPoints = [...pts];
       
       if (dragMode.type === 'vertex' && dragIdx !== undefined) {
-        // حساب مركز العنصر الحالي قبل التغيير لإجراء إزاحة الدوران العكسية
         const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
         const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
         
-        // تحويل إحداثيات الماوس العالمية إلى إحداثيات محلية (إلغاء الدوران) لمنع القفز والإزاحة العشوائية
         const angleRad = -(el.rotation || 0) * (Math.PI / 180);
         const cos = Math.cos(angleRad);
         const sin = Math.sin(angleRad);
@@ -574,6 +574,36 @@ const MapEditor = ({
     );
   };
 
+  // دوال مساعدة لتحديث مصفوفات المساحات عند تغيير عدد الشقق
+  const handleApartmentsCountChange = (count: number) => {
+    if (!selectedElement) return;
+    const currentGround = selectedElement.groundFloorSizes || [];
+    const currentTypical = selectedElement.typicalFloorSizes || [];
+    
+    const newGround = Array(count).fill(0).map((_, i) => currentGround[i] || 0);
+    const newTypical = Array(count).fill(0).map((_, i) => currentTypical[i] || 0);
+    
+    updateSelectedElement({
+      apartmentsPerFloor: count,
+      groundFloorSizes: newGround,
+      typicalFloorSizes: newTypical
+    });
+  };
+
+  const handleGroundSizeChange = (index: number, val: number) => {
+    if (!selectedElement) return;
+    const current = [...(selectedElement.groundFloorSizes || Array(selectedElement.apartmentsPerFloor || 1).fill(0))];
+    current[index] = val;
+    updateSelectedElement({ groundFloorSizes: current });
+  };
+
+  const handleTypicalSizeChange = (index: number, val: number) => {
+    if (!selectedElement) return;
+    const current = [...(selectedElement.typicalFloorSizes || Array(selectedElement.apartmentsPerFloor || 1).fill(0))];
+    current[index] = val;
+    updateSelectedElement({ typicalFloorSizes: current });
+  };
+
   return (
     <div className={cn("flex flex-col gap-4 transition-all duration-300 h-screen p-6 bg-slate-50")} dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
@@ -631,7 +661,6 @@ const MapEditor = ({
           </label>
         </div>
 
-        {/* الحاوية الخارجية والـ SVG تستخدم الآن لون الخلفية الانسيابي كخلفية موحدة لتجنب ظهور الفجوات الرمادية */}
         <div className="flex-1 relative rounded-[2.5rem] border-8 border-white shadow-inner overflow-hidden touch-none transition-colors duration-300" style={{ backgroundColor: backgroundColor }}>
           <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel} style={{ backgroundColor: backgroundColor }}>
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
@@ -781,7 +810,6 @@ const MapEditor = ({
                     
                     {isSelectedEl && (
                       <>
-                        {/* مقابض ذكية على الحواف لإضافة نقاط جديدة وزوايا بلمسة واحدة */}
                         {pts.map((p, i) => {
                           const nextP = pts[(i + 1) % pts.length];
                           const midX = (p.x + nextP.x) / 2;
@@ -805,7 +833,6 @@ const MapEditor = ({
                           );
                         })}
 
-                        {/* مقابض الزوايا (Vertices) مع ميزة السحب الخالية من الـ Lag وميزة الحذف السريع بالنقر المزدوج */}
                         {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:fill-blue-50 transition-colors" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />)}
                         
                         <circle cx={centerX} cy={pts[0].y - 30} r={8} className="fill-blue-600 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
@@ -832,7 +859,7 @@ const MapEditor = ({
           </svg>
         </div>
 
-        <div className="w-80 flex flex-col gap-4">
+        <div className="w-80 flex flex-col gap-4 overflow-y-auto no-scrollbar h-full pb-10">
           {isBrushMode && (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
               <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-100"><SlidersHorizontal className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">إعدادات الفرشاة</h3></div>
@@ -856,7 +883,6 @@ const MapEditor = ({
             </div>
           )}
 
-          {/* لوحة تحكم بإعدادات المخطط العامة عند عدم اختيار أي عنصر */}
           {!selectedElement && (
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
               <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص المخطط</h3></div>
@@ -899,7 +925,6 @@ const MapEditor = ({
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
                 <div className="space-y-4">
-                  {/* ميزة ربط العنصر بمشروع سكني كزر انتقال تفاعلي ومباشر */}
                   {projects && projects.length > 0 && (
                     <div className="space-y-2 p-4 bg-indigo-50/35 rounded-2xl border border-indigo-100/50">
                       <Label className="text-xs font-black text-indigo-700 uppercase tracking-wider">ربط كزر انتقال بمشروع</Label>
@@ -1099,21 +1124,52 @@ const MapEditor = ({
                   )}
 
                   {selectedElement.type === 'tower' && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">عدد الطوابق</Label><Input type="number" value={selectedElement.floors} onChange={(e) => updateSelectedElement({ floors: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
-                      <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">شقق/طابق</Label><Input type="number" value={selectedElement.apartmentsPerFloor} onChange={(e) => updateSelectedElement({ apartmentsPerFloor: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
-                    </div>
-                  )}
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">عدد الطوابق</Label><Input type="number" value={selectedElement.floors} onChange={(e) => updateSelectedElement({ floors: parseInt(e.target.value) })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                        <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">شقق/طابق</Label><Input type="number" value={selectedElement.apartmentsPerFloor} onChange={(e) => handleApartmentsCountChange(parseInt(e.target.value))} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
+                      </div>
 
-                  {selectedElement.type === 'amenity' && (
-                    <div className="space-y-2">
-                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">نوع المرفق</Label>
-                      <Select value={selectedElement.amenityType} onValueChange={(val) => updateSelectedElement({ amenityType: val })}>
-                        <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold"><SelectValue placeholder="اختر النوع..." /></SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          {AMENITY_TYPES.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold">{t.label}</SelectItem>))}
-                        </SelectContent>
-                      </Select>
+                      {/* واجهة إدخال مساحات الشقق للطابق الأرضي والمتكرر */}
+                      <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Ruler size={16} className="text-indigo-600" />
+                          <Label className="font-black text-sm">مساحات شقق الطابق الأرضي (م²)</Label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Array.from({ length: selectedElement.apartmentsPerFloor || 1 }).map((_, idx) => (
+                            <div key={`ground-size-${idx}`} className="flex items-center gap-2 bg-white p-2 rounded-xl border">
+                              <span className="text-[10px] font-black text-slate-400">شقة {idx + 1}</span>
+                              <Input 
+                                type="number" 
+                                value={(selectedElement.groundFloorSizes || [])[idx] || 0} 
+                                onChange={(e) => handleGroundSizeChange(idx, parseFloat(e.target.value) || 0)}
+                                className="h-8 text-center font-bold text-xs p-1 border-none focus-visible:ring-0"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Ruler size={16} className="text-indigo-600" />
+                          <Label className="font-black text-sm">مساحات شقق الطابق المتكرر (م²)</Label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Array.from({ length: selectedElement.apartmentsPerFloor || 1 }).map((_, idx) => (
+                            <div key={`typical-size-${idx}`} className="flex items-center gap-2 bg-white p-2 rounded-xl border">
+                              <span className="text-[10px] font-black text-slate-400">شقة {idx + 1}</span>
+                              <Input 
+                                type="number" 
+                                value={(selectedElement.typicalFloorSizes || [])[idx] || 0} 
+                                onChange={(e) => handleTypicalSizeChange(idx, parseFloat(e.target.value) || 0)}
+                                className="h-8 text-center font-bold text-xs p-1 border-none focus-visible:ring-0"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
 

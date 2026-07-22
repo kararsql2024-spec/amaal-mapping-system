@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Building2, LayoutGrid, Snowflake } from "lucide-react";
+import { Building2, LayoutGrid, Snowflake, Ruler } from "lucide-react";
 import { cn } from "@/lib/utils";
 import UnitDetailsModal from './UnitDetailsModal';
 
@@ -110,6 +110,14 @@ const TowerDetailsModal = ({
 
   const getFloorLabel = (floor: number) => floor === 1 ? "الطابق الأرضي" : `الطابق ${floor - 1}`;
 
+  // دالة ذكية لحساب مساحة الشقة بناءً على الطابق (أرضي أو متكرر)
+  const getAptSize = (floor: number, aptNum: number) => {
+    if (floor === 1) {
+      return tower.groundFloorSizes?.[aptNum - 1] || 0;
+    }
+    return tower.typicalFloorSizes?.[aptNum - 1] || 0;
+  };
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -156,12 +164,13 @@ const TowerDetailsModal = ({
                   const shortLabel = getAptShortLabel(fullLabel);
                   const data = housesData[key] || { status: 'available' };
                   const isFrozen = data.status?.startsWith('frozen');
+                  const size = getAptSize(selectedFloor, aptNum);
                   
                   return (
                     <div 
                       key={key}
                       className={cn(
-                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full",
+                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full flex flex-col justify-between",
                         getStatusColor(data.status)
                       )}
                       onClick={() => setSelectedAptKey(key)}
@@ -179,6 +188,15 @@ const TowerDetailsModal = ({
                            data.status}
                         </p>
                       </div>
+                      
+                      {/* عرض المساحة بشكل أنيق داخل كارت الشقة */}
+                      {size > 0 && (
+                        <div className="relative z-10 flex items-center gap-1 text-xs font-black bg-black/10 px-2.5 py-1 rounded-full w-fit mt-4">
+                          <Ruler size={12} />
+                          <span>{size} م²</span>
+                        </div>
+                      )}
+                      
                       <LayoutGrid className="absolute -bottom-4 -right-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
                     </div>
                   );
@@ -200,6 +218,7 @@ const TowerDetailsModal = ({
         unitLabel={selectedAptKey ? getAptFullLabel(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : ''}
         initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
         permissions={permissions}
+        unitSize={selectedAptKey ? getAptSize(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : undefined}
       />
     </>
   );

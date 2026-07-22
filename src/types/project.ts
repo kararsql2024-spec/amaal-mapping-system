@@ -18,6 +18,8 @@ export interface MapElement {
   hideIcon?: boolean;
   floors?: number;
   apartmentsPerFloor?: number;
+  groundFloorSizes?: number[]; // مساحات شقق الطابق الأرضي
+  typicalFloorSizes?: number[]; // مساحات شقق الطابق المتكرر
   x: number; 
   y: number;
   width: number;

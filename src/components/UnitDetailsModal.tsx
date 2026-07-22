@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Ruler } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -37,9 +37,10 @@ interface UnitDetailsModalProps {
   unitLabel?: string;
   initialData?: any;
   permissions: any;
+  unitSize?: number; // حقل المساحة الممرر ديناميكياً من العمارة
 }
 
-const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, permissions }: UnitDetailsModalProps) => {
+const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, permissions, unitSize }: UnitDetailsModalProps) => {
   const [formData, setFormData] = useState({
     status: 'available',
     name: '',
@@ -96,7 +97,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     setFormData({ ...formData, notes: updatedNotes });
     setNewNote('');
     
-    // حفظ الملاحظة فوراً عند الإضافة
     if (unitId) {
       onSave(unitId, { ...formData, notes: updatedNotes });
     }
@@ -118,7 +118,6 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   const canEdit = permissions.canEditUnitData;
 
-  // فحص ما إذا كانت حالة الوحدة الحالية هي (مباع) أو (استثمار) لمنع تعديل البيانات الأساسية
   const isSoldOrInvestment = formData.status === 'sold' || formData.status === 'investment';
 
   return (
@@ -145,14 +144,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
-                    {/* إذا كانت الحالة الحالية مباع أو استثمار، تظهر فقط حالتها الحالية لأنها مقفلة */}
                     {isSoldOrInvestment ? (
                       <>
                         {formData.status === 'sold' && <SelectItem value="sold" className="font-bold text-rose-600">مباع</SelectItem>}
                         {formData.status === 'investment' && <SelectItem value="investment" className="font-bold text-purple-600">استثمار</SelectItem>}
                       </>
                     ) : (
-                      // إذا كانت الحالة متاح أو محجوز أو حجز أولي أو مجمدة، تظهر الخيارات المسموحة مع خيارات التجميد الثلاثة
                       <>
                         <SelectItem value="available" className="font-bold text-emerald-600">متوفر</SelectItem>
                         <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
@@ -278,6 +275,21 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                   value={formData.handoverDate} 
                   onChange={(e) => setFormData({...formData, handoverDate: e.target.value})}
                   className="rounded-xl h-12 border-slate-200 font-bold"
+                />
+              </div>
+            )}
+
+            {/* عرض مساحة الشقة كحقل قراءة فقط أنيق ومميز */}
+            {unitSize !== undefined && unitSize > 0 && (
+              <div className="space-y-2">
+                <Label className="font-bold text-slate-600 flex items-center gap-2">
+                  <Ruler size={16} className="text-blue-600" /> مساحة الشقة
+                </Label>
+                <Input 
+                  readOnly
+                  disabled
+                  value={`${unitSize} م²`} 
+                  className="rounded-xl h-12 border-slate-200 font-black bg-blue-50/30 text-blue-900 cursor-not-allowed opacity-90"
                 />
               </div>
             )}
