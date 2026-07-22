@@ -645,7 +645,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       const tabo = data?.taboStatus?.trim();
       if (tabo === 'مروج') promoted++;
       else if (tabo === 'مستلم') receivedTabo++;
-      else notPromotedTabo++;
+      else notPromoted++;
 
       if (data?.handoverDate) receivedUnit++;
       else notReceivedUnit++;
