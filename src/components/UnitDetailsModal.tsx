@@ -118,6 +118,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   const canEdit = permissions.canEditUnitData;
 
+  // فحص ما إذا كانت حالة الوحدة الحالية هي (مباع) أو (استثمار) لمنع تعديل البيانات الأساسية
+  const isSoldOrInvestment = formData.status === 'sold' || formData.status === 'investment';
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl" dir="rtl">
@@ -134,7 +137,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><ShieldCheck size={16} /> حالة الوحدة</Label>
                 <Select 
-                  disabled={!canEdit}
+                  disabled={!canEdit || isSoldOrInvestment}
                   value={formData.status} 
                   onValueChange={(val) => setFormData({...formData, status: val})}
                 >
@@ -142,11 +145,20 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
-                    <SelectItem value="available" className="font-bold text-emerald-600">متوفر</SelectItem>
-                    <SelectItem value="sold" className="font-bold text-rose-600">مباع</SelectItem>
-                    <SelectItem value="investment" className="font-bold text-purple-600">استثمار</SelectItem>
-                    <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
-                    <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
+                    {/* إذا كانت الحالة الحالية مباع أو استثمار، تظهر فقط حالتها الحالية لأنها مقفلة */}
+                    {isSoldOrInvestment ? (
+                      <>
+                        {formData.status === 'sold' && <SelectItem value="sold" className="font-bold text-rose-600">مباع</SelectItem>}
+                        {formData.status === 'investment' && <SelectItem value="investment" className="font-bold text-purple-600">استثمار</SelectItem>}
+                      </>
+                    ) : (
+                      // إذا كانت الحالة متاح أو محجوز أو حجز أولي، تظهر فقط هذه الخيارات الثلاثة ويُمنع اختيار مباع أو استثمار
+                      <>
+                        <SelectItem value="available" className="font-bold text-emerald-600">متوفر</SelectItem>
+                        <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
+                        <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -156,7 +168,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><User size={16} /> اسم الزبون</Label>
                 <Input 
-                  disabled={!canEdit}
+                  disabled={!canEdit || isSoldOrInvestment}
                   value={formData.name} 
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   className="rounded-xl h-12 border-slate-200 font-bold"
@@ -182,7 +194,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><Calendar size={16} /> تاريخ البيع / الحجز</Label>
                 <Input 
-                  disabled={!canEdit}
+                  disabled={!canEdit || isSoldOrInvestment}
                   type="date"
                   value={formData.saleDate} 
                   onChange={(e) => setFormData({...formData, saleDate: e.target.value})}
