@@ -349,7 +349,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showStatusField: true,
       canEditUnitData: false,
       showOtherDeptsNotes: true,
-      canDeleteNotes: false
+      canDeleteNotes: false,
+      showSearchBox: true
     };
     
     const currentValue = current[permission];
@@ -978,6 +979,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'showNotifications', label: 'عرض شريط الإشعارات الجانبي بالكامل' },
         { key: 'showStatsTable', label: 'عرض جدول الإحصائيات المفصلة السفلي بالكامل' },
         { key: 'showGeneralStats', label: 'عرض كارت الإحصائيات العام الجانبي بالكامل' },
+        { key: 'showSearchBox', label: 'رؤية واستخدام مربع البحث في الواجهة الرئيسية' },
       ]
     },
     {

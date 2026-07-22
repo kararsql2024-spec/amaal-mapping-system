@@ -97,7 +97,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showNotifications: true,
     colorMode: 'default',
     showStatusField: true,
-    canEditUnitData: false
+    canEditUnitData: false,
+    showSearchBox: true
   });
 
   const filteredProjects = React.useMemo(() => {
@@ -581,7 +582,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       showNotifications: true,
       colorMode: 'default',
       showStatusField: true,
-      canEditUnitData: false
+      canEditUnitData: false,
+      showSearchBox: true
     });
   };
 
@@ -724,107 +726,109 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
 
           {/* مربع البحث العام الذكي والمحسن في المنتصف مع فلتر المشاريع */}
-          <div className="relative flex-1 max-w-xl w-full mx-auto lg:mx-0 flex gap-2 items-center">
-            <div className="w-40 shrink-0">
-              <Select value={searchProjectFilter} onValueChange={(val) => { setSearchProjectFilter(val); setSearchLimit(10); }}>
-                <SelectTrigger className="rounded-2xl h-12 border-slate-200 font-bold text-xs bg-slate-50/50">
-                  <SelectValue placeholder="كل المشاريع" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all" className="font-bold text-xs">🌐 كل المشاريع</SelectItem>
-                  {projects.map(p => (
-                    <SelectItem key={p.id} value={p.id} className="font-bold text-xs">{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="relative flex-1">
-              <Search className="absolute right-4 top-3.5 text-slate-400 w-5 h-5" />
-              <Input 
-                type="text" 
-                placeholder="ابحث عن اسم زبون، رقم هاتف، أو رقم وحدة..." 
-                value={searchQuery}
-                onChange={(e) => handleSearchInputChange(e.target.value)}
-                className="pr-12 pl-12 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-xs bg-slate-50/50" 
-              />
-              {isSearching && (
-                <div className="absolute left-10 top-3.5">
-                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              )}
-              {searchQuery && (
-                <button 
-                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                  className="absolute left-4 top-3.5 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-            
-            {/* قائمة نتائج البحث السريعة والتفاعلية */}
-            {searchResults.length > 0 && (
-              <div className="absolute z-[999] right-0 left-0 top-14 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
-                {searchResults.map((item) => {
-                  const projName = projects.find(p => p.id === item.project_id)?.name || "المخطط العام";
-                  const isInvestment = item.data?.status === 'investment';
-                  const isSold = item.data?.status === 'sold';
-                  const isReserved = item.data?.status === 'reserved';
-                  const isPending = item.data?.status === 'pending';
-                  
-                  let statusBadge = "متاح";
-                  let statusClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
-                  if (isSold) {
-                    statusBadge = "مباع";
-                    statusClass = "bg-rose-50 text-rose-700 border-rose-100";
-                  } else if (isInvestment) {
-                    statusBadge = "استثمار";
-                    statusClass = "bg-purple-50 text-purple-700 border-purple-100";
-                  } else if (isReserved) {
-                    statusBadge = "محجوز";
-                    statusClass = "bg-amber-50 text-amber-700 border-amber-100";
-                  } else if (isPending) {
-                    statusBadge = "حجز أولي";
-                    statusClass = "bg-blue-50 text-blue-700 border-blue-100";
-                  }
-
-                  return (
-                    <button 
-                      key={item.unit_key}
-                      onClick={() => parseSearchClick(item)}
-                      className="w-full text-right p-4 hover:bg-slate-50 transition-colors flex flex-col gap-1"
-                    >
-                      <div className="flex justify-between items-center w-full">
-                        <span className="font-black text-slate-800 text-xs">
-                          {item.data?.name ? item.data.name : `الوحدة ${item.unit_key}`}
-                        </span>
-                        <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full border", statusClass)}>
-                          {statusBadge}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold w-full mt-0.5">
-                        <span>الرمز: <strong className="text-slate-700 font-black">{item.unit_key}</strong></span>
-                        {item.data?.phone && <span className="text-slate-400">📞 {item.data.phone}</span>}
-                        <span className="text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-lg text-[10px] font-black">📍 {projName}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-                {hasMoreResults && (
-                  <div className="p-2 bg-slate-50 text-center">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={handleShowMore} 
-                      className="text-xs font-black text-blue-600 hover:bg-blue-100 w-full rounded-xl"
-                    >
-                      إظهار المزيد من النتائج...
-                    </Button>
+          {permissions.showSearchBox !== false && (
+            <div className="relative flex-1 max-w-xl w-full mx-auto lg:mx-0 flex gap-2 items-center">
+              <div className="w-40 shrink-0">
+                <Select value={searchProjectFilter} onValueChange={(val) => { setSearchProjectFilter(val); setSearchLimit(10); }}>
+                  <SelectTrigger className="rounded-2xl h-12 border-slate-200 font-bold text-xs bg-slate-50/50">
+                    <SelectValue placeholder="كل المشاريع" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-bold text-xs">🌐 كل المشاريع</SelectItem>
+                    {projects.map(p => (
+                      <SelectItem key={p.id} value={p.id} className="font-bold text-xs">{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative flex-1">
+                <Search className="absolute right-4 top-3.5 text-slate-400 w-5 h-5" />
+                <Input 
+                  type="text" 
+                  placeholder="ابحث عن اسم زبون، رقم هاتف، أو رقم وحدة..." 
+                  value={searchQuery}
+                  onChange={(e) => handleSearchInputChange(e.target.value)}
+                  className="pr-12 pl-12 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-xs bg-slate-50/50" 
+                />
+                {isSearching && (
+                  <div className="absolute left-10 top-3.5">
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                   </div>
                 )}
+                {searchQuery && (
+                  <button 
+                    onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                    className="absolute left-4 top-3.5 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
               </div>
-            )}
-          </div>
+              
+              {/* قائمة نتائج البحث السريعة والتفاعلية */}
+              {searchResults.length > 0 && (
+                <div className="absolute z-[999] right-0 left-0 top-14 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                  {searchResults.map((item) => {
+                    const projName = projects.find(p => p.id === item.project_id)?.name || "المخطط العام";
+                    const isInvestment = item.data?.status === 'investment';
+                    const isSold = item.data?.status === 'sold';
+                    const isReserved = item.data?.status === 'reserved';
+                    const isPending = item.data?.status === 'pending';
+                    
+                    let statusBadge = "متاح";
+                    let statusClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                    if (isSold) {
+                      statusBadge = "مباع";
+                      statusClass = "bg-rose-50 text-rose-700 border-rose-100";
+                    } else if (isInvestment) {
+                      statusBadge = "استثمار";
+                      statusClass = "bg-purple-50 text-purple-700 border-purple-100";
+                    } else if (isReserved) {
+                      statusBadge = "محجوز";
+                      statusClass = "bg-amber-50 text-amber-700 border-amber-100";
+                    } else if (isPending) {
+                      statusBadge = "حجز أولي";
+                      statusClass = "bg-blue-50 text-blue-700 border-blue-100";
+                    }
+
+                    return (
+                      <button 
+                        key={item.unit_key}
+                        onClick={() => parseSearchClick(item)}
+                        className="w-full text-right p-4 hover:bg-slate-50 transition-colors flex flex-col gap-1"
+                      >
+                        <div className="flex justify-between items-center w-full">
+                          <span className="font-black text-slate-800 text-xs">
+                            {item.data?.name ? item.data.name : `الوحدة ${item.unit_key}`}
+                          </span>
+                          <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full border", statusClass)}>
+                            {statusBadge}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold w-full mt-0.5">
+                          <span>الرمز: <strong className="text-slate-700 font-black">{item.unit_key}</strong></span>
+                          {item.data?.phone && <span className="text-slate-400">📞 {item.data.phone}</span>}
+                          <span className="text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-lg text-[10px] font-black">📍 {projName}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {hasMoreResults && (
+                    <div className="p-2 bg-slate-50 text-center">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={handleShowMore} 
+                        className="text-xs font-black text-blue-600 hover:bg-blue-100 w-full rounded-xl"
+                      >
+                        إظهار المزيد من النتائج...
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-end gap-3 shrink-0">
             {/* زر وزر إظهار آخر مزامنة للبيانات المالية */}
