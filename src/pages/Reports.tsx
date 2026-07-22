@@ -215,7 +215,7 @@ const Reports = ({ projects }: ReportsProps) => {
     ].filter(item => item.value > 0);
   }, [stats]);
 
-  // 3. بيانات أداء الزونات والبلوكات (Bar Chart)
+  // 3. بيانات أداء الزونات والبلوكات مرتبة أبجدياً ورقمياً (Bar Chart)
   const zonePerformanceData = useMemo(() => {
     const zones: Record<string, { total: number, sold: number, investment: number }> = {};
 
@@ -237,34 +237,47 @@ const Reports = ({ projects }: ReportsProps) => {
       }
     });
 
-    return Object.entries(zones).map(([name, z]) => ({
+    // ترتيب الزونات ترتيباً طبيعياً (أبجدياً ورقمياً)
+    const sortedZones = Object.entries(zones).sort((a, b) => {
+      return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return sortedZones.map(([name, z]) => ({
       name: `زون ${name}`,
       'إجمالي الوحدات': z.total,
       'المباعة': z.sold,
       'الاستثمار': z.investment,
       'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
-    })).slice(0, 10); // عرض أول 10 زونات كحد أقصى
+    })).slice(0, 15); // عرض أول 15 زون مرتبة
   }, [fetchedElements, housesData]);
 
-  // 4. بيانات منحنى المبيعات الزمني (Line Chart)
+  // 4. بيانات منحنى المبيعات الزمني مرتبة كرونولوجياً من الأقدم للأحدث (Line Chart)
   const salesTrendData = useMemo(() => {
-    const monthlySales: Record<string, { count: number, revenueIQD: number, revenueUSD: number }> = {};
+    const monthlySales: Record<string, { count: number, revenueIQD: number, revenueUSD: number, dateObj: Date }> = {};
 
     const processUnitDate = (unitKey: string) => {
       const data = housesData[unitKey];
       if (data && (data.status === 'sold' || data.status === 'investment') && data.saleDate) {
         const date = new Date(data.saleDate);
         if (!isNaN(date.getTime())) {
-          const monthKey = date.toLocaleString('ar-EG', { month: 'long', year: 'numeric' });
-          if (!monthlySales[monthKey]) {
-            monthlySales[monthKey] = { count: 0, revenueIQD: 0, revenueUSD: 0 };
+          const year = date.getFullYear();
+          const month = date.getMonth();
+          const sortKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+          
+          if (!monthlySales[sortKey]) {
+            monthlySales[sortKey] = { 
+              count: 0, 
+              revenueIQD: 0, 
+              revenueUSD: 0,
+              dateObj: new Date(year, month, 1)
+            };
           }
-          monthlySales[monthKey].count++;
+          monthlySales[sortKey].count++;
           
           const priceValue = parsePrice(data.price);
           const cType = getCurrencyType(data.currency);
-          if (cType === 'IQD') monthlySales[monthKey].revenueIQD += priceValue;
-          else monthlySales[monthKey].revenueUSD += priceValue;
+          if (cType === 'IQD') monthlySales[sortKey].revenueIQD += priceValue;
+          else monthlySales[sortKey].revenueUSD += priceValue;
         }
       }
     };
@@ -283,16 +296,31 @@ const Reports = ({ projects }: ReportsProps) => {
       }
     });
 
-    return Object.entries(monthlySales).map(([month, data]) => ({
-      name: month,
-      'عدد الوحدات المباعة': data.count,
-      'الإيرادات (مليون د.ع)': Math.round(data.revenueIQD / 1000000),
-      'الإيرادات (ألف $)': Math.round(data.revenueUSD / 1000)
-    })).reverse(); // ترتيب زمني تصاعدي
+    // ترتيب الأشهر تصاعدياً من الأقدم إلى الأحدث
+    const sortedMonths = Object.entries(monthlySales).sort((a, b) => {
+      return a[0].localeCompare(b[0]);
+    });
+
+    return sortedMonths.map(([key, data]) => {
+      const monthName = data.dateObj.toLocaleString('ar-EG', { month: 'long', year: 'numeric' });
+      return {
+        name: monthName,
+        'عدد الوحدات المباعة': data.count,
+        'الإيرادات (د.ع)': data.revenueIQD,
+        'الإيرادات ($)': data.revenueUSD
+      };
+    });
   }, [fetchedElements, housesData]);
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('en-US').format(Math.round(num));
+  };
+
+  // دالة لتنسيق الأرقام الكبيرة على المحور Y بشكل مبسط ومقروء
+  const formatYAxis = (value: number) => {
+    if (value >= 1e9) return (value / 1e9).toFixed(1) + ' مليار';
+    if (value >= 1e6) return (value / 1e6).toFixed(1) + ' مليون';
+    return formatNumber(value);
   };
 
   return (
@@ -448,7 +476,7 @@ const Reports = ({ projects }: ReportsProps) => {
                     <Building2 className="text-indigo-600 w-5 h-5" />
                     أداء المبيعات حسب الزونات
                   </CardTitle>
-                  <CardDescription className="text-xs font-bold">مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون</CardDescription>
+                  <CardDescription className="text-xs font-bold">مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون مرتبة أبجدياً</CardDescription>
                 </CardHeader>
                 <CardContent className="h-80">
                   {zonePerformanceData.length > 0 ? (
@@ -476,14 +504,14 @@ const Reports = ({ projects }: ReportsProps) => {
             {/* منحنى المبيعات الزمني والتحليل القانوني */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               
-              {/* منحنى المبيعات الزمني */}
+              {/* منحنى المبيعات عبر الزمن */}
               <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
                 <CardHeader>
                   <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
                     <TrendingUp className="text-indigo-600 w-5 h-5" />
-                    منحنى المبيعات الزمني والإيرادات
+                    منحنى المبيعات عبر الزمن
                   </CardTitle>
-                  <CardDescription className="text-xs font-bold">تطور حجم المبيعات شهرياً</CardDescription>
+                  <CardDescription className="text-xs font-bold">تطور حجم المبيعات والإيرادات الفعلية مرتبة من الأقدم للأحدث</CardDescription>
                 </CardHeader>
                 <CardContent className="h-80">
                   {salesTrendData.length > 0 ? (
@@ -491,12 +519,18 @@ const Reports = ({ projects }: ReportsProps) => {
                       <LineChart data={salesTrendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                        <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                        <Tooltip />
+                        <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                        <Tooltip 
+                          formatter={(value, name) => {
+                            if (name.toString().includes('د.ع')) return [`${formatNumber(Number(value))} د.ع`, 'الإيرادات'];
+                            if (name.toString().includes('$')) return [`$${formatNumber(Number(value))}`, 'الإيرادات'];
+                            return [value, name];
+                          }}
+                        />
                         <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
                         <Line type="monotone" dataKey="عدد الوحدات المباعة" stroke="#3b82f6" strokeWidth={3} activeDot={{ r: 8 }} />
-                        <Line type="monotone" dataKey="الإيرادات (مليون د.ع)" stroke="#10b981" strokeWidth={2} />
-                        <Line type="monotone" dataKey="الإيرادات (ألف $)" stroke="#fbbf24" strokeWidth={2} />
+                        <Line type="monotone" dataKey="الإيرادات (د.ع)" stroke="#10b981" strokeWidth={2} />
+                        <Line type="monotone" dataKey="الإيرادات ($)" stroke="#fbbf24" strokeWidth={2} />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
