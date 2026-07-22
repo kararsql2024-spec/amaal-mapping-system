@@ -166,16 +166,18 @@ const TowerDetailsModal = ({
                   const isFrozen = data.status?.startsWith('frozen');
                   const size = getAptSize(selectedFloor, aptNum);
                   
-                  // إذا كانت الشقة مجمدة ومخفية من العدد، يتم عرضها كـ "مساحة خدمية" فارغة للمحافظة على هيكل المخطط
+                  // إذا كانت الشقة مجمدة ومخفية من العدد، يتم عرضها كـ "مساحة خدمية" فارغة للمحافظة على هيكل المخطط مع إمكانية النقر لتعديلها
                   const isHidden = data.status === 'frozen_hidden';
                   if (isHidden) {
                     return (
                       <div 
                         key={key}
-                        className="p-6 rounded-[2rem] border-2 border-dashed border-slate-200 bg-slate-50/30 h-full flex flex-col justify-center items-center text-slate-400 pointer-events-none"
+                        className="p-6 rounded-[2rem] border-2 border-dashed border-slate-200 bg-slate-50/30 h-full flex flex-col justify-center items-center text-slate-400 cursor-pointer hover:bg-slate-100/50 transition-all"
+                        onClick={() => setSelectedAptKey(key)}
                       >
                         <Snowflake size={24} className="opacity-30 mb-2" />
                         <span className="text-xs font-black">مساحة خدمية</span>
+                        <span className="text-[9px] font-bold opacity-60 mt-1">(اضغط للتعديل)</span>
                       </div>
                     );
                   }
