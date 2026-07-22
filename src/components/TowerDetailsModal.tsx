@@ -166,6 +166,20 @@ const TowerDetailsModal = ({
                   const isFrozen = data.status?.startsWith('frozen');
                   const size = getAptSize(selectedFloor, aptNum);
                   
+                  // إذا كانت الشقة مجمدة ومخفية من العدد، يتم عرضها كـ "مساحة خدمية" فارغة للمحافظة على هيكل المخطط
+                  const isHidden = data.status === 'frozen_hidden';
+                  if (isHidden) {
+                    return (
+                      <div 
+                        key={key}
+                        className="p-6 rounded-[2rem] border-2 border-dashed border-slate-200 bg-slate-50/30 h-full flex flex-col justify-center items-center text-slate-400 pointer-events-none"
+                      >
+                        <Snowflake size={24} className="opacity-30 mb-2" />
+                        <span className="text-xs font-black">مساحة خدمية</span>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div 
                       key={key}
@@ -189,7 +203,7 @@ const TowerDetailsModal = ({
                         </p>
                       </div>
                       
-                      {/* عرض المساحة بشكل أنيق داخل كارت الشقة */}
+                      {/* عرض المساحة بشكل أنيق داخل كارت الشقة إذا كانت أكبر من 0 */}
                       {size > 0 && (
                         <div className="relative z-10 flex items-center gap-1 text-xs font-black bg-black/10 px-2.5 py-1 rounded-full w-fit mt-4">
                           <Ruler size={12} />
