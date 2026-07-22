@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -9,23 +9,72 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   ArrowRight, BarChart3, TrendingUp, DollarSign, Coins, FileText, 
   Home, Building2, CheckCircle2, Clock, ShieldCheck, PieChart as PieIcon,
-  TrendingDown, Percent, Calendar
+  TrendingDown, Percent, Calendar, Loader2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, 
   CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ReportsProps {
   projects: Project[];
-  housesData: Record<string, any>;
 }
 
 const COLORS = ['#10b981', '#f43f5e', '#a855f7', '#fbbf24', '#3b82f6', '#64748b'];
 
-const Reports = ({ projects, housesData }: ReportsProps) => {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || 'all');
+const Reports = ({ projects }: ReportsProps) => {
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [housesData, setHousesData] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // جلب البيانات حياً ومباشرة من قاعدة البيانات لضمان عمل التقارير بشكل مستقل وموثوق دائماً
+  useEffect(() => {
+    const fetchReportsData = async () => {
+      setLoading(true);
+      try {
+        let allUnits: any[] = [];
+        let from = 0;
+        const step = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          let query = supabase
+            .from('houses_data')
+            .select('unit_key, project_id, data')
+            .range(from, from + step - 1);
+          
+          if (selectedProjectId !== 'all') {
+            query = query.eq('project_id', selectedProjectId);
+          }
+
+          const { data, error } = await query;
+          if (error) throw error;
+
+          if (!data || data.length === 0) {
+            hasMore = false;
+          } else {
+            allUnits = [...allUnits, ...data];
+            from += step;
+            if (data.length < step) hasMore = false;
+          }
+        }
+
+        const formatted: Record<string, any> = {};
+        allUnits.forEach(u => {
+          formatted[u.unit_key] = u.data;
+        });
+        setHousesData(formatted);
+      } catch (err) {
+        console.error("Error fetching reports data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchReportsData();
+  }, [selectedProjectId]);
 
   // تصفية المشاريع المتاحة
   const activeProject = useMemo(() => {
@@ -271,232 +320,241 @@ const Reports = ({ projects, housesData }: ReportsProps) => {
           </div>
         </header>
 
-        {/* كروت الإحصائيات السريعة */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-wider">إجمالي المبيعات (د.ع)</p>
-                <h3 className="text-2xl font-black text-emerald-600">{formatNumber(stats.revenueIQD)}</h3>
-                <p className="text-[10px] text-slate-400 font-bold">المحجوز المتوقع: {formatNumber(stats.expectedRevenueIQD)} د.ع</p>
-              </div>
-              <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
-                <Coins className="w-6 h-6" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-wider">إجمالي المبيعات ($)</p>
-                <h3 className="text-2xl font-black text-blue-600">${formatNumber(stats.revenueUSD)}</h3>
-                <p className="text-[10px] text-slate-400 font-bold">المحجوز المتوقع: ${formatNumber(stats.expectedRevenueUSD)}</p>
-              </div>
-              <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
-                <DollarSign className="w-6 h-6" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-wider">نسبة المبيعات العامة</p>
-                <h3 className="text-2xl font-black text-indigo-600">
-                  {stats.total > 0 ? Math.round(((stats.sold + stats.investment) / stats.total) * 100) : 0}%
-                </h3>
-                <p className="text-[10px] text-slate-400 font-bold">المباع: {stats.sold} | الاستثمار: {stats.investment}</p>
-              </div>
-              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
-                <Percent className="w-6 h-6" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-wider">الوحدات المتاحة للبيع</p>
-                <h3 className="text-2xl font-black text-slate-700">{stats.available}</h3>
-                <p className="text-[10px] text-slate-400 font-bold">من أصل {stats.total} وحدة سكنية</p>
-              </div>
-              <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600">
-                <Home className="w-6 h-6" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* الرسوم البيانية الرئيسية */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* مخطط توزيع الحالات */}
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <PieIcon className="text-indigo-600 w-5 h-5" />
-                توزيع حالات الوحدات
-              </CardTitle>
-              <CardDescription className="text-xs font-bold">النسبة المئوية لكل حالة من إجمالي المخطط</CardDescription>
-            </CardHeader>
-            <CardContent className="h-80 flex flex-col justify-between">
-              <div className="flex-1 min-h-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusDistributionData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {statusDistributionData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value} وحدة`, 'العدد']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-4 border-t border-slate-50 text-xs font-bold">
-                {statusDistributionData.map((entry, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
-                    <span className="text-slate-600">{entry.name}:</span>
-                    <span className="text-slate-800 font-black">{entry.value}</span>
+        {loading ? (
+          <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+            <h2 className="text-xl font-bold text-slate-600">جاري تحميل وتحليل البيانات المالية...</h2>
+          </div>
+        ) : (
+          <>
+            {/* كروت الإحصائيات السريعة */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-wider">إجمالي المبيعات (د.ع)</p>
+                    <h3 className="text-2xl font-black text-emerald-600">{formatNumber(stats.revenueIQD)}</h3>
+                    <p className="text-[10px] text-slate-400 font-bold">المحجوز المتوقع: {formatNumber(stats.expectedRevenueIQD)} د.ع</p>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
+                    <Coins className="w-6 h-6" />
+                  </div>
+                </CardContent>
+              </Card>
 
-          {/* مخطط أداء الزونات */}
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <Building2 className="text-indigo-600 w-5 h-5" />
-                أداء المبيعات حسب الزونات
-              </CardTitle>
-              <CardDescription className="text-xs font-bold">مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون</CardDescription>
-            </CardHeader>
-            <CardContent className="h-80">
-              {zonePerformanceData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={zonePerformanceData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                    <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                    <Bar dataKey="المباعة" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="الاستثمار" fill="#a855f7" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="إجمالي الوحدات" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 font-bold">
-                  لا توجد بيانات زونات كافية للعرض
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-wider">إجمالي المبيعات ($)</p>
+                    <h3 className="text-2xl font-black text-blue-600">${formatNumber(stats.revenueUSD)}</h3>
+                    <p className="text-[10px] text-slate-400 font-bold">المحجوز المتوقع: ${formatNumber(stats.expectedRevenueUSD)}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
+                    <DollarSign className="w-6 h-6" />
+                  </div>
+                </CardContent>
+              </Card>
 
-        {/* منحنى المبيعات الزمني والتحليل القانوني */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* منحنى المبيعات الزمني */}
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <TrendingUp className="text-indigo-600 w-5 h-5" />
-                منحنى المبيعات الزمني والإيرادات
-              </CardTitle>
-              <CardDescription className="text-xs font-bold">تطور حجم المبيعات شهرياً</CardDescription>
-            </CardHeader>
-            <CardContent className="h-80">
-              {salesTrendData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={salesTrendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                    <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
-                    <Line type="monotone" dataKey="عدد الوحدات المباعة" stroke="#3b82f6" strokeWidth={3} activeDot={{ r: 8 }} />
-                    <Line type="monotone" dataKey="الإيرادات (مليون د.ع)" stroke="#10b981" strokeWidth={2} />
-                    <Line type="monotone" dataKey="الإيرادات (ألف $)" stroke="#fbbf24" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 font-bold">
-                  لا توجد بيانات مبيعات زمنية كافية للعرض (تأكد من إدخال تواريخ البيع للوحدات)
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-wider">نسبة المبيعات العامة</p>
+                    <h3 className="text-2xl font-black text-indigo-600">
+                      {stats.total > 0 ? Math.round(((stats.sold + stats.investment) / stats.total) * 100) : 0}%
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold">المباع: {stats.sold} | الاستثمار: {stats.investment}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                    <Percent className="w-6 h-6" />
+                  </div>
+                </CardContent>
+              </Card>
 
-          {/* التحليل القانوني واستلام الوحدات */}
-          <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <ShieldCheck className="text-indigo-600 w-5 h-5" />
-                الموقف القانوني والاستلام
-              </CardTitle>
-              <CardDescription className="text-xs font-bold">متابعة معاملات الطابو وتسليم المفاتيح</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">موقف معاملات الطابو</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold">
-                    <span className="text-emerald-600">مستلم الطابو:</span>
-                    <span>{stats.receivedTabo} وحدة</span>
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-wider">الوحدات المتاحة للبيع</p>
+                    <h3 className="text-2xl font-black text-slate-700">{stats.available}</h3>
+                    <p className="text-[10px] text-slate-400 font-bold">من أصل {stats.total} وحدة سكنية</p>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full" style={{ width: `${stats.total > 0 ? (stats.receivedTabo / stats.total) * 100 : 0}%` }} />
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600">
+                    <Home className="w-6 h-6" />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold">
-                    <span className="text-indigo-600">قيد الترويج:</span>
-                    <span>{stats.promotedTabo} وحدة</span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-indigo-500 h-full" style={{ width: `${stats.total > 0 ? (stats.promotedTabo / stats.total) * 100 : 0}%` }} />
-                  </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
+            </div>
 
-              <div className="h-px bg-slate-100" />
+            {/* الرسوم البيانية الرئيسية */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* مخطط توزيع الحالات */}
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-1">
+                <CardHeader>
+                  <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <PieIcon className="text-indigo-600 w-5 h-5" />
+                    توزيع حالات الوحدات
+                  </CardTitle>
+                  <CardDescription className="text-xs font-bold">النسبة المئوية لكل حالة من إجمالي المخطط</CardDescription>
+                </CardHeader>
+                <CardContent className="h-80 flex flex-col justify-between">
+                  <div className="flex-1 min-h-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statusDistributionData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {statusDistributionData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => [`${value} وحدة`, 'العدد']} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-4 border-t border-slate-50 text-xs font-bold">
+                    {statusDistributionData.map((entry, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                        <span className="text-slate-600">{entry.name}:</span>
+                        <span className="text-slate-800 font-black">{entry.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
 
-              <div className="space-y-3">
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">موقف تسليم الوحدات</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold">
-                    <span className="text-sky-600">تم تسليم المفتاح:</span>
-                    <span>{stats.receivedUnit} وحدة</span>
+              {/* مخطط أداء الزونات */}
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Building2 className="text-indigo-600 w-5 h-5" />
+                    أداء المبيعات حسب الزونات
+                  </CardTitle>
+                  <CardDescription className="text-xs font-bold">مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون</CardDescription>
+                </CardHeader>
+                <CardContent className="h-80">
+                  {zonePerformanceData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={zonePerformanceData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                        <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                        <Bar dataKey="المباعة" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="الاستثمار" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="إجمالي الوحدات" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-slate-400 font-bold">
+                      لا توجد بيانات زونات كافية للعرض
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* منحنى المبيعات الزمني والتحليل القانوني */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* منحنى المبيعات الزمني */}
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <TrendingUp className="text-indigo-600 w-5 h-5" />
+                    منحنى المبيعات الزمني والإيرادات
+                  </CardTitle>
+                  <CardDescription className="text-xs font-bold">تطور حجم المبيعات شهرياً</CardDescription>
+                </CardHeader>
+                <CardContent className="h-80">
+                  {salesTrendData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={salesTrendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                        <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                        <Line type="monotone" dataKey="عدد الوحدات المباعة" stroke="#3b82f6" strokeWidth={3} activeDot={{ r: 8 }} />
+                        <Line type="monotone" dataKey="الإيرادات (مليون د.ع)" stroke="#10b981" strokeWidth={2} />
+                        <Line type="monotone" dataKey="الإيرادات (ألف $)" stroke="#fbbf24" strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-slate-400 font-bold">
+                      لا توجد بيانات مبيعات زمنية كافية للعرض (تأكد من إدخال تواريخ البيع للوحدات)
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* التحليل القانوني واستلاف الوحدات */}
+              <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-1">
+                <CardHeader>
+                  <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <ShieldCheck className="text-indigo-600 w-5 h-5" />
+                    الموقف القانوني والاستلام
+                  </CardTitle>
+                  <CardDescription className="text-xs font-bold">متابعة معاملات الطابو وتسليم المفاتيح</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">موقف معاملات الطابو</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs font-bold">
+                        <span className="text-emerald-600">مستلم الطابو:</span>
+                        <span>{stats.receivedTabo} وحدة</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full" style={{ width: `${stats.total > 0 ? (stats.receivedTabo / stats.total) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs font-bold">
+                        <span className="text-indigo-600">قيد الترويج:</span>
+                        <span>{stats.promotedTabo} وحدة</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div className="bg-indigo-500 h-full" style={{ width: `${stats.total > 0 ? (stats.promotedTabo / stats.total) * 100 : 0}%` }} />
+                      </div>
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-sky-500 h-full" style={{ width: `${stats.total > 0 ? (stats.receivedUnit / stats.total) * 100 : 0}%` }} />
+
+                  <div className="h-px bg-slate-100" />
+
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">موقف تسليم الوحدات</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs font-bold">
+                        <span className="text-sky-600">تم تسليم المفتاح:</span>
+                        <span>{stats.receivedUnit} وحدة</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div className="bg-sky-500 h-full" style={{ width: `${stats.total > 0 ? (stats.receivedUnit / stats.total) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs font-bold">
+                        <span className="text-rose-400">غير مستلم بعد:</span>
+                        <span>{stats.notReceivedUnit} وحدة</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div className="bg-rose-400 h-full" style={{ width: `${stats.total > 0 ? (stats.notReceivedUnit / stats.total) * 100 : 0}%` }} />
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold">
-                    <span className="text-rose-400">غير مستلم بعد:</span>
-                    <span>{stats.notReceivedUnit} وحدة</span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-rose-400 h-full" style={{ width: `${stats.total > 0 ? (stats.notReceivedUnit / stats.total) * 100 : 0}%` }} />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
 
       </div>
     </div>

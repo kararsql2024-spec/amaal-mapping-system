@@ -853,14 +853,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               </div>
             )}
 
-            {/* زر الانتقال إلى صفحة التقارير والتحليلات المتقدمة */}
-            <Link to="/reports">
-              <Button variant="outline" className="rounded-xl gap-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50 h-12 font-black text-xs shadow-sm">
-                <BarChart3 size={16} />
-                التقارير والتحليلات
-              </Button>
-            </Link>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[180px] font-black h-12 text-slate-700 shadow-sm text-xs">
@@ -884,6 +876,22 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2 h-12 font-bold text-xs"><LogOut size={16} /> خروج</Button>
           </div>
         </header>
+
+        {/* شريط فرعي أسفل الهيدر يحتوي على زر التقارير والتحليلات بشكل مستقل وأنيق */}
+        <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
+          <div className="flex items-center gap-3 text-slate-600 text-xs font-bold">
+            <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+              <Info size={16} />
+            </div>
+            <span>يمكنك تصفح التحليلات والرسوم البيانية الشاملة لكافة المشاريع السكنية من هنا:</span>
+          </div>
+          <Link to="/reports">
+            <Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl gap-2 h-11 px-6 font-black text-xs shadow-md shadow-indigo-100">
+              <BarChart3 size={16} />
+              عرض لوحة التقارير والتحليلات المتقدمة
+            </Button>
+          </Link>
+        </div>
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className={cn("space-y-8", (selectedProjectId !== 'main_map' && (permissions.showGeneralStats || permissions.showNotifications)) ? "lg:col-span-2" : "lg:col-span-3")}>
