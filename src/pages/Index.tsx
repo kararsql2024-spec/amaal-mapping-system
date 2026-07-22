@@ -268,7 +268,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   }, [isProjectLoading, activeElements, pendingOpen]);
 
-  // تأثير البحث المحسن والديناميكي مع دعم الفلترة والصفحات
+  // تأثير البحث المحسن والديناميكي مع دعم الفلترة والصفحات وحل مشكلة الشقق
   useEffect(() => {
     const performSearch = async () => {
       if (!searchQuery || searchQuery.trim().length < 2) {
@@ -278,27 +278,127 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       }
       setIsSearching(true);
       try {
-        let query = supabase
-          .from('houses_data')
-          .select('unit_key, project_id, data');
-        
-        if (searchProjectFilter !== 'all') {
-          query = query.eq('project_id', searchProjectFilter);
-        }
-        
-        query = query.or(`unit_key.ilike.%${searchQuery}%,data->>name.ilike.%${searchQuery}%`);
-        
-        // جلب limit + 1 للتحقق من وجود نتائج إضافية
-        const { data, error } = await query.limit(searchLimit + 1);
-        
-        if (error) throw error;
-        
-        if (data && data.length > searchLimit) {
-          setSearchResults(data.slice(0, searchLimit));
-          setHasMoreResults(true);
+        const trimmedQuery = searchQuery.trim();
+        const aptPattern = /^([^-]+)-([^-]+)-([^-]+)$/;
+        const match = trimmedQuery.match(aptPattern);
+
+        if (match) {
+          // هذا بحث عن شقة بنمط (العمارة-الطابق-الشقة)
+          const towerLabel = match[1].trim().toUpperCase();
+          const floorCode = match[2].trim().toUpperCase();
+          const aptCode = match[3].trim().toUpperCase();
+
+          // 1. جلب المشاريع مع عناصر المخطط للبحث عن العمارة المطابقة
+          let projQuery = supabase.from('projects').select('id, name, elements');
+          if (searchProjectFilter !== 'all') {
+            projQuery = projQuery.eq('id', searchProjectFilter);
+          }
+          const { data: projectsWithElements } = await projQuery;
+
+          const matchedResults: any[] = [];
+
+          if (projectsWithElements) {
+            for (const proj of projectsWithElements) {
+              const elements = (proj.elements || []) as MapElement[];
+              const matchingTowers = elements.filter(el => 
+                el.type === 'tower' && 
+                el.label.toUpperCase().replace(/\s+/g, '') === towerLabel.replace(/\s+/g, '')
+              );
+
+              for (const tower of matchingTowers) {
+                // جلب كافة الوحدات التابعة لهذه العمارة لحساب التسلسل P بدقة
+                const { data: towerUnits } = await supabase
+                  .from('houses_data')
+                  .select('unit_key, data')
+                  .like('unit_key', `${tower.id}_%`);
+
+                // تحديد رقم الطابق المستهدف هندسياً
+                let targetFloor = -1;
+                if (floorCode === 'FG') {
+                  targetFloor = 1;
+                } else if (floorCode.startsWith('F')) {
+                  targetFloor = parseInt(floorCode.substring(1)) + 1;
+                }
+
+                if (targetFloor !== -1) {
+                  let pCounter = 0;
+                  let matchedUnitKey = null;
+                  
+                  for (let f = 1; f <= (tower.floors || 1); f++) {
+                    for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
+                      const key = `${tower.id}_F${f}_A${a}`;
+                      const uData = towerUnits?.find(u => u.unit_key === key)?.data || {};
+                      const isFrozenSequence = uData?.status === 'frozen_uncounted' || uData?.status === 'frozen_hidden';
+                      
+                      if (!isFrozenSequence) {
+                        pCounter++;
+                      }
+                      
+                      const currentFloorCode = f === 1 ? "FG" : `F${f - 1}`;
+                      const currentAptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
+                      
+                      if (f === targetFloor && currentAptCode.toUpperCase() === aptCode) {
+                        matchedUnitKey = key;
+                        break;
+                      }
+                    }
+                    if (matchedUnitKey) break;
+                  }
+
+                  if (matchedUnitKey) {
+                    const matchedUnit = towerUnits?.find(u => u.unit_key === matchedUnitKey);
+                    matchedResults.push({
+                      unit_key: matchedUnitKey,
+                      project_id: proj.id,
+                      data: matchedUnit?.data || { status: 'available' }
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          // البحث أيضاً عن أي تطابق نصي مباشر مخزن قديماً كاحتياط
+          let rawQuery = supabase
+            .from('houses_data')
+            .select('unit_key, project_id, data')
+            .eq('unit_key', trimmedQuery);
+          if (searchProjectFilter !== 'all') {
+            rawQuery = rawQuery.eq('project_id', searchProjectFilter);
+          }
+          const { data: rawData } = await rawQuery;
+          if (rawData) {
+            rawData.forEach(item => {
+              if (!matchedResults.some(r => r.unit_key === item.unit_key)) {
+                matchedResults.push(item);
+              }
+            });
+          }
+
+          setSearchResults(matchedResults.slice(0, searchLimit));
+          setHasMoreResults(matchedResults.length > searchLimit);
         } else {
-          setSearchResults(data || []);
-          setHasMoreResults(false);
+          // البحث الاعتيادي عن اسم الزبون أو رمز المنزل
+          let query = supabase
+            .from('houses_data')
+            .select('unit_key, project_id, data');
+          
+          if (searchProjectFilter !== 'all') {
+            query = query.eq('project_id', searchProjectFilter);
+          }
+          
+          query = query.or(`unit_key.ilike.%${searchQuery}%,data->>name.ilike.%${searchQuery}%`);
+          
+          const { data, error } = await query.limit(searchLimit + 1);
+          if (error) throw error;
+          
+          if (data && data.length > searchLimit) {
+            setSearchResults(data.slice(0, searchLimit));
+            setHasMoreResults(true);
+          } else {
+            setSearchResults(data || []);
+            setHasMoreResults(false);
+          }
         }
       } catch (e) {
         console.error("Error in general search:", e);
