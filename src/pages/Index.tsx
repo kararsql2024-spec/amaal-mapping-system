@@ -6,7 +6,7 @@ import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3, MapPin, Search, RefreshCcw } from 'lucide-react';
+import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3, MapPin, Search, RefreshCcw, X } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,6 +65,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   // متغيرات البحث والآخر تحديث المضافين بشكل مخصص
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
@@ -268,17 +269,28 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   }, [isProjectLoading, activeElements, pendingOpen]);
 
+  // تطبيق ميزة تأخير الاستعلام (Debounce) بمقدار 300 ملي ثانية
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
   // تأثير البحث المحسن والديناميكي مع دعم الفلترة والصفحات وحل مشكلة الشقق
   useEffect(() => {
     const performSearch = async () => {
-      if (!searchQuery || searchQuery.trim().length < 2) {
+      if (!debouncedSearchQuery || debouncedSearchQuery.trim().length < 2) {
         setSearchResults([]);
         setHasMoreResults(false);
         return;
       }
       setIsSearching(true);
       try {
-        const trimmedQuery = searchQuery.trim();
+        const trimmedQuery = debouncedSearchQuery.trim();
         const aptPattern = /^([^-]+)-([^-]+)-([^-]+)$/;
         const match = trimmedQuery.match(aptPattern);
 
@@ -378,7 +390,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           setSearchResults(matchedResults.slice(0, searchLimit));
           setHasMoreResults(matchedResults.length > searchLimit);
         } else {
-          // البحث الاعتيادي عن اسم الزبون أو رمز المنزل
+          // البحث الاعتيادي عن اسم الزبون، رمز المنزل، أو رقم الهاتف مع توحيد الحروف العربية ذكياً
           let query = supabase
             .from('houses_data')
             .select('unit_key, project_id, data');
@@ -387,7 +399,34 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             query = query.eq('project_id', searchProjectFilter);
           }
           
-          query = query.or(`unit_key.ilike.%${searchQuery}%,data->>name.ilike.%${searchQuery}%`);
+          // بناء شروط البحث مع دعم رقم الهاتف وتوحيد الحروف العربية
+          const orConditions = [
+            `unit_key.ilike.%${trimmedQuery}%`,
+            `data->>name.ilike.%${trimmedQuery}%`,
+            `data->>phone.ilike.%${trimmedQuery}%`
+          ];
+
+          // توحيد الحروف العربية (أ، إ، آ -> ا) و (ة -> ه) و (ى -> ي)
+          const normalizedTerm = trimmedQuery
+            .replace(/[أإآ]/g, 'ا')
+            .replace(/ة/g, 'ه')
+            .replace(/ى/g, 'ي');
+
+          if (normalizedTerm !== trimmedQuery) {
+            orConditions.push(`data->>name.ilike.%${normalizedTerm}%`);
+          }
+
+          // معالجة الحالة العكسية (إذا كتب المستخدم ا والاسم مخزن بـ أ)
+          const alternativeTerm = trimmedQuery
+            .replace(/ا/g, 'أ')
+            .replace(/ه/g, 'ة')
+            .replace(/ي/g, 'ى');
+
+          if (alternativeTerm !== trimmedQuery) {
+            orConditions.push(`data->>name.ilike.%${alternativeTerm}%`);
+          }
+          
+          query = query.or(orConditions.join(','));
           
           const { data, error } = await query.limit(searchLimit + 1);
           if (error) throw error;
@@ -408,7 +447,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
 
     performSearch();
-  }, [searchQuery, searchProjectFilter, searchLimit]);
+  }, [debouncedSearchQuery, searchProjectFilter, searchLimit]);
 
   const handleSearchInputChange = (val: string) => {
     setSearchQuery(val);
@@ -703,15 +742,23 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               <Search className="absolute right-4 top-3.5 text-slate-400 w-5 h-5" />
               <Input 
                 type="text" 
-                placeholder="ابحث عن اسم زبون أو رقم وحدة سكنية..." 
+                placeholder="ابحث عن اسم زبون، رقم هاتف، أو رقم وحدة..." 
                 value={searchQuery}
                 onChange={(e) => handleSearchInputChange(e.target.value)}
-                className="pr-12 pl-4 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-xs bg-slate-50/50" 
+                className="pr-12 pl-12 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-xs bg-slate-50/50" 
               />
               {isSearching && (
-                <div className="absolute left-4 top-3.5">
+                <div className="absolute left-10 top-3.5">
                   <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                 </div>
+              )}
+              {searchQuery && (
+                <button 
+                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                  className="absolute left-4 top-3.5 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               )}
             </div>
             
@@ -757,6 +804,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                       </div>
                       <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold w-full mt-0.5">
                         <span>الرمز: <strong className="text-slate-700 font-black">{item.unit_key}</strong></span>
+                        {item.data?.phone && <span className="text-slate-400">📞 {item.data.phone}</span>}
                         <span className="text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-lg text-[10px] font-black">📍 {projName}</span>
                       </div>
                     </button>
