@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,11 +18,37 @@ interface TowerDetailsModalProps {
   housesData: Record<string, any>;
   onSaveApartment: (apartmentKey: string, data: any) => void;
   permissions?: any;
+  initialSelectedApartmentKey?: string | null; // حقل جديد لتحديد الشقة المفتوحة تلقائياً عند البحث
 }
 
-const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment, permissions }: TowerDetailsModalProps) => {
+const TowerDetailsModal = ({ 
+  isOpen, 
+  onClose, 
+  tower, 
+  housesData, 
+  onSaveApartment, 
+  permissions,
+  initialSelectedApartmentKey 
+}: TowerDetailsModalProps) => {
   const [selectedFloor, setSelectedFloor] = useState(1);
   const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
+
+  // تأثير ذكي لتحديد الطابق والشقة المبحوث عنها تلقائياً عند فتح المودال
+  useEffect(() => {
+    if (initialSelectedApartmentKey && isOpen && tower) {
+      const parts = initialSelectedApartmentKey.split('_F');
+      if (parts.length > 1) {
+        const floorPart = parts[1].split('_A');
+        const floorNum = parseInt(floorPart[0]);
+        if (!isNaN(floorNum)) {
+          setSelectedFloor(floorNum);
+          setSelectedAptKey(initialSelectedApartmentKey);
+        }
+      }
+    } else {
+      setSelectedAptKey(null);
+    }
+  }, [initialSelectedApartmentKey, isOpen, tower]);
 
   if (!tower) return null;
 
@@ -50,7 +76,6 @@ const TowerDetailsModal = ({ isOpen, onClose, tower, housesData, onSaveApartment
       for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
         const key = getAptKey(f, a);
         const data = housesData[key];
-        // إذا كانت الشقة مجمدة (بأي نوع من أنواع التجميد التي تستبعدها من العد)، لا نزيد العداد
         const isFrozenSequence = data?.status === 'frozen_uncounted' || data?.status === 'frozen_hidden';
         
         if (!isFrozenSequence) {

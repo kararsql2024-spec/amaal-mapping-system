@@ -70,6 +70,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [pendingOpen, setPendingOpen] = useState<{ elementId: string; isTower: boolean } | null>(null);
 
+  // متغيرات فلترة البحث والصفحات
+  const [searchProjectFilter, setSearchProjectFilter] = useState<string>('all');
+  const [searchLimit, setSearchLimit] = useState<number>(10);
+  const [hasMoreResults, setHasMoreResults] = useState<boolean>(false);
+  const [pendingApartmentKey, setPendingApartmentKey] = useState<string | null>(null);
+
   const [permissions, setPermissions] = useState<any>({
     showPrice: true,
     showCustomerName: true,
@@ -262,26 +268,56 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   }, [isProjectLoading, activeElements, pendingOpen]);
 
-  const handleSearch = async (query: string) => {
-    if (!query || query.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setIsSearching(true);
-    try {
-      const { data, error } = await supabase
-        .from('houses_data')
-        .select('unit_key, project_id, data')
-        .or(`unit_key.ilike.%${query}%,data->>name.ilike.%${query}%`)
-        .limit(10);
-      
-      if (error) throw error;
-      setSearchResults(data || []);
-    } catch (e) {
-      console.error("Error in general search:", e);
-    } finally {
-      setIsSearching(false);
-    }
+  // تأثير البحث المحسن والديناميكي مع دعم الفلترة والصفحات
+  useEffect(() => {
+    const performSearch = async () => {
+      if (!searchQuery || searchQuery.trim().length < 2) {
+        setSearchResults([]);
+        setHasMoreResults(false);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        let query = supabase
+          .from('houses_data')
+          .select('unit_key, project_id, data');
+        
+        if (searchProjectFilter !== 'all') {
+          query = query.eq('project_id', searchProjectFilter);
+        }
+        
+        query = query.or(`unit_key.ilike.%${searchQuery}%,data->>name.ilike.%${searchQuery}%`);
+        
+        // جلب limit + 1 للتحقق من وجود نتائج إضافية
+        const { data, error } = await query.limit(searchLimit + 1);
+        
+        if (error) throw error;
+        
+        if (data && data.length > searchLimit) {
+          setSearchResults(data.slice(0, searchLimit));
+          setHasMoreResults(true);
+        } else {
+          setSearchResults(data || []);
+          setHasMoreResults(false);
+        }
+      } catch (e) {
+        console.error("Error in general search:", e);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    performSearch();
+  }, [searchQuery, searchProjectFilter, searchLimit]);
+
+  const handleSearchInputChange = (val: string) => {
+    setSearchQuery(val);
+    setSearchLimit(10); // إعادة تعيين الحد عند تغيير نص البحث
+  };
+
+  const handleShowMore = (e: React.MouseEvent) => {
+    e.stopPropagation(); // منع إغلاق القائمة
+    setSearchLimit(prev => prev + 10);
   };
 
   const parseSearchClick = (item: any) => {
@@ -293,8 +329,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     if (unitKey.includes('_F') && unitKey.includes('_A')) {
       const towerId = unitKey.split('_F')[0];
       setPendingOpen({ elementId: towerId, isTower: true });
+      setPendingApartmentKey(unitKey); // حفظ مفتاح الشقة لفتحها تلقائياً داخل العمارة
     } else {
       setPendingOpen({ elementId: unitKey, isTower: false });
+      setPendingApartmentKey(null);
     }
     setSearchQuery('');
     setSearchResults([]);
@@ -546,18 +584,28 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             </div>
           </div>
 
-          {/* مربع البحث العام الذكي والمحسن في المنتصف */}
-          <div className="relative flex-1 max-w-md w-full mx-auto lg:mx-0">
-            <div className="relative">
+          {/* مربع البحث العام الذكي والمحسن في المنتصف مع فلتر المشاريع */}
+          <div className="relative flex-1 max-w-xl w-full mx-auto lg:mx-0 flex gap-2 items-center">
+            <div className="w-40 shrink-0">
+              <Select value={searchProjectFilter} onValueChange={(val) => { setSearchProjectFilter(val); setSearchLimit(10); }}>
+                <SelectTrigger className="rounded-2xl h-12 border-slate-200 font-bold text-xs bg-slate-50/50">
+                  <SelectValue placeholder="كل المشاريع" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold text-xs">🌐 كل المشاريع</SelectItem>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={p.id} className="font-bold text-xs">{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="relative flex-1">
               <Search className="absolute right-4 top-3.5 text-slate-400 w-5 h-5" />
               <Input 
                 type="text" 
                 placeholder="ابحث عن اسم زبون أو رقم وحدة سكنية..." 
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  handleSearch(e.target.value);
-                }}
+                onChange={(e) => handleSearchInputChange(e.target.value)}
                 className="pr-12 pl-4 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-xs bg-slate-50/50" 
               />
               {isSearching && (
@@ -569,7 +617,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             
             {/* قائمة نتائج البحث السريعة والتفاعلية */}
             {searchResults.length > 0 && (
-              <div className="absolute z-[999] right-0 left-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
+              <div className="absolute z-[999] right-0 left-0 top-14 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
                 {searchResults.map((item) => {
                   const projName = projects.find(p => p.id === item.project_id)?.name || "المخطط العام";
                   const isInvestment = item.data?.status === 'investment';
@@ -614,6 +662,18 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                     </button>
                   );
                 })}
+                {hasMoreResults && (
+                  <div className="p-2 bg-slate-50 text-center">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={handleShowMore} 
+                      className="text-xs font-black text-blue-600 hover:bg-blue-100 w-full rounded-xl"
+                    >
+                      إظهار المزيد من النتائج...
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -775,11 +835,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         />
         <TowerDetailsModal 
           isOpen={isTowerModalOpen} 
-          onClose={() => setIsTowerModalOpen(false)} 
+          onClose={() => {
+            setIsTowerModalOpen(false);
+            setPendingApartmentKey(null);
+          }} 
           tower={activeElements.find(el => el.id === selectedElementId)} 
           housesData={housesData} 
           onSaveApartment={handleSaveData}
           permissions={permissions}
+          initialSelectedApartmentKey={pendingApartmentKey}
         />
         <MadeWithDyad />
       </div>
