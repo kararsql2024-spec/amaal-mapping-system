@@ -113,43 +113,43 @@ const TowerDetailsModal = ({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
-          <div className="flex h-[600px]">
-            <div className="w-56 bg-slate-50 border-l border-slate-100 p-6 overflow-y-auto">
-              <h3 className="font-black text-slate-400 text-xs uppercase mb-4 tracking-wider">قائمة الطوابق</h3>
-              <div className="space-y-2">
+        <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] md:h-[600px] rounded-[2.5rem] p-0 overflow-hidden border-none" dir="rtl">
+          <div className="flex flex-col md:flex-row h-full md:h-[600px]">
+            <div className="w-full md:w-56 bg-slate-50 border-b md:border-b-0 md:border-l border-slate-100 p-4 md:p-6 overflow-x-auto md:overflow-y-auto shrink-0">
+              <h3 className="font-black text-slate-400 text-xs uppercase mb-2 md:mb-4 tracking-wider hidden md:block">قائمة الطوابق</h3>
+              <div className="flex md:flex-col gap-2 md:space-y-2 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0">
                 {[...floors].reverse().map((floor) => (
                   <button
                     key={floor}
                     onClick={() => setSelectedFloor(floor)}
                     className={cn(
-                      "w-full p-4 rounded-2xl font-bold transition-all text-right flex items-center justify-between",
+                      "shrink-0 md:shrink w-auto md:w-full p-3 md:p-4 rounded-xl md:rounded-2xl font-bold transition-all text-right flex items-center justify-between gap-4",
                       selectedFloor === floor 
                         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105" 
                         : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-100"
                     )}
                   >
-                    <span className="text-sm">{getFloorLabel(floor)}</span>
-                    {selectedFloor === floor && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    <span className="text-xs md:text-sm whitespace-nowrap">{getFloorLabel(floor)}</span>
+                    {selectedFloor === floor && <div className="w-1.5 h-1.5 rounded-full bg-white hidden md:block" />}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="flex-1 p-8 bg-white overflow-y-auto">
-              <DialogHeader className="mb-8">
-                <DialogTitle className="text-3xl font-black flex items-center gap-3">
-                  <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center">
-                    <Building2 className="text-white" />
+            <div className="flex-1 p-4 md:p-8 bg-white overflow-y-auto">
+              <DialogHeader className="mb-6 md:mb-8">
+                <DialogTitle className="text-2xl md:text-3xl font-black flex items-center gap-3">
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-slate-900 rounded-2xl flex items-center justify-center shrink-0">
+                    <Building2 className="text-white w-5 h-5 md:w-6 md:h-6" />
                   </div>
                   <div>
-                    <p className="text-sm text-slate-400 font-bold">برج: {tower.label}</p>
-                    <p>{getFloorLabel(selectedFloor)}</p>
+                    <p className="text-xs md:text-sm text-slate-400 font-bold">برج: {tower.label}</p>
+                    <p className="text-lg md:text-2xl">{getFloorLabel(selectedFloor)}</p>
                   </div>
                 </DialogTitle>
               </DialogHeader>
 
-              <div className="grid grid-rows-2 grid-flow-col gap-4" dir="ltr">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-rows-2 md:grid-flow-col gap-3 md:gap-4" dir="ltr">
                 {reorderedApts.map((aptNum) => {
                   const key = getAptKey(selectedFloor, aptNum);
                   const fullLabel = getAptFullLabel(selectedFloor, aptNum);
@@ -161,17 +161,17 @@ const TowerDetailsModal = ({
                     <div 
                       key={key}
                       className={cn(
-                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-full",
+                        "p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border-2 transition-all cursor-pointer group relative overflow-hidden text-left h-24 md:h-full flex flex-col justify-between",
                         getStatusColor(data.status)
                       )}
                       onClick={() => setSelectedAptKey(key)}
                     >
-                      <div className="relative z-10">
-                        <div className="flex justify-between items-start">
-                          <p className="text-3xl font-black">{shortLabel}</p>
-                          {isFrozen && <Snowflake size={18} className="opacity-50" />}
+                      <div className="relative z-10 w-full">
+                        <div className="flex justify-between items-start w-full">
+                          <p className="text-2xl md:text-3xl font-black">{shortLabel}</p>
+                          {isFrozen && <Snowflake size={16} className="opacity-50" />}
                         </div>
-                        <p className="text-[10px] font-bold opacity-70 mt-1 uppercase">
+                        <p className="text-[9px] md:text-[10px] font-bold opacity-70 mt-1 uppercase truncate">
                           {data.status === 'frozen_uncounted' ? 'مجمدة (خارج المجموع)' : 
                            data.status === 'frozen_counted' ? 'مجمدة (داخل المجموع)' : 
                            data.status === 'frozen_hidden' ? 'مجمدة (مخفي من العدد)' :
@@ -179,7 +179,7 @@ const TowerDetailsModal = ({
                            data.status}
                         </p>
                       </div>
-                      <LayoutGrid className="absolute -bottom-4 -right-4 w-20 h-20 opacity-10 group-hover:scale-110 transition-transform" />
+                      <LayoutGrid className="absolute -bottom-4 -right-4 w-16 h-16 md:w-20 md:h-20 opacity-10 group-hover:scale-110 transition-transform" />
                     </div>
                   );
                 })}
