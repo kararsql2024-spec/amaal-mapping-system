@@ -721,7 +721,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><MapIcon className="text-white w-8 h-8" /></div>
             <div>
               <h1 className="text-xl font-black text-slate-800 leading-tight">نظام ادارة الوحدات السكنية</h1>
-              <p className="text-slate-500 text-xs font-bold mt-0.5">خريطة تفاعلية للمخطط السكني</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-slate-500 text-xs font-bold">خريطة تفاعلية للمخطط السكني</p>
+                {currentCenter && (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-blue-600 text-xs font-black bg-blue-50 px-2 py-0.5 rounded-full">
+                      القسم الحالي: {currentCenter.name}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
