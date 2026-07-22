@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import React, { useState, useEffect } from "react";
 import Index from "./pages/Index";
 import Admin from "./pages/Admin";
+import Reports from "./pages/Reports";
 import NotFound from "./pages/NotFound";
 import { Project } from "./types/project";
 import { supabase } from "@/integrations/supabase/client";
@@ -79,6 +80,15 @@ const App = () => {
                   setProjects={setProjects} 
                   setHousesData={setHousesData}
                   housesData={housesData}
+                />
+              } 
+            />
+            <Route 
+              path="/reports" 
+              element={
+                <Reports 
+                  projects={projects} 
+                  housesData={housesData} 
                 />
               } 
             />

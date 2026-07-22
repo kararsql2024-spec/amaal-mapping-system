@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Project, MapElement } from '@/types/project';
 import { supabase } from "@/integrations/supabase/client";
+import { Link } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -851,6 +852,14 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 </span>
               </div>
             )}
+
+            {/* زر الانتقال إلى صفحة التقارير والتحليلات المتقدمة */}
+            <Link to="/reports">
+              <Button variant="outline" className="rounded-xl gap-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50 h-12 font-black text-xs shadow-sm">
+                <BarChart3 size={16} />
+                التقارير والتحليلات
+              </Button>
+            </Link>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
