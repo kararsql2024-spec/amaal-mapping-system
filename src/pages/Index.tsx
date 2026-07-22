@@ -282,6 +282,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         const aptPattern = /^([^-]+)-([^-]+)-([^-]+)$/;
         const match = trimmedQuery.match(aptPattern);
 
+        let rawResults: any[] = [];
+        let hasMore = false;
+
         if (match) {
           // هذا بحث عن شقة بنمط (العمارة-الطابق-الشقة)
           const towerLabel = match[1].trim().toUpperCase();
@@ -294,8 +297,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             projQuery = projQuery.eq('id', searchProjectFilter);
           }
           const { data: projectsWithElements } = await projQuery;
-
-          const matchedResults: any[] = [];
 
           if (projectsWithElements) {
             for (const proj of projectsWithElements) {
@@ -347,7 +348,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
                   if (matchedUnitKey) {
                     const matchedUnit = towerUnits?.find(u => u.unit_key === matchedUnitKey);
-                    matchedResults.push({
+                    rawResults.push({
                       unit_key: matchedUnitKey,
                       project_id: proj.id,
                       data: matchedUnit?.data || { status: 'available' }
@@ -369,14 +370,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           const { data: rawData } = await rawQuery;
           if (rawData) {
             rawData.forEach(item => {
-              if (!matchedResults.some(r => r.unit_key === item.unit_key)) {
-                matchedResults.push(item);
+              if (!rawResults.some(r => r.unit_key === item.unit_key)) {
+                rawResults.push(item);
               }
             });
           }
-
-          setSearchResults(matchedResults.slice(0, searchLimit));
-          setHasMoreResults(matchedResults.length > searchLimit);
+          hasMore = rawResults.length > searchLimit;
+          rawResults = rawResults.slice(0, searchLimit);
         } else {
           // البحث الاعتيادي عن اسم الزبون أو رمز المنزل
           let query = supabase
@@ -392,13 +392,83 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           const { data, error } = await query.limit(searchLimit + 1);
           if (error) throw error;
           
-          if (data && data.length > searchLimit) {
-            setSearchResults(data.slice(0, searchLimit));
-            setHasMoreResults(true);
-          } else {
-            setSearchResults(data || []);
-            setHasMoreResults(false);
+          if (data) {
+            hasMore = data.length > searchLimit;
+            rawResults = data.slice(0, searchLimit);
           }
+        }
+
+        // الآن نقوم بحل وترجمة الأسماء الظاهرية (friendly_label) لجميع النتائج المسترجعة
+        if (rawResults.length > 0) {
+          const uniqueProjectIds = Array.from(new Set(rawResults.map(r => r.project_id)));
+          const { data: projectsElements } = await supabase
+            .from('projects')
+            .select('id, elements')
+            .in('id', uniqueProjectIds);
+
+          const towerIds = Array.from(new Set(
+            rawResults
+              .filter(r => r.unit_key.includes('_F') && r.unit_key.includes('_A'))
+              .map(r => r.unit_key.split('_F')[0])
+          ));
+
+          let allTowerUnits: any[] = [];
+          if (towerIds.length > 0) {
+            const orFilter = towerIds.map(id => `unit_key.like.${id}_%`).join(',');
+            const { data: tUnits } = await supabase
+              .from('houses_data')
+              .select('unit_key, data')
+              .or(orFilter);
+            allTowerUnits = tUnits || [];
+          }
+
+          const resolvedResults = rawResults.map(item => {
+            let friendlyLabel = item.unit_key;
+            if (item.unit_key.includes('_F') && item.unit_key.includes('_A')) {
+              const parts = item.unit_key.split('_F');
+              const towerId = parts[0];
+              const floorPart = parts[1].split('_A');
+              const floor = parseInt(floorPart[0]);
+              const aptNum = parseInt(floorPart[1]);
+
+              const proj = projectsElements?.find(p => p.id === item.project_id);
+              const tower = (proj?.elements || [])?.find((el: any) => el.id === towerId);
+              
+              if (tower) {
+                let pCounter = 0;
+                const getFloorCode = (f: number) => f === 1 ? "FG" : `F${f - 1}`;
+                const getAptKey = (f: number, a: number) => `${towerId}_F${f}_A${a}`;
+
+                for (let f = 1; f <= (tower.floors || 1); f++) {
+                  for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
+                    const key = getAptKey(f, a);
+                    const uData = allTowerUnits?.find(u => u.unit_key === key)?.data || {};
+                    const isFrozenSequence = uData?.status === 'frozen_uncounted' || uData?.status === 'frozen_hidden';
+                    
+                    if (!isFrozenSequence) {
+                      pCounter++;
+                    }
+
+                    if (f === floor && a === aptNum) {
+                      const aptCode = isFrozenSequence ? "مجمدة" : `P${pCounter}`;
+                      friendlyLabel = `${tower.label}-${getFloorCode(f)}-${aptCode}`;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+            return {
+              ...item,
+              friendly_label: friendlyLabel
+            };
+          });
+
+          setSearchResults(resolvedResults);
+          setHasMoreResults(hasMore);
+        } else {
+          setSearchResults([]);
+          setHasMoreResults(false);
         }
       } catch (e) {
         console.error("Error in general search:", e);
@@ -436,7 +506,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
     setSearchQuery('');
     setSearchResults([]);
-    showSuccess(`جاري الانتقال وعرض الوحدة ${unitKey}...`);
+    showSuccess(`جاري الانتقال وعرض الوحدة ${item.friendly_label || unitKey}...`);
   };
 
   const checkExpiredBookings = async (units: any[], projectId: string) => {
@@ -749,14 +819,14 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                     >
                       <div className="flex justify-between items-center w-full">
                         <span className="font-black text-slate-800 text-xs">
-                          {item.data?.name ? item.data.name : `الوحدة ${item.unit_key}`}
+                          {item.data?.name ? item.data.name : `الوحدة ${item.friendly_label || item.unit_key}`}
                         </span>
                         <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full border", statusClass)}>
                           {statusBadge}
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold w-full mt-0.5">
-                        <span>الرمز: <strong className="text-slate-700 font-black">{item.unit_key}</strong></span>
+                        <span>الرمز: <strong className="text-slate-700 font-black">{item.friendly_label || item.unit_key}</strong></span>
                         <span className="text-blue-600 bg-blue-50/50 px-2 py-0.5 rounded-lg text-[10px] font-black">📍 {projName}</span>
                       </div>
                     </button>
