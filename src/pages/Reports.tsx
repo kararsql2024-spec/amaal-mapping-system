@@ -2,14 +2,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Project, MapElement } from '@/types/project';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   ArrowRight, BarChart3, TrendingUp, DollarSign, Coins, FileText, 
   Home, Building2, CheckCircle2, Clock, ShieldCheck, PieChart as PieIcon,
-  Percent, Loader2, Filter, Tags
+  Percent, Loader2, Filter, Tags, AlertTriangle
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
@@ -22,17 +22,67 @@ interface ReportsProps {
 }
 
 const Reports = ({ projects }: ReportsProps) => {
+  const navigate = useNavigate();
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [housesData, setHousesData] = useState<Record<string, any>>({});
   const [fetchedElements, setFetchedElements] = useState<MapElement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [hasAccess, setHasAccess] = useState<boolean>(true);
+  const [checkingAccess, setCheckingAccess] = useState<boolean>(true);
 
   // حالات الفلترة المخصصة
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [selectedClass, setSelectedClass] = useState<string>('all');
 
+  // التحقق من صلاحية الوصول للقسم الحالي
+  useEffect(() => {
+    const checkAccessPermission = async () => {
+      setCheckingAccess(true);
+      try {
+        const savedCenterId = localStorage.getItem('marketing_center_session');
+        if (!savedCenterId) {
+          setHasAccess(false);
+          setCheckingAccess(false);
+          return;
+        }
+
+        const { data: centers } = await supabase.from('marketing_centers').select('*');
+        const center = centers?.find(c => c.id === savedCenterId);
+        
+        if (!center) {
+          setHasAccess(false);
+          setCheckingAccess(false);
+          return;
+        }
+
+        const { data: settings } = await supabase.from('settings').select('*');
+        const permsSetting = settings?.find(s => s.key === 'dept_permissions');
+        
+        if (permsSetting && permsSetting.value && center.type) {
+          const deptPerms = permsSetting.value[center.type];
+          if (deptPerms && deptPerms.canAccessReports === false) {
+            setHasAccess(false);
+          } else {
+            setHasAccess(true);
+          }
+        } else {
+          setHasAccess(true);
+        }
+      } catch (e) {
+        console.error("Error checking reports access:", e);
+        setHasAccess(false);
+      } finally {
+        setCheckingAccess(false);
+      }
+    };
+
+    checkAccessPermission();
+  }, []);
+
   // جلب البيانات حياً ومباشرة من قاعدة البيانات لضمان عمل التقارير بشكل مستقل وموثوق دائماً
   useEffect(() => {
+    if (!hasAccess) return;
+
     const fetchReportsData = async () => {
       setLoading(true);
       try {
@@ -104,7 +154,7 @@ const Reports = ({ projects }: ReportsProps) => {
     };
 
     fetchReportsData();
-  }, [selectedProjectId]);
+  }, [selectedProjectId, hasAccess]);
 
   // استخراج الزونات والأصناف المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
   const { availableZones, availableClasses } = useMemo(() => {
@@ -442,6 +492,35 @@ const Reports = ({ projects }: ReportsProps) => {
     return formatNumber(value);
   };
 
+  if (checkingAccess) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center font-bold">
+        جاري التحقق من صلاحيات الوصول...
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 text-center space-y-6">
+          <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-500 mx-auto">
+            <AlertTriangle size={32} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-slate-800">عذراً، لا تملك صلاحية الوصول</h2>
+            <p className="text-slate-500 text-xs font-bold leading-relaxed">
+              تم تقييد وصول هذا القسم إلى لوحة التقارير والتحليلات المالية من قبل الإدارة. يرجى مراجعة المسؤول للحصول على الصلاحية.
+            </p>
+          </div>
+          <Button onClick={() => navigate('/')} className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-xl h-12 font-bold">
+            العودة للرئيسية
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f8fafc] p-6 md:p-8" dir="rtl">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -723,7 +802,7 @@ const Reports = ({ projects }: ReportsProps) => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs font-bold">
                         <span className="text-emerald-600">مستلم الطابو:</span>
-                        <span>{stats.receivedTabo} وحدة</span>
+                        <span>{stats.receivedTabo} unit</span>
                       </div>
                       <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                         <div className="bg-emerald-500 h-full" style={{ width: `${stats.total > 0 ? (stats.receivedTabo / stats.total) * 100 : 0}%` }} />
@@ -732,7 +811,7 @@ const Reports = ({ projects }: ReportsProps) => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs font-bold">
                         <span className="text-indigo-600">قيد الترويج:</span>
-                        <span>{stats.promotedTabo} وحدة</span>
+                        <span>{stats.promotedTabo} unit</span>
                       </div>
                       <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                         <div className="bg-indigo-500 h-full" style={{ width: `${stats.total > 0 ? (stats.promotedTabo / stats.total) * 100 : 0}%` }} />
@@ -747,7 +826,7 @@ const Reports = ({ projects }: ReportsProps) => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs font-bold">
                         <span className="text-sky-600">تم تسليم المفتاح:</span>
-                        <span>{stats.receivedUnit} وحدة</span>
+                        <span>{stats.receivedUnit} unit</span>
                       </div>
                       <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                         <div className="bg-sky-500 h-full" style={{ width: `${stats.total > 0 ? (stats.receivedUnit / stats.total) * 100 : 0}%` }} />
@@ -756,7 +835,7 @@ const Reports = ({ projects }: ReportsProps) => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs font-bold">
                         <span className="text-rose-400">غير مستلم بعد:</span>
-                        <span>{stats.notReceivedUnit} وحدة</span>
+                        <span>{stats.notReceivedUnit} unit</span>
                       </div>
                       <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                         <div className="bg-rose-400 h-full" style={{ width: `${stats.total > 0 ? (stats.notReceivedUnit / stats.total) * 100 : 0}%` }} />
