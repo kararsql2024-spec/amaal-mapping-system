@@ -11,7 +11,7 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle
+  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -78,6 +78,11 @@ const safeDbCall = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1000): 
 
 const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminProps) => {
   const [session, setSession] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isEditingMainMap, setIsEditingMainMap] = useState(false);
   const [mainMapData, setMainMapData] = useState<any>(null);
@@ -136,10 +141,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -202,6 +209,27 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     fetchData();
   }, [session]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      showError("يرجى إدخال البريد الإلكتروني وكلمة المرور");
+      return;
+    }
+    setIsLoggingIn(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: loginPassword,
+      });
+      if (error) throw error;
+      showSuccess("تم تسجيل الدخول بنجاح");
+    } catch (error: any) {
+      showError(error.message || "فشل تسجيل الدخول");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   const handleToggleSmartSync = async (checked: boolean) => {
     setIsSmartFullSync(checked);
@@ -1024,6 +1052,71 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       ]
     }
   ];
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center font-bold" dir="rtl">
+        <div className="text-center space-y-4">
+          <RefreshCcw className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
+          <p className="text-slate-600">جاري التحقق من الهوية...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center shadow-xl shadow-indigo-100 mx-auto mb-6">
+              <Settings2 className="text-white w-10 h-10" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">لوحة تحكم الإدارة</h1>
+            <p className="text-slate-500 font-medium mt-2">يرجى تسجيل الدخول للمتابعة</p>
+          </div>
+          <form onSubmit={handleAdminLogin} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-600 mr-2">البريد الإلكتروني</label>
+              <div className="relative">
+                <Mail className="absolute right-4 top-4 text-slate-400 w-5 h-5" />
+                <Input 
+                  type="email" 
+                  placeholder="admin@example.com" 
+                  className="pr-12 rounded-2xl h-14 border-slate-200 font-bold" 
+                  value={loginEmail} 
+                  onChange={(e) => setLoginEmail(e.target.value)} 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-600 mr-2">كلمة المرور</label>
+              <div className="relative">
+                <Lock className="absolute right-4 top-4 text-slate-400 w-5 h-5" />
+                <Input 
+                  type="password" 
+                  placeholder="أدخل كلمة المرور..." 
+                  className="pr-12 rounded-2xl h-14 border-slate-200 font-bold" 
+                  value={loginPassword} 
+                  onChange={(e) => setLoginPassword(e.target.value)} 
+                />
+              </div>
+            </div>
+            <Button 
+              type="submit" 
+              disabled={isLoggingIn}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-2xl h-14 text-lg font-black shadow-lg shadow-indigo-100"
+            >
+              {isLoggingIn ? <RefreshCcw className="animate-spin w-5 h-5" /> : "تسجيل الدخول"}
+            </Button>
+          </form>
+          <div className="mt-6 text-center">
+            <Link to="/" className="text-sm font-bold text-indigo-600 hover:underline">العودة للرئيسية</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (editingMapProject || isEditingMainMap) {
     return (
