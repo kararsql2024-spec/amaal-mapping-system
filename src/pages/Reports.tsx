@@ -6,10 +6,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowRight, BarChart3, TrendingUp, DollarSign, Coins, FileText, 
   Home, Building2, CheckCircle2, Clock, ShieldCheck, PieChart as PieIcon,
-  Percent, Loader2, Filter, Tags, AlertTriangle
+  Percent, Loader2, Filter, Tags, AlertTriangle, Ruler
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
@@ -33,6 +34,7 @@ const Reports = ({ projects }: ReportsProps) => {
   // حالات الفلترة المخصصة
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [selectedClass, setSelectedClass] = useState<string>('all');
+  const [selectedSize, setSelectedSize] = useState<string>('all');
 
   // التحقق من صلاحية الوصول للقسم الحالي
   useEffect(() => {
@@ -91,24 +93,35 @@ const Reports = ({ projects }: ReportsProps) => {
         if (selectedProjectId === 'all') {
           const { data: projData, error: projErr } = await supabase
             .from('projects')
-            .select('elements');
+            .select('id, name, elements');
           if (projErr) throw projErr;
           if (projData) {
             projData.forEach(p => {
               if (p.elements && Array.isArray(p.elements)) {
-                elementsList = [...elementsList, ...(p.elements as MapElement[])];
+                // نقوم بحقن اسم المشروع ومعرفه داخل العناصر لتسهيل التحليل المدمج لاحقاً
+                const elementsWithProjectInfo = (p.elements as MapElement[]).map(el => ({
+                  ...el,
+                  _projectName: p.name,
+                  _projectId: p.id
+                }));
+                elementsList = [...elementsList, ...elementsWithProjectInfo];
               }
             });
           }
         } else {
           const { data: projData, error: projErr } = await supabase
             .from('projects')
-            .select('elements')
+            .select('id, name, elements')
             .eq('id', selectedProjectId)
             .single();
           if (projErr) throw projErr;
           if (projData && projData.elements && Array.isArray(projData.elements)) {
-            elementsList = projData.elements as MapElement[];
+            const elementsWithProjectInfo = (projData.elements as MapElement[]).map(el => ({
+              ...el,
+              _projectName: projData.name,
+              _projectId: projData.id
+            }));
+            elementsList = elementsWithProjectInfo;
           }
         }
         setFetchedElements(elementsList);
@@ -156,10 +169,12 @@ const Reports = ({ projects }: ReportsProps) => {
     fetchReportsData();
   }, [selectedProjectId, hasAccess]);
 
-  // استخراج الزونات والأصناف المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
-  const { availableZones, availableClasses } = useMemo(() => {
+  // استخراج الزونات والأصناف والمساحات المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
+  const { availableZones, availableClasses, availableSizes } = useMemo(() => {
     const zones = new Set<string>();
     const classes = new Set<string>();
+    const sizes = new Set<number>();
+
     fetchedElements.forEach(el => {
       if (el.type === 'house') {
         const parts = el.label.split('-');
@@ -168,18 +183,38 @@ const Reports = ({ projects }: ReportsProps) => {
           const typeMatch = parts[2].match(/[a-zA-Z]+/);
           if (typeMatch) classes.add(typeMatch[0]);
         }
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 1;
+        const aptsPerFloor = el.apartmentsPerFloor || 1;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            const data = housesData[key];
+            if (data?.status === 'frozen_hidden') continue;
+
+            const size = f === 1 
+              ? (el.groundFloorSizes?.[a - 1] || 0) 
+              : (el.typicalFloorSizes?.[a - 1] || 0);
+            if (size > 0) {
+              sizes.add(size);
+            }
+          }
+        }
       }
     });
+
     return {
       availableZones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-      availableClasses: Array.from(classes).sort()
+      availableClasses: Array.from(classes).sort(),
+      availableSizes: Array.from(sizes).sort((a, b) => a - b)
     };
-  }, [fetchedElements]);
+  }, [fetchedElements, housesData]);
 
   // إعادة تعيين الفلاتر الفرعية عند تغيير المشروع المستهدف
   useEffect(() => {
     setSelectedZone('all');
     setSelectedClass('all');
+    setSelectedSize('all');
   }, [selectedProjectId]);
 
   // دالة مساعدة لتحليل الأسعار
@@ -199,55 +234,42 @@ const Reports = ({ projects }: ReportsProps) => {
   };
 
   // تصفية العناصر بناءً على الفلاتر المحددة
-  const { filteredElementsForGlobal, filteredElementsForZonePerf } = useMemo(() => {
-    const globalList = fetchedElements.filter(el => {
-      if (el.type !== 'house' && el.type !== 'tower') return true;
-      
-      // فلترة الصنف
-      if (selectedClass !== 'all') {
-        const parts = el.label.split('-');
-        if (parts.length >= 3) {
-          const typeMatch = parts[2].match(/[a-zA-Z]+/);
-          const uClass = typeMatch ? typeMatch[0] : '';
-          if (uClass !== selectedClass) return false;
-        } else {
-          return false;
+  const filteredElementsForGlobal = useMemo(() => {
+    return fetchedElements.filter(el => {
+      if (el.type === 'house') {
+        // فلترة الصنف للمنازل
+        if (selectedClass !== 'all') {
+          const parts = el.label.split('-');
+          if (parts.length >= 3) {
+            const typeMatch = parts[2].match(/[a-zA-Z]+/);
+            const uClass = typeMatch ? typeMatch[0] : '';
+            if (uClass !== selectedClass) return false;
+          } else {
+            return false;
+          }
         }
+
+        // فلترة الزون للمنازل
+        if (selectedZone !== 'all') {
+          const parts = el.label.split('-');
+          const zone = parts[0] || '';
+          if (zone !== selectedZone) return false;
+        }
+
+        // المنازل لا تتأثر بفلتر مساحة الشقة
+        if (selectedSize !== 'all') return false;
       }
 
-      // فلترة الزون
-      if (selectedZone !== 'all') {
-        const parts = el.label.split('-');
-        const zone = parts[0] || '';
-        if (zone !== selectedZone) return false;
+      if (el.type === 'tower') {
+        // العمارات لا تتأثر بفلاتر الزون أو الصنف الخاصة بالمنازل
+        if (selectedZone !== 'all' || selectedClass !== 'all') return false;
       }
 
       return true;
     });
+  }, [fetchedElements, selectedZone, selectedClass, selectedSize]);
 
-    // تقرير أداء الزونات يستثني فلتر الزون ويطبق فقط فلتر الصنف
-    const zonePerfList = fetchedElements.filter(el => {
-      if (el.type !== 'house') return true;
-      if (selectedClass !== 'all') {
-        const parts = el.label.split('-');
-        if (parts.length >= 3) {
-          const typeMatch = parts[2].match(/[a-zA-Z]+/);
-          const uClass = typeMatch ? typeMatch[0] : '';
-          if (uClass !== selectedClass) return false;
-        } else {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    return {
-      filteredElementsForGlobal: globalList,
-      filteredElementsForZonePerf: zonePerfList
-    };
-  }, [fetchedElements, selectedZone, selectedClass]);
-
-  // 1. حساب الإحصائيات العامة والمالية بناءً على الفلترة
+  // 1. حساب الإحصائيات العامة والمالية المدمجة (منازل وشقق معاً) بناءً على الفلترة
   const stats = useMemo(() => {
     let total = 0;
     let sold = 0;
@@ -269,7 +291,12 @@ const Reports = ({ projects }: ReportsProps) => {
     let receivedUnit = 0;
     let notReceivedUnit = 0;
 
-    const processUnit = (unitKey: string) => {
+    const processUnit = (unitKey: string, sizeOfApt?: number) => {
+      // إذا كان هناك فلتر مساحة محدد، والشقة لا تطابق هذه المساحة، نتجاهلها
+      if (selectedSize !== 'all' && sizeOfApt !== undefined && sizeOfApt !== parseFloat(selectedSize)) {
+        return;
+      }
+
       const data = housesData[unitKey] || { status: 'available' };
       
       if (data.status === 'frozen_hidden') return;
@@ -319,7 +346,11 @@ const Reports = ({ projects }: ReportsProps) => {
         const aptsPerFloor = el.apartmentsPerFloor || 0;
         for (let f = 1; f <= floors; f++) {
           for (let a = 1; a <= aptsPerFloor; a++) {
-            processUnit(`${el.id}_F${f}_A${a}`);
+            const key = `${el.id}_F${f}_A${a}`;
+            const size = f === 1 
+              ? (el.groundFloorSizes?.[a - 1] || 0) 
+              : (el.typicalFloorSizes?.[a - 1] || 0);
+            processUnit(key, size);
           }
         }
       }
@@ -331,7 +362,7 @@ const Reports = ({ projects }: ReportsProps) => {
       promotedTabo, receivedTabo, notPromotedTabo,
       receivedUnit, notReceivedUnit
     };
-  }, [filteredElementsForGlobal, housesData]);
+  }, [filteredElementsForGlobal, housesData, selectedSize]);
 
   // 2. بيانات مخطط توزيع الحالات (Pie Chart)
   const statusDistributionData = useMemo(() => {
@@ -344,41 +375,84 @@ const Reports = ({ projects }: ReportsProps) => {
     ].filter(item => item.value > 0);
   }, [stats]);
 
-  // 3. بيانات أداء الزونات والبلوكات مرتبة أبجدياً ورقمياً (Bar Chart) - تستثني فلتر الزون
-  const zonePerformanceData = useMemo(() => {
-    const zones: Record<string, { total: number, sold: number, investment: number }> = {};
+  // 3. بيانات أداء المبيعات (Bar Chart) - ذكي وتفاعلي حسب المشروع المختار
+  const salesPerformanceData = useMemo(() => {
+    if (selectedProjectId === 'all') {
+      // السيناريو الأول: كافة المشاريع المدمجة -> العرض يكون حسب المشاريع
+      const projectStats: Record<string, { name: string, total: number, sold: number, investment: number }> = {};
 
-    filteredElementsForZonePerf.forEach(el => {
-      if (el.type === 'house') {
-        const parts = el.label.split('-');
-        const zone = parts[0] || "عام";
-        const data = housesData[el.id] || { status: 'available' };
+      fetchedElements.forEach(el => {
+        const projId = el._projectId || 'unknown';
+        const projName = el._projectName || 'مشروع غير معروف';
 
-        if (data.status === 'frozen_hidden') return;
-
-        if (!zones[zone]) {
-          zones[zone] = { total: 0, sold: 0, investment: 0 };
+        if (!projectStats[projId]) {
+          projectStats[projId] = { name: projName, total: 0, sold: 0, investment: 0 };
         }
 
-        zones[zone].total++;
-        if (data.status === 'sold') zones[zone].sold++;
-        if (data.status === 'investment') zones[zone].investment++;
-      }
-    });
+        const processUnit = (unitKey: string) => {
+          const data = housesData[unitKey] || { status: 'available' };
+          if (data.status === 'frozen_hidden') return;
 
-    // ترتيب الزونات ترتيباً طبيعياً (أبجدياً ورقمياً)
-    const sortedZones = Object.entries(zones).sort((a, b) => {
-      return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
-    });
+          projectStats[projId].total++;
+          if (data.status === 'sold') projectStats[projId].sold++;
+          if (data.status === 'investment') projectStats[projId].investment++;
+        };
 
-    return sortedZones.map(([name, z]) => ({
-      name: `زون ${name}`,
-      'إجمالي الوحدات': z.total,
-      'المباعة': z.sold,
-      'الاستثمار': z.investment,
-      'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
-    })).slice(0, 15); // عرض أول 15 زون مرتبة
-  }, [filteredElementsForZonePerf, housesData]);
+        if (el.type === 'house') {
+          processUnit(el.id);
+        } else if (el.type === 'tower') {
+          const floors = el.floors || 0;
+          const aptsPerFloor = el.apartmentsPerFloor || 0;
+          for (let f = 1; f <= floors; f++) {
+            for (let a = 1; a <= aptsPerFloor; a++) {
+              processUnit(`${el.id}_F${f}_A${a}`);
+            }
+          }
+        }
+      });
+
+      return Object.values(projectStats).map(p => ({
+        name: p.name,
+        'إجمالي الوحدات': p.total,
+        'المباعة': p.sold,
+        'الاستثمار': p.investment,
+        'نسبة المبيعات %': p.total > 0 ? Math.round(((p.sold + p.investment) / p.total) * 100) : 0
+      }));
+    } else {
+      // السيناريو الثاني: مشروع محدد -> العرض يكون حسب الزونات داخل هذا المشروع
+      const zones: Record<string, { total: number, sold: number, investment: number }> = {};
+
+      fetchedElements.forEach(el => {
+        if (el.type === 'house') {
+          const parts = el.label.split('-');
+          const zone = parts[0] || "عام";
+          const data = housesData[el.id] || { status: 'available' };
+
+          if (data.status === 'frozen_hidden') return;
+
+          if (!zones[zone]) {
+            zones[zone] = { total: 0, sold: 0, investment: 0 };
+          }
+
+          zones[zone].total++;
+          if (data.status === 'sold') zones[zone].sold++;
+          if (data.status === 'investment') zones[zone].investment++;
+        }
+      });
+
+      const sortedZones = Object.entries(zones).sort((a, b) => {
+        return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      return sortedZones.map(([name, z]) => ({
+        name: `زون ${name}`,
+        'إجمالي الوحدات': z.total,
+        'المباعة': z.sold,
+        'الاستثمار': z.investment,
+        'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
+      }));
+    }
+  }, [selectedProjectId, fetchedElements, housesData]);
 
   // 4. بيانات منحنى المبيعات الزمني مرتبة كرونولوجياً من الأقدم للأحدث (Line Chart)
   const salesTrendData = useMemo(() => {
@@ -441,45 +515,98 @@ const Reports = ({ projects }: ReportsProps) => {
     });
   }, [filteredElementsForGlobal, housesData]);
 
-  // 5. تقرير متوسط أسعار الأصناف الجديد (Average Unit Price Analysis)
-  const averagePriceData = useMemo(() => {
+  // 5. تقرير متوسط أسعار الأصناف للمنازل (الأسلوب المنفصل)
+  const averagePriceDataHouses = useMemo(() => {
     const classPrices: Record<string, { sumIQD: number, countIQD: number, sumUSD: number, countUSD: number }> = {};
 
-    filteredElementsForGlobal.forEach(el => {
-      if (el.type === 'house') {
-        const parts = el.label.split('-');
-        let uClass = "غير محدد";
-        if (parts.length >= 3) {
-          const typeMatch = parts[2].match(/[a-zA-Z]+/);
-          uClass = typeMatch ? typeMatch[0] : 'غير محدد';
-        }
+    fetchedElements.filter(el => el.type === 'house').forEach(el => {
+      const parts = el.label.split('-');
+      let uClass = "غير محدد";
+      if (parts.length >= 3) {
+        const typeMatch = parts[2].match(/[a-zA-Z]+/);
+        uClass = typeMatch ? typeMatch[0] : 'غير محدد';
+      }
 
-        const data = housesData[el.id];
-        if (data && (data.status === 'sold' || data.status === 'investment')) {
-          const priceValue = parsePrice(data.price);
-          if (priceValue > 0) {
-            const cType = getCurrencyType(data.currency);
-            if (!classPrices[uClass]) {
-              classPrices[uClass] = { sumIQD: 0, countIQD: 0, sumUSD: 0, countUSD: 0 };
-            }
-            if (cType === 'IQD') {
-              classPrices[uClass].sumIQD += priceValue;
-              classPrices[uClass].countIQD++;
-            } else {
-              classPrices[uClass].sumUSD += priceValue;
-              classPrices[uClass].countUSD++;
+      // آلية العرض الذكية لكافة المشاريع المدمجة: إلحاق اسم المشروع بالصنف
+      const displayName = selectedProjectId === 'all' 
+        ? `${el._projectName} - صنف ${uClass}` 
+        : `صنف ${uClass}`;
+
+      const data = housesData[el.id];
+      if (data && (data.status === 'sold' || data.status === 'investment')) {
+        const priceValue = parsePrice(data.price);
+        if (priceValue > 0) {
+          const cType = getCurrencyType(data.currency);
+          if (!classPrices[displayName]) {
+            classPrices[displayName] = { sumIQD: 0, countIQD: 0, sumUSD: 0, countUSD: 0 };
+          }
+          if (cType === 'IQD') {
+            classPrices[displayName].sumIQD += priceValue;
+            classPrices[displayName].countIQD++;
+          } else {
+            classPrices[displayName].sumUSD += priceValue;
+            classPrices[displayName].countUSD++;
+          }
+        }
+      }
+    });
+
+    return Object.entries(classPrices).map(([name, data]) => ({
+      name: name,
+      'متوسط السعر (د.ع)': data.countIQD > 0 ? Math.round(data.sumIQD / data.countIQD) : 0,
+      'متوسط السعر ($)': data.countUSD > 0 ? Math.round(data.sumUSD / data.countUSD) : 0,
+    })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
+  }, [fetchedElements, housesData, selectedProjectId]);
+
+  // 6. تقرير متوسط أسعار الشقق حسب المساحة (الأسلوب المنفصل الجديد)
+  const averagePriceDataApartments = useMemo(() => {
+    const sizePrices: Record<string, { sumIQD: number, countIQD: number, sumUSD: number, countUSD: number }> = {};
+
+    fetchedElements.filter(el => el.type === 'tower').forEach(el => {
+      const floors = el.floors || 1;
+      const aptsPerFloor = el.apartmentsPerFloor || 1;
+
+      for (let f = 1; f <= floors; f++) {
+        for (let a = 1; a <= aptsPerFloor; a++) {
+          const key = `${el.id}_F${f}_A${a}`;
+          const data = housesData[key];
+          if (data && (data.status === 'sold' || data.status === 'investment')) {
+            const size = f === 1 
+              ? (el.groundFloorSizes?.[a - 1] || 0) 
+              : (el.typicalFloorSizes?.[a - 1] || 0);
+            
+            if (size > 0) {
+              // آلية العرض الذكية لكافة المشاريع المدمجة: إلحاق اسم المشروع بالمساحة
+              const displayName = selectedProjectId === 'all'
+                ? `${el._projectName} - مساحة ${size} م²`
+                : `مساحة ${size} م²`;
+
+              const priceValue = parsePrice(data.price);
+              if (priceValue > 0) {
+                const cType = getCurrencyType(data.currency);
+                if (!sizePrices[displayName]) {
+                  sizePrices[displayName] = { sumIQD: 0, countIQD: 0, sumUSD: 0, countUSD: 0 };
+                }
+                if (cType === 'IQD') {
+                  sizePrices[displayName].sumIQD += priceValue;
+                  sizePrices[displayName].countIQD++;
+                } else {
+                  sizePrices[displayName].sumUSD += priceValue;
+                  sizePrices[displayName].countUSD++;
+                }
+              }
             }
           }
         }
       }
     });
 
-    return Object.entries(classPrices).map(([className, data]) => ({
-      name: `صنف ${className}`,
+    return Object.entries(sizePrices).map(([name, data]) => ({
+      name: name,
       'متوسط السعر (د.ع)': data.countIQD > 0 ? Math.round(data.sumIQD / data.countIQD) : 0,
       'متوسط السعر ($)': data.countUSD > 0 ? Math.round(data.sumUSD / data.countUSD) : 0,
     })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
-  }, [filteredElementsForGlobal, housesData]);
+  }, [fetchedElements, housesData, selectedProjectId]);
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('en-US').format(Math.round(num));
@@ -566,7 +693,7 @@ const Reports = ({ projects }: ReportsProps) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-slate-400">الزون:</span>
+            <span className="text-xs font-bold text-slate-400">الزون (للمنازل):</span>
             <Select value={selectedZone} onValueChange={setSelectedZone}>
               <SelectTrigger className="w-[140px] rounded-xl h-10 font-bold border-slate-200 text-xs">
                 <SelectValue placeholder="كل الزونات" />
@@ -581,7 +708,7 @@ const Reports = ({ projects }: ReportsProps) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-slate-400">صنف الوحدة:</span>
+            <span className="text-xs font-bold text-slate-400">صنف المنزل:</span>
             <Select value={selectedClass} onValueChange={setSelectedClass}>
               <SelectTrigger className="w-[140px] rounded-xl h-10 font-bold border-slate-200 text-xs">
                 <SelectValue placeholder="كل الأصناف" />
@@ -595,10 +722,25 @@ const Reports = ({ projects }: ReportsProps) => {
             </Select>
           </div>
 
-          {(selectedZone !== 'all' || selectedClass !== 'all') && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-slate-400">مساحة الشقة:</span>
+            <Select value={selectedSize} onValueChange={setSelectedSize}>
+              <SelectTrigger className="w-[140px] rounded-xl h-10 font-bold border-slate-200 text-xs">
+                <SelectValue placeholder="كل المساحات" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="all" className="font-bold text-xs">كل المساحات</SelectItem>
+                {availableSizes.map(s => (
+                  <SelectItem key={s} value={s.toString()} className="font-bold text-xs">{s} م²</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(selectedZone !== 'all' || selectedClass !== 'all' || selectedSize !== 'all') && (
             <Button 
               variant="ghost" 
-              onClick={() => { setSelectedZone('all'); setSelectedClass('all'); }}
+              onClick={() => { setSelectedZone('all'); setSelectedClass('all'); setSelectedSize('all'); }}
               className="text-xs font-black text-rose-500 hover:bg-rose-50 rounded-xl h-10 px-4"
             >
               إعادة تعيين الفلاتر
@@ -613,7 +755,7 @@ const Reports = ({ projects }: ReportsProps) => {
           </div>
         ) : (
           <>
-            {/* كروت الإحصائيات السريعة */}
+            {/* كروت الإحصائيات السريعة المدمجة */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card className="rounded-[2rem] border-slate-100 shadow-sm overflow-hidden bg-white">
                 <CardContent className="p-6 flex items-center justify-between">
@@ -715,19 +857,23 @@ const Reports = ({ projects }: ReportsProps) => {
                 </CardContent>
               </Card>
 
-              {/* مخطط أداء الزونات */}
+              {/* مخطط أداء المبيعات (تفاعلي: حسب المشاريع أو حسب الزونات) */}
               <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
                 <CardHeader>
                   <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
                     <Building2 className="text-indigo-600 w-5 h-5" />
-                    أداء المبيعات حسب الزونات
+                    {selectedProjectId === 'all' ? 'أداء المبيعات حسب المشاريع' : 'أداء المبيعات حسب الزونات'}
                   </CardTitle>
-                  <CardDescription className="text-xs font-bold">مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون مرتبة أبجدياً</CardDescription>
+                  <CardDescription className="text-xs font-bold">
+                    {selectedProjectId === 'all' 
+                      ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل مشروع سكني مدمج' 
+                      : 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون داخل المشروع'}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="h-80">
-                  {zonePerformanceData.length > 0 ? (
+                  {salesPerformanceData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={zonePerformanceData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                      <BarChart data={salesPerformanceData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
                         <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
@@ -740,7 +886,7 @@ const Reports = ({ projects }: ReportsProps) => {
                     </ResponsiveContainer>
                   ) : (
                     <div className="h-full flex items-center justify-center text-slate-400 font-bold">
-                      لا توجد بيانات زونات كافية للعرض
+                      لا توجد بيانات كافية للعرض
                     </div>
                   )}
                 </CardContent>
@@ -846,42 +992,100 @@ const Reports = ({ projects }: ReportsProps) => {
               </Card>
             </div>
 
-            {/* تقرير متوسط أسعار الأصناف الجديد */}
+            {/* تقرير متوسط أسعار الأصناف والمساحات (الأسلوب المنفصل مع التبويبات والمجموع الكلي) */}
             <div className="grid grid-cols-1 gap-8">
               <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white">
-                <CardHeader>
-                  <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <Tags className="text-indigo-600 w-5 h-5" />
-                    تحليل متوسط أسعار الوحدات حسب الأصناف
-                  </CardTitle>
-                  <CardDescription className="text-xs font-bold">
-                    مقارنة متوسط القيمة المالية الفعلية للوحدات المباعة والمستثمرة لكل صنف (D, C, B, A...) بالدينار والدولار
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="h-96">
-                  {averagePriceData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={averagePriceData} margin={{ top: 20, right: 20, left: 20, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold' }} />
-                        <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11, fontWeight: 'bold' }} />
-                        <Tooltip 
-                          formatter={(value, name) => {
-                            if (name.toString().includes('د.ع')) return [`${formatNumber(Number(value))} د.ع`, 'متوسط السعر'];
-                            if (name.toString().includes('$')) return [`$${formatNumber(Number(value))}`, 'متوسط السعر'];
-                            return [value, name];
-                          }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: 12, fontWeight: 'bold' }} />
-                        <Bar dataKey="متوسط السعر (د.ع)" fill="#10b981" radius={[6, 6, 0, 0]} />
-                        <Bar dataKey="متوسط السعر ($)" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-slate-400 font-bold">
-                      لا توجد مبيعات مسجلة بأسعار صالحة للأصناف المحددة حالياً
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-50 pb-6">
+                  <div>
+                    <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      <Tags className="text-indigo-600 w-5 h-5" />
+                      تحليل متوسط أسعار الوحدات السكنية
+                    </CardTitle>
+                    <CardDescription className="text-xs font-bold mt-1">
+                      مقارنة متوسط القيمة المالية الفعلية للوحدات المباعة والمستثمرة بالدينار والدولار
+                    </CardDescription>
+                  </div>
+                  
+                  {/* المجموع الكلي المدمج (منازل وشقق) */}
+                  <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl text-right shrink-0">
+                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-wider">المجموع الكلي للمبيعات (منازل وشقق)</p>
+                    <div className="flex items-center gap-4 mt-1">
+                      <div>
+                        <span className="text-xs font-bold text-slate-500">بالدينار: </span>
+                        <span className="text-sm font-black text-emerald-600">{formatNumber(stats.revenueIQD)} د.ع</span>
+                      </div>
+                      <div className="w-px h-4 bg-indigo-200" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-500">بالدولار: </span>
+                        <span className="text-sm font-black text-blue-600">${formatNumber(stats.revenueUSD)}</span>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="p-6">
+                  <Tabs defaultValue="houses_prices" className="w-full">
+                    <TabsList className="grid w-full sm:w-[400px] grid-cols-2 mb-6 bg-slate-100 p-1 rounded-xl h-11">
+                      <TabsTrigger value="houses_prices" className="rounded-lg font-bold text-xs">
+                        🏡 أصناف المنازل
+                      </TabsTrigger>
+                      <TabsTrigger value="apartments_prices" className="rounded-lg font-bold text-xs">
+                        🏢 مساحات الشقق
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="houses_prices" className="h-96">
+                      {averagePriceDataHouses.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={averagePriceDataHouses} margin={{ top: 20, right: 20, left: 20, bottom: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <Tooltip 
+                              formatter={(value, name) => {
+                                if (name.toString().includes('د.ع')) return [`${formatNumber(Number(value))} د.ع`, 'متوسط السعر'];
+                                if (name.toString().includes('$')) return [`$${formatNumber(Number(value))}`, 'متوسط السعر'];
+                                return [value, name];
+                              }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                            <Bar dataKey="متوسط السعر (د.ع)" fill="#10b981" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="متوسط السعر ($)" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-slate-400 font-bold">
+                          لا توجد مبيعات منازل مسجلة بأسعار صالحة حالياً
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="apartments_prices" className="h-96">
+                      {averagePriceDataApartments.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={averagePriceDataApartments} margin={{ top: 20, right: 20, left: 20, bottom: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <Tooltip 
+                              formatter={(value, name) => {
+                                if (name.toString().includes('د.ع')) return [`${formatNumber(Number(value))} د.ع`, 'متوسط السعر'];
+                                if (name.toString().includes('$')) return [`$${formatNumber(Number(value))}`, 'متوسط السعر'];
+                                return [value, name];
+                              }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
+                            <Bar dataKey="متوسط السعر (د.ع)" fill="#10b981" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="متوسط السعر ($)" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-slate-400 font-bold">
+                          لا توجد مبيعات شقق مسجلة بأسعار صالحة حالياً
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </CardContent>
               </Card>
             </div>
