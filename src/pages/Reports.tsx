@@ -10,13 +10,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowRight, BarChart3, TrendingUp, DollarSign, Coins, FileText, 
   Home, Building2, CheckCircle2, Clock, ShieldCheck, PieChart as PieIcon,
-  Percent, Loader2, Filter, Tags, AlertTriangle, Ruler
+  Percent, Loader2, Filter, Tags, AlertTriangle, Ruler, RefreshCcw
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
   CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
+import { showError, showSuccess } from '@/utils/toast';
 
 interface ReportsProps {
   projects: Project[];
@@ -30,6 +31,7 @@ const Reports = ({ projects }: ReportsProps) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [hasAccess, setHasAccess] = useState<boolean>(true);
   const [checkingAccess, setCheckingAccess] = useState<boolean>(true);
+  const [retryTrigger, setRetryTrigger] = useState<number>(0);
 
   // حالات الفلترة المخصصة
   const [selectedZone, setSelectedZone] = useState<string>('all');
@@ -159,15 +161,17 @@ const Reports = ({ projects }: ReportsProps) => {
           formatted[u.unit_key] = u.data;
         });
         setHousesData(formatted);
+        showSuccess("تم تحديث بيانات التقارير بنجاح");
       } catch (err) {
         console.error("Error fetching reports data:", err);
+        showError("فشل الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت وإعادة المحاولة.");
       } finally {
         setLoading(false);
       }
     };
 
     fetchReportsData();
-  }, [selectedProjectId, hasAccess]);
+  }, [selectedProjectId, hasAccess, retryTrigger]);
 
   // استخراج الزونات والأصناف والمساحات المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
   const { availableZones, availableClasses, availableSizes } = useMemo(() => {
@@ -419,7 +423,7 @@ const Reports = ({ projects }: ReportsProps) => {
         'نسبة المبيعات %': p.total > 0 ? Math.round(((p.sold + p.investment) / p.total) * 100) : 0
       }));
     } else {
-      // السيناريو الثاني: مشروع محدد -> العرض يكون حسب الزونات داخل هذا المشروع
+      // السيناريو الثاني: مشروع محدد -> العرض يكون حسب الزونات داخل هذا المشروع + العمارات
       const zones: Record<string, { total: number, sold: number, investment: number }> = {};
 
       fetchedElements.forEach(el => {
@@ -437,15 +441,36 @@ const Reports = ({ projects }: ReportsProps) => {
           zones[zone].total++;
           if (data.status === 'sold') zones[zone].sold++;
           if (data.status === 'investment') zones[zone].investment++;
+        } else if (el.type === 'tower') {
+          const zone = "العمارات";
+          if (!zones[zone]) {
+            zones[zone] = { total: 0, sold: 0, investment: 0 };
+          }
+
+          const floors = el.floors || 0;
+          const aptsPerFloor = el.apartmentsPerFloor || 0;
+          for (let f = 1; f <= floors; f++) {
+            for (let a = 1; a <= aptsPerFloor; a++) {
+              const key = `${el.id}_F${f}_A${a}`;
+              const data = housesData[key] || { status: 'available' };
+              if (data.status === 'frozen_hidden') continue;
+
+              zones[zone].total++;
+              if (data.status === 'sold') zones[zone].sold++;
+              if (data.status === 'investment') zones[zone].investment++;
+            }
+          }
         }
       });
 
       const sortedZones = Object.entries(zones).sort((a, b) => {
+        if (a[0] === "العمارات") return 1; // وضع العمارات دائماً في النهاية
+        if (b[0] === "العمارات") return -1;
         return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
       });
 
       return sortedZones.map(([name, z]) => ({
-        name: `زون ${name}`,
+        name: name === "العمارات" ? name : `زون ${name}`,
         'إجمالي الوحدات': z.total,
         'المباعة': z.sold,
         'الاستثمار': z.investment,
@@ -753,6 +778,14 @@ const Reports = ({ projects }: ReportsProps) => {
             <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
             <h2 className="text-xl font-bold text-slate-600">جاري تحميل وتحليل البيانات المالية...</h2>
           </div>
+        ) : fetchedElements.length === 0 ? (
+          <div className="bg-white p-20 rounded-[2.5rem] shadow-xl border border-slate-100 text-center flex flex-col items-center justify-center gap-4">
+            <AlertTriangle className="w-12 h-12 text-amber-500" />
+            <h2 className="text-xl font-bold text-slate-600">لم يتم تحميل أي بيانات أو حدث خطأ في الاتصال</h2>
+            <Button onClick={() => setRetryTrigger(prev => prev + 1)} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl gap-2 h-12 px-6 font-bold">
+              <RefreshCcw size={16} /> إعادة محاولة الاتصال
+            </Button>
+          </div>
         ) : (
           <>
             {/* كروت الإحصائيات السريعة المدمجة */}
@@ -862,12 +895,12 @@ const Reports = ({ projects }: ReportsProps) => {
                 <CardHeader>
                   <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
                     <Building2 className="text-indigo-600 w-5 h-5" />
-                    {selectedProjectId === 'all' ? 'أداء المبيعات حسب المشاريع' : 'أداء المبيعات حسب الزونات'}
+                    {selectedProjectId === 'all' ? 'أداء المبيعات حسب المشاريع' : 'أداء المبيعات حسب الزونات والعمارات'}
                   </CardTitle>
                   <CardDescription className="text-xs font-bold">
                     {selectedProjectId === 'all' 
                       ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل مشروع سكني مدمج' 
-                      : 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون داخل المشروع'}
+                      : 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون بالإضافة لشقق العمارات'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="h-80">
