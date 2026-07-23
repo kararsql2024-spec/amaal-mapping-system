@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from '@/utils/toast';
+import { cn } from '@/lib/utils';
 
 interface ReportsProps {
   projects: Project[];
@@ -37,6 +38,9 @@ const Reports = ({ projects }: ReportsProps) => {
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedSize, setSelectedSize] = useState<string>('all');
+
+  // حالة التبديل بين المنازل والعمارات في مخطط أداء المبيعات
+  const [salesViewMode, setSalesViewMode] = useState<'houses' | 'towers'>('houses');
 
   // التحقق من صلاحية الوصول للقسم الحالي
   useEffect(() => {
@@ -219,6 +223,7 @@ const Reports = ({ projects }: ReportsProps) => {
     setSelectedZone('all');
     setSelectedClass('all');
     setSelectedSize('all');
+    setSalesViewMode('houses');
   }, [selectedProjectId]);
 
   // دالة مساعدة لتحليل الأسعار
@@ -423,61 +428,78 @@ const Reports = ({ projects }: ReportsProps) => {
         'نسبة المبيعات %': p.total > 0 ? Math.round(((p.sold + p.investment) / p.total) * 100) : 0
       }));
     } else {
-      // السيناريو الثاني: مشروع محدد -> العرض يكون حسب الزونات داخل هذا المشروع + العمارات
-      const zones: Record<string, { total: number, sold: number, investment: number }> = {};
+      // السيناريو الثاني: مشروع محدد -> العرض يكون حسب اختيار المستخدم (منازل أو عمارات)
+      if (salesViewMode === 'houses') {
+        // عرض المنازل حسب الزونات
+        const zones: Record<string, { total: number, sold: number, investment: number }> = {};
 
-      fetchedElements.forEach(el => {
-        if (el.type === 'house') {
-          const parts = el.label.split('-');
-          const zone = parts[0] || "عام";
-          const data = housesData[el.id] || { status: 'available' };
+        fetchedElements.forEach(el => {
+          if (el.type === 'house') {
+            const parts = el.label.split('-');
+            const zone = parts[0] || "عام";
+            const data = housesData[el.id] || { status: 'available' };
 
-          if (data.status === 'frozen_hidden') return;
+            if (data.status === 'frozen_hidden') return;
 
-          if (!zones[zone]) {
-            zones[zone] = { total: 0, sold: 0, investment: 0 };
-          }
-
-          zones[zone].total++;
-          if (data.status === 'sold') zones[zone].sold++;
-          if (data.status === 'investment') zones[zone].investment++;
-        } else if (el.type === 'tower') {
-          const zone = "العمارات";
-          if (!zones[zone]) {
-            zones[zone] = { total: 0, sold: 0, investment: 0 };
-          }
-
-          const floors = el.floors || 0;
-          const aptsPerFloor = el.apartmentsPerFloor || 0;
-          for (let f = 1; f <= floors; f++) {
-            for (let a = 1; a <= aptsPerFloor; a++) {
-              const key = `${el.id}_F${f}_A${a}`;
-              const data = housesData[key] || { status: 'available' };
-              if (data.status === 'frozen_hidden') continue;
-
-              zones[zone].total++;
-              if (data.status === 'sold') zones[zone].sold++;
-              if (data.status === 'investment') zones[zone].investment++;
+            if (!zones[zone]) {
+              zones[zone] = { total: 0, sold: 0, investment: 0 };
             }
+
+            zones[zone].total++;
+            if (data.status === 'sold') zones[zone].sold++;
+            if (data.status === 'investment') zones[zone].investment++;
           }
-        }
-      });
+        });
 
-      const sortedZones = Object.entries(zones).sort((a, b) => {
-        if (a[0] === "العمارات") return 1; // وضع العمارات دائماً في النهاية
-        if (b[0] === "العمارات") return -1;
-        return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
-      });
+        const sortedZones = Object.entries(zones).sort((a, b) => {
+          return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
+        });
 
-      return sortedZones.map(([name, z]) => ({
-        name: name === "العمارات" ? name : `زون ${name}`,
-        'إجمالي الوحدات': z.total,
-        'المباعة': z.sold,
-        'الاستثمار': z.investment,
-        'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
-      }));
+        return sortedZones.map(([name, z]) => ({
+          name: `زون ${name}`,
+          'إجمالي الوحدات': z.total,
+          'المباعة': z.sold,
+          'الاستثمار': z.investment,
+          'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
+        }));
+      } else {
+        // عرض العمارات (كل عمارة على حدة)
+        const towersDataList: any[] = [];
+
+        fetchedElements.forEach(el => {
+          if (el.type === 'tower') {
+            let total = 0;
+            let sold = 0;
+            let investment = 0;
+
+            const floors = el.floors || 0;
+            const aptsPerFloor = el.apartmentsPerFloor || 0;
+            for (let f = 1; f <= floors; f++) {
+              for (let a = 1; a <= aptsPerFloor; a++) {
+                const key = `${el.id}_F${f}_A${a}`;
+                const data = housesData[key] || { status: 'available' };
+                if (data.status === 'frozen_hidden') continue;
+
+                total++;
+                if (data.status === 'sold') sold++;
+                if (data.status === 'investment') investment++;
+              }
+            }
+
+            towersDataList.push({
+              name: el.label,
+              'إجمالي الوحدات': total,
+              'المباعة': sold,
+              'الاستثمار': investment,
+              'نسبة المبيعات %': total > 0 ? Math.round(((sold + investment) / total) * 100) : 0
+            });
+          }
+        });
+
+        return towersDataList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      }
     }
-  }, [selectedProjectId, fetchedElements, housesData]);
+  }, [selectedProjectId, fetchedElements, housesData, salesViewMode]);
 
   // 4. بيانات منحنى المبيعات الزمني مرتبة كرونولوجياً من الأقدم للأحدث (Line Chart)
   const salesTrendData = useMemo(() => {
@@ -892,16 +914,46 @@ const Reports = ({ projects }: ReportsProps) => {
 
               {/* مخطط أداء المبيعات (تفاعلي: حسب المشاريع أو حسب الزونات) */}
               <Card className="rounded-[2rem] border-slate-100 shadow-sm bg-white lg:col-span-2">
-                <CardHeader>
-                  <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <Building2 className="text-indigo-600 w-5 h-5" />
-                    {selectedProjectId === 'all' ? 'أداء المبيعات حسب المشاريع' : 'أداء المبيعات حسب الزونات والعمارات'}
-                  </CardTitle>
-                  <CardDescription className="text-xs font-bold">
-                    {selectedProjectId === 'all' 
-                      ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل مشروع سكني مدمج' 
-                      : 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون بالإضافة لشقق العمارات'}
-                  </CardDescription>
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      <Building2 className="text-indigo-600 w-5 h-5" />
+                      {selectedProjectId === 'all' ? 'أداء المبيعات حسب المشاريع' : (salesViewMode === 'houses' ? 'أداء مبيعات المنازل حسب الزونات' : 'أداء مبيعات العمارات')}
+                    </CardTitle>
+                    <CardDescription className="text-xs font-bold">
+                      {selectedProjectId === 'all' 
+                        ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل مشروع سكني مدمج' 
+                        : (salesViewMode === 'houses' ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون داخل المشروع' : 'مقارنة الوحدات المباعة والاستثمارية لكل عمارة على حدة')}
+                    </CardDescription>
+                  </div>
+
+                  {/* أزرار التبديل بين المنازل والعمارات عند اختيار مشروع محدد */}
+                  {selectedProjectId !== 'all' && (
+                    <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
+                      <Button 
+                        variant={salesViewMode === 'houses' ? 'default' : 'ghost'} 
+                        size="sm" 
+                        onClick={() => setSalesViewMode('houses')}
+                        className={cn(
+                          "rounded-lg font-bold text-xs h-8 px-3 transition-all", 
+                          salesViewMode === 'houses' ? "bg-white text-slate-800 shadow-sm hover:bg-white" : "text-slate-500 hover:text-slate-800"
+                        )}
+                      >
+                        🏡 المنازل (الزونات)
+                      </Button>
+                      <Button 
+                        variant={salesViewMode === 'towers' ? 'default' : 'ghost'} 
+                        size="sm" 
+                        onClick={() => setSalesViewMode('towers')}
+                        className={cn(
+                          "rounded-lg font-bold text-xs h-8 px-3 transition-all", 
+                          salesViewMode === 'towers' ? "bg-white text-slate-800 shadow-sm hover:bg-white" : "text-slate-500 hover:text-slate-800"
+                        )}
+                      >
+                        🏢 العمارات (كل عمارة)
+                      </Button>
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="h-80">
                   {salesPerformanceData.length > 0 ? (
