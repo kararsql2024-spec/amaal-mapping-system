@@ -31,6 +31,7 @@ interface DetailedStatsTableProps {
 
 const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStatsTableProps) => {
   const [selectedType, setSelectedType] = useState<string>("all");
+  const [selectedSize, setSelectedSize] = useState<string>("all");
 
   // الصلاحيات الافتراضية
   const perms = permissions || {
@@ -80,6 +81,27 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
     return Array.from(types).sort();
   }, [elements]);
 
+  const availableSizes = useMemo(() => {
+    const sizes = new Set<number>();
+    elements.filter(el => el.type === 'tower').forEach(tower => {
+      for (let f = 1; f <= (tower.floors || 1); f++) {
+        for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
+          const key = `${tower.id}_F${f}_A${a}`;
+          const data = housesData[key];
+          if (data?.status === 'frozen_hidden') continue;
+          
+          const size = f === 1 
+            ? (tower.groundFloorSizes?.[a - 1] || 0) 
+            : (tower.typicalFloorSizes?.[a - 1] || 0);
+          if (size > 0) {
+            sizes.add(size);
+          }
+        }
+      }
+    });
+    return Array.from(sizes).sort((a, b) => a - b);
+  }, [elements, housesData]);
+
   const towerStats = useMemo(() => {
     const stats: any[] = [];
     elements.filter(el => el.type === 'tower').forEach(tower => {
@@ -90,11 +112,8 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
       };
       
       for (let f = 1; f <= (tower.floors || 1); f++) {
-        const floorStats = { 
-          label: f === 1 ? "الأرضي" : `الطابق ${f - 1}`, 
-          available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0,
-          promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0
-        };
+        const floorLabel = f === 1 ? "الأرضي" : `الطابق ${f - 1}`;
+        const sizesGroup: Record<number, any> = {};
         
         for (let a = 1; a <= (tower.apartmentsPerFloor || 1); a++) {
           const key = `${tower.id}_F${f}_A${a}`;
@@ -102,51 +121,75 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
           
           if (data.status === 'frozen_hidden') continue;
 
-          if (data.status === 'sold') floorStats.sold++;
-          else if (data.status === 'investment') floorStats.investment++;
-          else if (data.status === 'pending') floorStats.pending++;
-          else if (data.status === 'reserved') floorStats.reserved++;
-          else if (data.status === 'available') floorStats.available++;
+          const size = f === 1 
+            ? (tower.groundFloorSizes?.[a - 1] || 0) 
+            : (tower.typicalFloorSizes?.[a - 1] || 0);
+
+          // فلترة حسب المساحة المحددة
+          if (selectedSize !== "all" && size !== parseFloat(selectedSize)) continue;
+
+          if (!sizesGroup[size]) {
+            sizesGroup[size] = {
+              available: 0, sold: 0, investment: 0, pending: 0, reserved: 0, total: 0, priceIQD: 0, priceUSD: 0,
+              promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0
+            };
+          }
+
+          const s = sizesGroup[size];
+
+          if (data.status === 'sold') s.sold++;
+          else if (data.status === 'investment') s.investment++;
+          else if (data.status === 'pending') s.pending++;
+          else if (data.status === 'reserved') s.reserved++;
+          else if (data.status === 'available') s.available++;
           
-          if (data.status !== 'frozen_uncounted') floorStats.total++;
+          if (data.status !== 'frozen_uncounted') s.total++;
 
           // منطق الطابو
           const tabo = data.taboStatus?.trim();
-          if (tabo === 'مروج') floorStats.promoted++;
-          else if (tabo === 'مستلم') floorStats.receivedTabo++;
-          else floorStats.notPromoted++;
+          if (tabo === 'مروج') s.promoted++;
+          else if (tabo === 'مستلم') s.receivedTabo++;
+          else s.notPromoted++;
 
           // منطق استلام الوحدة
-          if (data.handoverDate) floorStats.receivedUnit++;
-          else floorStats.notReceivedUnit++;
+          if (data.handoverDate) s.receivedUnit++;
+          else s.notReceivedUnit++;
 
           const priceValue = parsePrice(data.price);
           if (priceValue > 0) {
             const cType = getCurrencyType(data.currency);
-            if (cType === 'IQD') floorStats.priceIQD += priceValue;
-            else if (cType === 'USD') floorStats.priceUSD += priceValue;
+            if (cType === 'IQD') s.priceIQD += priceValue;
+            else if (cType === 'USD') s.priceUSD += priceValue;
           }
         }
         
-        floorsData.push(floorStats);
-        towerTotal.available += floorStats.available;
-        towerTotal.sold += floorStats.sold;
-        towerTotal.investment += floorStats.investment;
-        towerTotal.pending += floorStats.pending;
-        towerTotal.reserved += floorStats.reserved;
-        towerTotal.total += floorStats.total;
-        towerTotal.priceIQD += floorStats.priceIQD;
-        towerTotal.priceUSD += floorStats.priceUSD;
-        towerTotal.promoted += floorStats.promoted;
-        towerTotal.notPromoted += floorStats.notPromoted;
-        towerTotal.receivedTabo += floorStats.receivedTabo;
-        towerTotal.receivedUnit += floorStats.receivedUnit;
-        towerTotal.notReceivedUnit += floorStats.notReceivedUnit;
+        if (Object.keys(sizesGroup).length > 0) {
+          floorsData.push({
+            label: floorLabel,
+            sizes: sizesGroup
+          });
+
+          Object.values(sizesGroup).forEach((s: any) => {
+            towerTotal.available += s.available;
+            towerTotal.sold += s.sold;
+            towerTotal.investment += s.investment;
+            towerTotal.pending += s.pending;
+            towerTotal.reserved += s.reserved;
+            towerTotal.total += s.total;
+            towerTotal.priceIQD += s.priceIQD;
+            towerTotal.priceUSD += s.priceUSD;
+            towerTotal.promoted += s.promoted;
+            towerTotal.notPromoted += s.notPromoted;
+            towerTotal.receivedTabo += s.receivedTabo;
+            towerTotal.receivedUnit += s.receivedUnit;
+            towerTotal.notReceivedUnit += s.notReceivedUnit;
+          });
+        }
       }
       stats.push({ name: tower.label, floors: floorsData, totals: towerTotal });
     });
     return stats;
-  }, [elements, housesData]);
+  }, [elements, housesData, selectedSize]);
 
   const houseStats = useMemo(() => {
     const stats: Record<string, { blocks: Record<string, Record<string, any>>, totals: any }> = {};
@@ -360,6 +403,23 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
           </TabsContent>
 
           <TabsContent value="towers" className="space-y-12">
+            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-2 text-slate-600 font-bold">
+                <span>فلترة حسب المساحة:</span>
+              </div>
+              <Select value={selectedSize} onValueChange={setSelectedSize}>
+                <SelectTrigger className="w-[180px] rounded-xl bg-white font-bold">
+                  <SelectValue placeholder="اختر المساحة" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold">كافة المساحات</SelectItem>
+                  {availableSizes.map(size => (
+                    <SelectItem key={size} value={size.toString()} className="font-bold">{size} م²</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {towerStats.map((tower) => (
               <div key={tower.name} className="space-y-4">
                 <h3 className="text-lg font-black text-indigo-600 flex items-center gap-2 px-2">
@@ -371,6 +431,7 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
                     <TableHeader className="bg-slate-50">
                       <TableRow>
                         <TableHead className="text-right font-black whitespace-nowrap">الطابق</TableHead>
+                        <TableHead className="text-right font-black whitespace-nowrap">المساحة (م²)</TableHead>
                         {perms.showStatsAvailable && <TableHead className="text-center font-black text-emerald-600 whitespace-nowrap">المتاح</TableHead>}
                         {perms.showStatsSold && <TableHead className="text-center font-black text-rose-600 whitespace-nowrap">المباع</TableHead>}
                         {perms.showStatsInvestment && <TableHead className="text-center font-black text-purple-600 whitespace-nowrap">الاستثمار</TableHead>}
@@ -388,41 +449,48 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
                     </TableHeader>
                     <TableBody>
                       {tower.floors.map((floor: any, fIdx: number) => (
-                        <TableRow 
-                          key={floor.label} 
-                          className={cn(
-                            "hover:opacity-80 transition-all",
-                            fIdx % 2 === 0 ? "bg-orange-50/50" : "bg-sky-50/50"
-                          )}
-                        >
-                          <TableCell className="font-bold border-l">{floor.label}</TableCell>
-                          {perms.showStatsAvailable && <TableCell className="text-center font-black">{floor.available}</TableCell>}
-                          {perms.showStatsSold && <TableCell className="text-center font-black">{floor.sold}</TableCell>}
-                          {perms.showStatsInvestment && <TableCell className="text-center font-black">{floor.investment}</TableCell>}
-                          {perms.showStatsReserved && <TableCell className="text-center font-black">{floor.reserved}</TableCell>}
-                          {perms.showStatsPending && <TableCell className="text-center font-black">{floor.pending}</TableCell>}
-                          {perms.showStatsTotal && <TableCell className="text-center font-black bg-black/5">{floor.total}</TableCell>}
-                          {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-600">{floor.promoted}</TableCell>}
-                          {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-500">{floor.notPromoted}</TableCell>}
-                          {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-700">{floor.receivedTabo}</TableCell>}
-                          {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-600">{floor.receivedUnit}</TableCell>}
-                          {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-400">{floor.notReceivedUnit}</TableCell>}
-                          {perms.showStatsPriceIQD && (
-                            <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
-                              {formatNumber(floor.priceIQD)}
+                        Object.entries(floor.sizes).map(([size, s]: [string, any], sIdx: number) => (
+                          <TableRow 
+                            key={`${floor.label}-${size}`} 
+                            className={cn(
+                              "hover:opacity-80 transition-all",
+                              fIdx % 2 === 0 ? "bg-orange-50/50" : "bg-sky-50/50"
+                            )}
+                          >
+                            <TableCell className={cn("font-bold border-l", sIdx === 0 && "bg-black/5")}>
+                              {sIdx === 0 ? floor.label : ""}
                             </TableCell>
-                          )}
-                          {perms.showStatsPriceUSD && (
-                            <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
-                              {formatNumber(floor.priceUSD)}
+                            <TableCell className="font-bold text-slate-600">
+                              {parseFloat(size) > 0 ? `${size} م²` : "خدمية / غير محدد"}
                             </TableCell>
-                          )}
-                        </TableRow>
+                            {perms.showStatsAvailable && <TableCell className="text-center font-black">{s.available}</TableCell>}
+                            {perms.showStatsSold && <TableCell className="text-center font-black">{s.sold}</TableCell>}
+                            {perms.showStatsInvestment && <TableCell className="text-center font-black">{s.investment}</TableCell>}
+                            {perms.showStatsReserved && <TableCell className="text-center font-black">{s.reserved}</TableCell>}
+                            {perms.showStatsPending && <TableCell className="text-center font-black">{s.pending}</TableCell>}
+                            {perms.showStatsTotal && <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>}
+                            {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-600">{s.promoted}</TableCell>}
+                            {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-500">{s.notPromoted}</TableCell>}
+                            {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-700">{s.receivedTabo}</TableCell>}
+                            {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-600">{s.receivedUnit}</TableCell>}
+                            {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-400">{s.notReceivedUnit}</TableCell>}
+                            {perms.showStatsPriceIQD && (
+                              <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
+                                {formatNumber(s.priceIQD)}
+                              </TableCell>
+                            )}
+                            {perms.showStatsPriceUSD && (
+                              <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
+                                {formatNumber(s.priceUSD)}
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))
                       ))}
                     </TableBody>
                     <TableFooter className="bg-indigo-900 text-white">
                       <TableRow>
-                        <TableCell className="font-black text-right text-lg">المجموع الكلي للعمارة {tower.name}</TableCell>
+                        <TableCell colSpan={2} className="font-black text-right text-lg">المجموع الكلي للعمارة {tower.name}</TableCell>
                         {perms.showStatsAvailable && <TableCell className="text-center font-black text-lg">{tower.totals.available}</TableCell>}
                         {perms.showStatsSold && <TableCell className="text-center font-black text-lg">{tower.totals.sold}</TableCell>}
                         {perms.showStatsInvestment && <TableCell className="text-center font-black text-lg">{tower.totals.investment}</TableCell>}
