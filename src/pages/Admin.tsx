@@ -546,13 +546,31 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           logs.push(`جاري تحميل عناصر المخطط للمشروع "${proj.name}"...`);
           setProcessLogs([...logs]);
           try {
-            const { data: fullProj, error: fErr } = await safeDbCall(() =>
-              supabase.from('projects').select('id, name, elements').eq('id', proj.id).single()
-            );
-            if (fErr) throw fErr;
+            // استخدام الفيتش المباشر والمحسن مع مهلة زمنية طويلة لتفادي مشاكل الشبكة والبيانات الضخمة
+            const fullProj = await safeDbCall(async () => {
+              const url = `https://byvzmxrvetgcxstlsszd.supabase.co/rest/v1/projects?select=id,name,elements&id=eq.${proj.id}`;
+              const supabaseKey = (supabase as any).supabaseKey;
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 60000); // مهلة 60 ثانية كاملة
+              
+              const response = await fetch(url, {
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`
+                },
+                signal: controller.signal,
+                cache: 'no-cache'
+              });
+              clearTimeout(timeoutId);
+              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+              const resData = await response.json();
+              if (!resData || resData.length === 0) throw new Error("Project not found");
+              return resData[0];
+            });
+            
             if (fullProj) projectsList.push(fullProj);
           } catch (fetchErr: any) {
-            logs.push(`⚠️ تنبيه: تعذر تحميل المخطط لـ "${proj.name}"، سيتم المتابعة باستخدام أسماء الوحدات مباشرة.`);
+            logs.push(`⚠️ تنبيه: تعذر تحميل المخطط لـ "${proj.name}" بسبب حجم البيانات أو ضعف الشبكة، سيتم المتابعة باستخدام أسماء الوحدات مباشرة.`);
             setProcessLogs([...logs]);
             projectsList.push({ id: proj.id, name: proj.name, elements: [] });
           }
