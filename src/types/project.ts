@@ -20,6 +20,7 @@ export interface MapElement {
   apartmentsPerFloor?: number;
   groundFloorSizes?: number[]; // مساحات شقق الطابق الأرضي
   typicalFloorSizes?: number[]; // مساحات شقق الطابق المتكرر
+  customArea?: number; // المساحة المخصصة للمنزل يدوياً (تتجاوز المساحة القياسية للصنف)
   x: number; 
   y: number;
   width: number;
@@ -49,4 +50,5 @@ export interface Project {
   mapWidth: number;
   mapHeight: number;
   createdAt: string;
+  houseTypeAreas?: Record<string, number>; // مساحات الأصناف القياسية للمنازل (مثال: TYPE D = 240)
 }

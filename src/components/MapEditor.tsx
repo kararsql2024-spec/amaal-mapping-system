@@ -11,7 +11,7 @@ import {
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
-  Frame, Ruler
+  Frame, Ruler, Plus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -23,7 +23,7 @@ import { showSuccess, showError } from '@/utils/toast';
 
 interface MapEditorProps {
   initialElements: MapElement[];
-  onSave: (elements: MapElement[], width: number, height: number, backgroundColor?: string, showGrid?: boolean) => void;
+  onSave: (elements: MapElement[], width: number, height: number, backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number>) => void;
   mapWidth: number;
   mapHeight: number;
   isSaving?: boolean;
@@ -31,6 +31,7 @@ interface MapEditorProps {
   onCancel?: () => void;
   initialBackgroundColor?: string;
   initialShowGrid?: boolean;
+  initialHouseTypeAreas?: Record<string, number>;
 }
 
 const GRID_SIZE = 10;
@@ -86,7 +87,8 @@ const MapEditor = ({
   projects = [], 
   onCancel,
   initialBackgroundColor = '#ffffff',
-  initialShowGrid = true
+  initialShowGrid = true,
+  initialHouseTypeAreas = {}
 }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -101,7 +103,12 @@ const MapEditor = ({
   
   const [backgroundColor, setBackgroundColor] = useState<string>(initialBackgroundColor);
   const [showGrid, setShowGrid] = useState<boolean>(initialShowGrid);
+  const [houseTypeAreas, setHouseTypeAreas] = useState<Record<string, number>>(initialHouseTypeAreas);
   
+  // حالات إضافة صنف قياسي جديد للمنازل
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypeArea, setNewTypeArea] = useState('');
+
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
   
@@ -604,6 +611,44 @@ const MapEditor = ({
     updateSelectedElement({ typicalFloorSizes: current });
   };
 
+  // دالة لاستخراج صنف المنزل من الترميز (مثال: Z1-B2-D5 -> D)
+  const getHouseType = (label: string): string => {
+    if (!label) return '';
+    const parts = label.split('-');
+    const lastPart = parts[parts.length - 1] || '';
+    const match = lastPart.match(/^([a-zA-Z]+)/);
+    return match ? match[1].toUpperCase() : lastPart.toUpperCase();
+  };
+
+  // إضافة صنف قياسي جديد للمنازل
+  const handleAddHouseTypeArea = () => {
+    if (!newTypeName || !newTypeArea) {
+      showError("يرجى إدخال اسم الصنف والمساحة");
+      return;
+    }
+    const typeUpper = newTypeName.trim().toUpperCase();
+    const areaNum = parseFloat(newTypeArea);
+    if (isNaN(areaNum) || areaNum <= 0) {
+      showError("يرجى إدخال مساحة صالحة");
+      return;
+    }
+    setHouseTypeAreas(prev => ({
+      ...prev,
+      [typeUpper]: areaNum
+    }));
+    setNewTypeName('');
+    setNewTypeArea('');
+    showSuccess(`تمت إضافة الصنف القياسي ${typeUpper} بمساحة ${areaNum} م²`);
+  };
+
+  // حذف صنف قياسي للمنازل
+  const handleDeleteHouseTypeArea = (type: string) => {
+    const updated = { ...houseTypeAreas };
+    delete updated[type];
+    setHouseTypeAreas(updated);
+    showSuccess(`تم حذف الصنف القياسي ${type}`);
+  };
+
   return (
     <div className={cn("flex flex-col gap-4 transition-all duration-300 h-screen p-6 bg-slate-50")} dir="rtl">
       <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
@@ -625,7 +670,7 @@ const MapEditor = ({
             </Button>
           )}
           <Button 
-            onClick={() => onSave(elements, dims.w, dims.h, backgroundColor, showGrid)} 
+            onClick={() => onSave(elements, dims.w, dims.h, backgroundColor, showGrid, houseTypeAreas)} 
             className="bg-emerald-600 hover:bg-emerald-700 gap-2 rounded-xl px-6 h-12 font-bold"
             disabled={isSaving}
           >
@@ -884,34 +929,90 @@ const MapEditor = ({
           )}
 
           {!selectedElement && (
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص المخطط</h3></div>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون خلفية المخطط</Label>
+            <div className="space-y-4">
+              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
+                <div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white w-5 h-5" /></div><h3 className="font-black text-slate-800">خصائص المخطط</h3></div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">لون خلفية المخطط</Label>
+                    <div className="flex gap-2">
+                      <Input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-12 h-12 p-1 rounded-xl border-slate-200 cursor-pointer" />
+                      <Input value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <Grid3X3 size={16} className="text-indigo-600" />
+                      <Label className="font-bold text-sm text-slate-700">إظهار شبكة المربعات</Label>
+                    </div>
+                    <Switch checked={showGrid} onCheckedChange={setShowGrid} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">العرض الكلي</Label>
+                      <Input type="number" value={dims.w} onChange={(e) => setDims(prev => ({ ...prev, w: parseInt(e.target.value) }))} className="rounded-xl h-12 font-bold" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الارتفاع الكلي</Label>
+                      <Input type="number" value={dims.h} onChange={(e) => setDims(prev => ({ ...prev, h: parseInt(e.target.value) }))} className="rounded-xl h-12 font-bold" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* واجهة إدخال مساحات أصناف المنازل القياسية */}
+              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl p-6 space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-100">
+                    <Ruler className="text-white w-5 h-5" />
+                  </div>
+                  <h3 className="font-black text-slate-800">مساحات أصناف المنازل</h3>
+                </div>
+                
+                <div className="space-y-4">
                   <div className="flex gap-2">
-                    <Input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-12 h-12 p-1 rounded-xl border-slate-200 cursor-pointer" />
-                    <Input value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="flex-1 rounded-xl h-12 border-slate-200 font-bold" />
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-[10px] font-black text-slate-400">الصنف (مثال: D)</Label>
+                      <Input 
+                        value={newTypeName} 
+                        onChange={(e) => setNewTypeName(e.target.value)} 
+                        placeholder="D" 
+                        className="rounded-xl h-10 font-bold text-center"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-[10px] font-black text-slate-400">المساحة (م²)</Label>
+                      <Input 
+                        type="number"
+                        value={newTypeArea} 
+                        onChange={(e) => setNewTypeArea(e.target.value)} 
+                        placeholder="240" 
+                        className="rounded-xl h-10 font-bold text-center"
+                      />
+                    </div>
+                    <Button onClick={handleAddHouseTypeArea} className="bg-blue-600 hover:bg-blue-700 rounded-xl h-10 self-end px-3">
+                      <Plus size={16} />
+                    </Button>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <Grid3X3 size={16} className="text-indigo-600" />
-                    <Label className="font-bold text-sm text-slate-700">إظهار شبكة المربعات</Label>
-                  </div>
-                  <Switch checked={showGrid} onCheckedChange={setShowGrid} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">العرض الكلي</Label>
-                    <Input type="number" value={dims.w} onChange={(e) => setDims(prev => ({ ...prev, w: parseInt(e.target.value) }))} className="rounded-xl h-12 font-bold" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">الارتفاع الكلي</Label>
-                    <Input type="number" value={dims.h} onChange={(e) => setDims(prev => ({ ...prev, h: parseInt(e.target.value) }))} className="rounded-xl h-12 font-bold" />
-                  </div>
+                  <ScrollArea className="h-40 border rounded-xl p-2 bg-slate-50">
+                    <div className="space-y-1">
+                      {Object.entries(houseTypeAreas).map(([type, area]) => (
+                        <div key={type} className="flex items-center justify-between bg-white p-2 rounded-lg border text-xs font-bold">
+                          <span className="text-slate-600">صنف <strong className="text-slate-900">{type}</strong></span>
+                          <span className="text-blue-600">{area} م²</span>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteHouseTypeArea(type)} className="h-6 w-6 text-rose-500 hover:bg-rose-50">
+                            <X size={12} />
+                          </Button>
+                        </div>
+                      ))}
+                      {Object.keys(houseTypeAreas).length === 0 && (
+                        <p className="text-center text-slate-400 py-10 text-xs font-semibold">لا توجد أصناف قياسية مضافة</p>
+                      )}
+                    </div>
+                  </ScrollArea>
                 </div>
               </div>
             </div>
@@ -956,6 +1057,35 @@ const MapEditor = ({
 
                   <div className="space-y-2"><Label className="text-xs font-black text-slate-400 uppercase tracking-wider">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="rounded-xl h-12 border-slate-200 font-bold" /></div>
                   
+                  {/* واجهة إدخال المساحة المخصصة للمنزل يدوياً */}
+                  {selectedElement.type === 'house' && (
+                    <div className="space-y-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
+                      <Label className="text-xs font-black text-blue-900 flex items-center gap-1.5">
+                        <Ruler size={14} /> المساحة المخصصة يدوياً (م²)
+                      </Label>
+                      <Input 
+                        type="number" 
+                        value={selectedElement.customArea || ''} 
+                        onChange={(e) => updateSelectedElement({ customArea: parseFloat(e.target.value) || undefined })} 
+                        placeholder="مثال: 263"
+                        className="rounded-xl h-11 border-blue-200 font-bold bg-white" 
+                      />
+                      {(() => {
+                        const type = getHouseType(selectedElement.label);
+                        const stdArea = houseTypeAreas[type];
+                        return stdArea ? (
+                          <p className="text-[10px] text-blue-600 font-bold mt-1">
+                            المساحة القياسية الحالية لهذا الصنف ({type}): {stdArea} م²
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 font-bold mt-1">
+                            لا توجد مساحة قياسية محددة للصنف ({type || 'غير محدد'})
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">زاوية الدوران (درجة)</Label>
                     <div className="relative">

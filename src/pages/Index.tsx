@@ -62,7 +62,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [currentCenter, setCurrentCenter] = useState<any>(null);
   
   const [mainMapData, setMainMapData] = useState<any>(null);
-  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
+  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
 
   // متغيرات البحث والآخر تحديث المضافين بشكل مخصص
   const [searchQuery, setSearchQuery] = useState('');
@@ -676,6 +676,19 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return 'bg-slate-50 border-slate-100 text-slate-700';
   };
 
+  // دالة ذكية لحساب مساحة المنزل بناءً على المساحة المخصصة يدوياً أو الصنف القياسي
+  const getHouseArea = (el: MapElement) => {
+    if (el.customArea !== undefined && el.customArea > 0) {
+      return el.customArea;
+    }
+    const houseTypeAreas = projectConfigs[selectedProjectId || '']?.houseTypeAreas || {};
+    const parts = el.label.split('-');
+    const lastPart = parts[parts.length - 1] || '';
+    const match = lastPart.match(/^([a-zA-Z]+)/);
+    const type = match ? match[1].toUpperCase() : lastPart.toUpperCase();
+    return houseTypeAreas[type] || 0;
+  };
+
   // جلب إعادات الخلفية والشبكة المخصصة بناءً على المشروع الحالي أو المخطط العام
   const currentBgColor = selectedProjectId === 'main_map' 
     ? (mainMapData?.backgroundColor || '#ffffff') 
@@ -1015,6 +1028,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           unitLabel={activeElements.find(el => el.id === selectedElementId)?.label} 
           initialData={selectedElementId ? housesData[selectedElementId] : undefined}
           permissions={permissions}
+          unitSize={selectedElement && selectedElement.type === 'house' ? getHouseArea(selectedElement) : undefined}
         />
         <TowerDetailsModal 
           isOpen={isTowerModalOpen} 

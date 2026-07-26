@@ -123,7 +123,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean }>>({});
+  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
 
   // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
@@ -815,7 +815,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) { showError("فشل في حذف المشروع"); }
   };
 
-  const handleSaveMap = async (elements: MapElement[], newWidth: number, newHeight: number, backgroundColor?: string, showGrid?: boolean) => {
+  const handleSaveMap = async (elements: MapElement[], newWidth: number, newHeight: number, backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number>) => {
     if (isEditingMainMap) {
       setIsSavingMap(true);
       try {
@@ -843,7 +843,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
       const updatedConfigs = {
         ...projectConfigs,
-        [editingMapProject.id]: { backgroundColor, showGrid }
+        [editingMapProject.id]: { backgroundColor, showGrid, houseTypeAreas }
       };
       await supabase.from('settings').upsert({ key: 'project_configs', value: updatedConfigs });
       setProjectConfigs(updatedConfigs);
@@ -1148,6 +1148,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         onCancel={() => { setEditingMapProject(null); setIsEditingMainMap(false); }}
         initialBackgroundColor={isEditingMainMap ? (mainMapData?.backgroundColor || '#ffffff') : (projectConfigs[editingMapProject?.id || '']?.backgroundColor || '#ffffff')}
         initialShowGrid={isEditingMainMap ? (mainMapData?.showGrid !== false) : (projectConfigs[editingMapProject?.id || '']?.showGrid !== false)}
+        initialHouseTypeAreas={isEditingMainMap ? {} : (projectConfigs[editingMapProject?.id || '']?.houseTypeAreas || {})}
       />
     );
   }
