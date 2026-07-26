@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { showSuccess, showError } from '@/utils/toast';
 
 interface MapEditorProps {
@@ -1075,7 +1076,7 @@ const MapEditor = ({
                         const stdArea = houseTypeAreas[type];
                         return stdArea ? (
                           <p className="text-[10px] text-blue-600 font-bold mt-1">
-                            المساحة القياسية الحالية لهذا الصنف ({type}): {stdArea} م²
+                            المساحة القياسية الحالية لهذا الصنف ({type}): {stdArea} m²
                           </p>
                         ) : (
                           <p className="text-[10px] text-slate-400 font-bold mt-1">
