@@ -37,7 +37,7 @@ interface UnitDetailsModalProps {
   unitLabel?: string;
   initialData?: any;
   permissions: any;
-  unitSize?: number; // حقل المساحة الممرر ديناميكياً من العمارة
+  unitSize?: number; // حقل المساحة الممرر ديناميكياً من العمارة أو المنزل
 }
 
 const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, permissions, unitSize }: UnitDetailsModalProps) => {
@@ -279,11 +279,11 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               </div>
             )}
 
-            {/* عرض مساحة الشقة كحقل قراءة فقط أنيق ومميز */}
+            {/* عرض مساحة الوحدة السكنية كحقل قراءة فقط أنيق ومميز */}
             {unitSize !== undefined && unitSize > 0 && (
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2">
-                  <Ruler size={16} className="text-blue-600" /> مساحة الشقة
+                  <Ruler size={16} className="text-blue-600" /> مساحة الوحدة السكنية
                 </Label>
                 <Input 
                   readOnly
