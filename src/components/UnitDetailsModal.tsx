@@ -60,7 +60,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   // التحقق الدقيق مما إذا كانت الوحدة محجوزة حالياً ومن هو مالك الحجز
   const isCurrentlyBooked = initialData?.status === 'reserved' || initialData?.status === 'pending';
-  const isBookingOwner = !isCurrentlyBooked || (initialData?.bookedByCenterId === currentCenterId);
+  
+  // الحجز القديم غير المتبنى هو الحجز النشط الذي لا يحتوي على معرف مالك مسجل
+  const isOldUnadoptedBooking = isCurrentlyBooked && !initialData?.bookedByCenterId;
+
+  // المالك هو: إذا لم تكن محجوزة، أو إذا كان الحجز قديماً بلا مالك محدد (للتبني التلقائي)، أو إذا كان معرف المالك يطابق المستخدم الحالي
+  const isBookingOwner = !isCurrentlyBooked || isOldUnadoptedBooking || (initialData?.bookedByCenterId === currentCenterId);
 
   useEffect(() => {
     if (initialData) {
@@ -167,23 +172,35 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
       });
     }
 
+    // تحديد هوية مالك الحجز النهائي
+    let finalBookedByCenterId = initialData?.bookedByCenterId || null;
+    let finalBookedByCenterName = initialData?.bookedByCenterName || null;
+
+    if (newStatus === 'available') {
+      finalBookedByCenterId = null;
+      finalBookedByCenterName = null;
+    } else if (newStatus === 'reserved' || newStatus === 'pending') {
+      // إذا كان الحجز جديداً (كان متوفراً سابقاً) أو كان قديماً غير متبنى
+      if (oldStatus === 'available' || !oldStatus || isOldUnadoptedBooking) {
+        finalBookedByCenterId = currentCenterId;
+        finalBookedByCenterName = currentCenterName;
+        
+        // توثيق عملية التبني التلقائي في سجل الملاحظات
+        if (isOldUnadoptedBooking) {
+          newNotes.unshift({
+            text: `تم تبني هذا الحجز القديم وتسجيله رسمياً باسم (${currentCenterName})`,
+            author: 'النظام تلقائياً',
+            date: new Date().toISOString()
+          });
+        }
+      }
+    }
+
     const finalData = {
       ...formData,
       notes: newNotes,
-      // الحفاظ على هوية منشئ الحجز الحالي عند التعديل العادي
-      bookedByCenterId: initialData?.bookedByCenterId || null,
-      bookedByCenterName: initialData?.bookedByCenterName || null,
-      
-      // حفظ هوية منشئ الحجز عند الحجز لأول مرة
-      ...(((oldStatus === 'available' || !oldStatus) && (newStatus === 'reserved' || newStatus === 'pending')) ? {
-        bookedByCenterId: currentCenterId,
-        bookedByCenterName: currentCenterName
-      } : {}),
-      // مسح هوية منشئ الحجز عند الإلغاء
-      ...(newStatus === 'available' ? {
-        bookedByCenterId: null,
-        bookedByCenterName: null
-      } : {})
+      bookedByCenterId: finalBookedByCenterId,
+      bookedByCenterName: finalBookedByCenterName
     };
 
     onSave(unitId, finalData);
@@ -219,6 +236,17 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div>
                 <p>تنبيه ملكية الحجز:</p>
                 <p className="font-black mt-1">هذا الحجز مملوك لـ ({initialData?.bookedByCenterName || 'قسم آخر'})، ولا تملك صلاحية تعديله أو إلغائه وإرجاعه متوفراً.</p>
+              </div>
+            </div>
+          )}
+
+          {/* تنبيه الحجز القديم غير المتبنى لإرشاد الموظف */}
+          {isOldUnadoptedBooking && (
+            <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-start gap-3 text-amber-800 text-xs font-bold animate-in fade-in">
+              <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={16} />
+              <div>
+                <p>تنبيه حجز قديم:</p>
+                <p className="font-black mt-1">هذا الحجز قديم وغير متبنى من أي قسم. يمكنك تعديله أو إلغاؤه بشكل طبيعي، وعند الحفظ سيتم تسجيله باسم قسمك ({currentCenterName}) تلقائياً.</p>
               </div>
             </div>
           )}
