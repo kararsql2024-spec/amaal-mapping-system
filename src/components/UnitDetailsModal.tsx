@@ -196,12 +196,27 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
       }
     }
 
-    const finalData = {
+    let finalData = {
       ...formData,
       notes: newNotes,
       bookedByCenterId: finalBookedByCenterId,
       bookedByCenterName: finalBookedByCenterName
     };
+
+    // تصفير كافة البيانات الأخرى عند إلغاء الحجز وإرجاع الوحدة متوفرة
+    if (newStatus === 'available') {
+      finalData = {
+        ...finalData,
+        name: '',
+        phone: '',
+        saleDate: '',
+        price: '',
+        currency: 'IQD',
+        taboNum: '',
+        taboStatus: 'غير مروج',
+        handoverDate: ''
+      };
+    }
 
     onSave(unitId, finalData);
     onClose();
