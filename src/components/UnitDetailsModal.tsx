@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Ruler } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Ruler, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -55,6 +55,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   });
   const [newNote, setNewNote] = useState('');
 
+  const currentCenterId = localStorage.getItem('marketing_center_session') || '';
+  const currentCenterName = localStorage.getItem('marketing_center_name') || 'قسم غير معروف';
+
+  // التحقق مما إذا كان المستخدم الحالي هو من أنشأ الحجز
+  const isBookingOwner = !initialData?.bookedByCenterId || initialData.bookedByCenterId === currentCenterId;
+
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -87,10 +93,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
   const handleAddNote = () => {
     if (!newNote.trim()) return;
-    const centerName = localStorage.getItem('marketing_center_name') || 'قسم غير معروف';
     const note: Note = {
       text: newNote.trim(),
-      author: centerName,
+      author: currentCenterName,
       date: new Date().toISOString()
     };
     const updatedNotes = [note, ...formData.notes];
@@ -102,11 +107,82 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   };
 
-  const handleSave = () => {
-    if (unitId) {
-      onSave(unitId, formData);
-      onClose();
+  // معالجة تغيير الحالة مع التحديد التلقائي لتاريخ اليوم عند الحجز
+  const handleStatusChange = (val: string) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updates: any = { status: val };
+    
+    if (val === 'reserved' || val === 'pending') {
+      if (!formData.saleDate) {
+        updates.saleDate = todayStr;
+      }
     }
+    
+    setFormData(prev => ({ ...prev, ...updates }));
+  };
+
+  // حساب تاريخ انتهاء الحجز الأولي (تلقائياً بعد 7 أيام)
+  const getExpiryDate = (saleDateStr: string) => {
+    if (!saleDateStr) return '';
+    const date = new Date(saleDateStr);
+    if (isNaN(date.getTime())) return '';
+    date.setDate(date.getDate() + 7);
+    return date.toISOString().split('T')[0];
+  };
+
+  const handleSave = () => {
+    if (!unitId) return;
+
+    const todayStr = new Date().toLocaleDateString('ar-EG');
+    const newNotes = [...formData.notes];
+    
+    const oldStatus = initialData?.status || 'available';
+    const newStatus = formData.status;
+    const oldName = initialData?.name || '';
+    const newName = formData.name;
+    
+    // 1. توثيق حجز جديد تلقائياً
+    if ((oldStatus === 'available' || !oldStatus) && (newStatus === 'reserved' || newStatus === 'pending')) {
+      newNotes.unshift({
+        text: `قام ${currentCenterName} بعمل حجز باسم (${newName || 'غير محدد'}) بتاريخ ${todayStr}`,
+        author: 'النظام تلقائياً',
+        date: new Date().toISOString()
+      });
+    }
+    // 2. توثيق إلغاء الحجز تلقائياً
+    else if ((oldStatus === 'reserved' || oldStatus === 'pending') && newStatus === 'available') {
+      newNotes.unshift({
+        text: `قام ${currentCenterName} بإلغاء الحجز وإرجاع الوحدة متوفرة`,
+        author: 'النظام تلقائياً',
+        date: new Date().toISOString()
+      });
+    }
+    // 3. توثيق تعديل اسم صاحب الحجز تلقائياً
+    else if ((newStatus === 'reserved' || newStatus === 'pending') && oldName !== newName && oldStatus === newStatus) {
+      newNotes.unshift({
+        text: `قام ${currentCenterName} بتعديل اسم صاحب الحجز من (${oldName || 'فارغ'}) إلى (${newName || 'فارغ'})`,
+        author: 'النظام تلقائياً',
+        date: new Date().toISOString()
+      });
+    }
+
+    const finalData = {
+      ...formData,
+      notes: newNotes,
+      // حفظ هوية منشئ الحجز عند الحجز لأول مرة
+      ...(((oldStatus === 'available' || !oldStatus) && (newStatus === 'reserved' || newStatus === 'pending')) ? {
+        bookedByCenterId: currentCenterId,
+        bookedByCenterName: currentCenterName
+      } : {}),
+      // مسح هوية منشئ الحجز عند الإلغاء
+      ...(newStatus === 'available' ? {
+        bookedByCenterId: null,
+        bookedByCenterName: null
+      } : {})
+    };
+
+    onSave(unitId, finalData);
+    onClose();
   };
 
   const formatPrice = (val: string) => {
@@ -116,9 +192,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     return isNaN(num) ? val : num.toLocaleString('en-US');
   };
 
-  const canEdit = permissions.canEditUnitData;
-
   const isSoldOrInvestment = formData.status === 'sold' || formData.status === 'investment';
+  const canEdit = permissions.canEditUnitData && !isSoldOrInvestment;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -131,14 +206,25 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         </DialogHeader>
 
         <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {/* تنبيه ملكية الحجز في حال كان مملوكاً لقسم آخر */}
+          {initialData?.bookedByCenterName && initialData.bookedByCenterId !== currentCenterId && (
+            <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3 text-rose-800 text-xs font-bold animate-in fade-in">
+              <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
+              <div>
+                <p>تنبيه ملكية الحجز:</p>
+                <p className="font-black mt-1">هذا الحجز مملوك لـ ({initialData.bookedByCenterName})، ولا تملك صلاحية إلغائه أو إرجاعه متوفراً.</p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {permissions.showStatusField && (
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><ShieldCheck size={16} /> حالة الوحدة</Label>
                 <Select 
-                  disabled={!canEdit || isSoldOrInvestment}
+                  disabled={!permissions.canEditUnitData || isSoldOrInvestment}
                   value={formData.status} 
-                  onValueChange={(val) => setFormData({...formData, status: val})}
+                  onValueChange={handleStatusChange}
                 >
                   <SelectTrigger className="rounded-xl h-12 border-slate-200 font-bold">
                     <SelectValue />
@@ -151,7 +237,10 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                       </>
                     ) : (
                       <>
-                        <SelectItem value="available" className="font-bold text-emerald-600">متوفر</SelectItem>
+                        {/* تعطيل خيار متاح إذا لم يكن المستخدم هو مالك الحجز */}
+                        <SelectItem value="available" disabled={!isBookingOwner} className="font-bold text-emerald-600">
+                          متوفر {!isBookingOwner && "(مغلق - لست منشئ الحجز)"}
+                        </SelectItem>
                         <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
                         <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
                         <SelectItem value="frozen_counted" className="font-bold text-slate-500">مجمدة (داخل المجموع)</SelectItem>
@@ -168,7 +257,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><User size={16} /> اسم الزبون</Label>
                 <Input 
-                  disabled={!canEdit || isSoldOrInvestment}
+                  disabled={!canEdit}
                   value={formData.name} 
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   className="rounded-xl h-12 border-slate-200 font-bold"
@@ -194,11 +283,27 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><Calendar size={16} /> تاريخ البيع / الحجز</Label>
                 <Input 
-                  disabled={!canEdit || isSoldOrInvestment}
+                  disabled={!canEdit}
                   type="date"
                   value={formData.saleDate} 
                   onChange={(e) => setFormData({...formData, saleDate: e.target.value})}
                   className="rounded-xl h-12 border-slate-200 font-bold"
+                />
+              </div>
+            )}
+
+            {/* حقل تاريخ الانتهاء للحجز الأولي */}
+            {formData.status === 'pending' && formData.saleDate && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                <Label className="font-bold text-rose-600 flex items-center gap-2">
+                  <Calendar size={16} /> تاريخ الانتهاء (تلقائي بعد 7 أيام)
+                </Label>
+                <Input 
+                  readOnly
+                  disabled
+                  type="date"
+                  value={getExpiryDate(formData.saleDate)} 
+                  className="rounded-xl h-12 border-rose-200 font-bold bg-rose-50/30 text-rose-900 cursor-not-allowed opacity-90"
                 />
               </div>
             )}
@@ -332,7 +437,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         </div>
 
         <DialogFooter className="p-6 bg-slate-50 border-t border-slate-100 flex-row-reverse gap-3">
-          {canEdit && (
+          {permissions.canEditUnitData && !isSoldOrInvestment && (
             <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 rounded-xl h-12 px-8 font-black shadow-lg shadow-blue-100">
               حفظ التغييرات
             </Button>
