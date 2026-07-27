@@ -58,8 +58,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   const currentCenterId = localStorage.getItem('marketing_center_session') || '';
   const currentCenterName = localStorage.getItem('marketing_center_name') || 'قسم غير معروف';
 
-  // التحقق مما إذا كان المستخدم الحالي هو من أنشأ الحجز
-  const isBookingOwner = !initialData?.bookedByCenterId || initialData.bookedByCenterId === currentCenterId;
+  // التحقق الدقيق مما إذا كانت الوحدة محجوزة حالياً ومن هو مالك الحجز
+  const isCurrentlyBooked = initialData?.status === 'reserved' || initialData?.status === 'pending';
+  const isBookingOwner = !isCurrentlyBooked || (initialData?.bookedByCenterId === currentCenterId);
 
   useEffect(() => {
     if (initialData) {
@@ -169,6 +170,10 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     const finalData = {
       ...formData,
       notes: newNotes,
+      // الحفاظ على هوية منشئ الحجز الحالي عند التعديل العادي
+      bookedByCenterId: initialData?.bookedByCenterId || null,
+      bookedByCenterName: initialData?.bookedByCenterName || null,
+      
       // حفظ هوية منشئ الحجز عند الحجز لأول مرة
       ...(((oldStatus === 'available' || !oldStatus) && (newStatus === 'reserved' || newStatus === 'pending')) ? {
         bookedByCenterId: currentCenterId,
@@ -193,7 +198,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   };
 
   const isSoldOrInvestment = formData.status === 'sold' || formData.status === 'investment';
-  const canEdit = permissions.canEditUnitData && !isSoldOrInvestment;
+  // لا يمكن التعديل إذا كانت الوحدة مباعة/استثمار، أو إذا لم يكن المستخدم الحالي هو منشئ الحجز
+  const canEdit = permissions.canEditUnitData && !isSoldOrInvestment && isBookingOwner;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -207,12 +213,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
 
         <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
           {/* تنبيه ملكية الحجز في حال كان مملوكاً لقسم آخر */}
-          {initialData?.bookedByCenterName && initialData.bookedByCenterId !== currentCenterId && (
+          {!isBookingOwner && (
             <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3 text-rose-800 text-xs font-bold animate-in fade-in">
               <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
               <div>
                 <p>تنبيه ملكية الحجز:</p>
-                <p className="font-black mt-1">هذا الحجز مملوك لـ ({initialData.bookedByCenterName})، ولا تملك صلاحية إلغائه أو إرجاعه متوفراً.</p>
+                <p className="font-black mt-1">هذا الحجز مملوك لـ ({initialData?.bookedByCenterName || 'قسم آخر'})، ولا تملك صلاحية تعديله أو إلغائه وإرجاعه متوفراً.</p>
               </div>
             </div>
           )}
@@ -222,7 +228,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
               <div className="space-y-2">
                 <Label className="font-bold text-slate-600 flex items-center gap-2"><ShieldCheck size={16} /> حالة الوحدة</Label>
                 <Select 
-                  disabled={!permissions.canEditUnitData || isSoldOrInvestment}
+                  disabled={!permissions.canEditUnitData || isSoldOrInvestment || !isBookingOwner}
                   value={formData.status} 
                   onValueChange={handleStatusChange}
                 >
@@ -237,10 +243,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                       </>
                     ) : (
                       <>
-                        {/* تعطيل خيار متاح إذا لم يكن المستخدم هو مالك الحجز */}
-                        <SelectItem value="available" disabled={!isBookingOwner} className="font-bold text-emerald-600">
-                          متوفر {!isBookingOwner && "(مغلق - لست منشئ الحجز)"}
-                        </SelectItem>
+                        <SelectItem value="available" className="font-bold text-emerald-600">متوفر</SelectItem>
                         <SelectItem value="reserved" className="font-bold text-amber-600">محجوز</SelectItem>
                         <SelectItem value="pending" className="font-bold text-blue-600">حجز أولي</SelectItem>
                         <SelectItem value="frozen_counted" className="font-bold text-slate-500">مجمدة (داخل المجموع)</SelectItem>
@@ -437,7 +440,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         </div>
 
         <DialogFooter className="p-6 bg-slate-50 border-t border-slate-100 flex-row-reverse gap-3">
-          {permissions.canEditUnitData && !isSoldOrInvestment && (
+          {permissions.canEditUnitData && !isSoldOrInvestment && isBookingOwner && (
             <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 rounded-xl h-12 px-8 font-black shadow-lg shadow-blue-100">
               حفظ التغييرات
             </Button>
