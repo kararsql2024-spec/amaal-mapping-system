@@ -987,6 +987,7 @@ const MapEditor = ({
                       <Label className="text-[10px] font-black text-slate-400">المساحة (م²)</Label>
                       <Input 
                         type="number"
+                        step="any"
                         value={newTypeArea} 
                         onChange={(e) => setNewTypeArea(e.target.value)} 
                         placeholder="240" 
@@ -1066,9 +1067,10 @@ const MapEditor = ({
                       </Label>
                       <Input 
                         type="number" 
+                        step="any"
                         value={selectedElement.customArea || ''} 
                         onChange={(e) => updateSelectedElement({ customArea: parseFloat(e.target.value) || undefined })} 
-                        placeholder="مثال: 263"
+                        placeholder="مثال: 263.5"
                         className="rounded-xl h-11 border-blue-200 font-bold bg-white" 
                       />
                       {(() => {
@@ -1076,7 +1078,7 @@ const MapEditor = ({
                         const stdArea = houseTypeAreas[type];
                         return stdArea ? (
                           <p className="text-[10px] text-blue-600 font-bold mt-1">
-                            المساحة القياسية الحالية لهذا الصنف ({type}): {stdArea} m²
+                            المساحة القياسية الحالية لهذا الصنف ({type}): {stdArea} م²
                           </p>
                         ) : (
                           <p className="text-[10px] text-slate-400 font-bold mt-1">
@@ -1273,6 +1275,7 @@ const MapEditor = ({
                               <span className="text-[10px] font-black text-slate-400">شقة {idx + 1}</span>
                               <Input 
                                 type="number" 
+                                step="any"
                                 value={(selectedElement.groundFloorSizes || [])[idx] || 0} 
                                 onChange={(e) => handleGroundSizeChange(idx, parseFloat(e.target.value) || 0)}
                                 className="h-8 text-center font-bold text-xs p-1 border-none focus-visible:ring-0"
@@ -1293,6 +1296,7 @@ const MapEditor = ({
                               <span className="text-[10px] font-black text-slate-400">شقة {idx + 1}</span>
                               <Input 
                                 type="number" 
+                                step="any"
                                 value={(selectedElement.typicalFloorSizes || [])[idx] || 0} 
                                 onChange={(e) => handleTypicalSizeChange(idx, parseFloat(e.target.value) || 0)}
                                 className="h-8 text-center font-bold text-xs p-1 border-none focus-visible:ring-0"
