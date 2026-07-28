@@ -68,34 +68,6 @@ const InteractiveMap = ({
     return () => clearTimeout(timer);
   }, [mapWidth, mapHeight, isFullScreen]);
 
-  // تأثير التركيز التلقائي والزووم الذكي (Auto-focus) عند اختيار وحدة من البحث
-  useEffect(() => {
-    if (selectedHouseId && elements.length > 0 && containerRef.current) {
-      const el = elements.find(e => e.id === selectedHouseId);
-      if (el) {
-        const pts = el.points && el.points.length > 0 ? el.points : [
-          { x: el.x, y: el.y },
-          { x: el.x + el.width, y: el.y },
-          { x: el.x + el.width, y: el.y + el.height },
-          { x: el.x, y: el.y + el.height },
-        ];
-        const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-        const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-
-        const rect = containerRef.current.getBoundingClientRect();
-        const cx = rect.width / 2;
-        const cy = rect.height / 2;
-
-        const targetScale = 1.8; // زووم مريح ومناسب للتركيز
-        setScale(targetScale);
-        setPosition({
-          x: cx - centerX * targetScale,
-          y: cy - centerY * targetScale
-        });
-      }
-    }
-  }, [selectedHouseId, elements]);
-
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (!containerRef.current) return;
@@ -415,7 +387,7 @@ const InteractiveMap = ({
                       strokeLinecap="round" 
                       className={cn(
                         "transition-all duration-300", 
-                        isSelected && "stroke-black stroke-[4px] filter brightness-90 animate-pulse", 
+                        isSelected && "stroke-black stroke-[3px] filter brightness-90", 
                         !!el.linkProjectId && "hover:filter hover:brightness-110 transition-colors"
                       )} 
                     />

@@ -251,48 +251,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       }
     };
     fetchProjectData();
-
-    // تفعيل ميزة التعاون الفوري والوقت الحقيقي (Real-time Collaboration)
-    const channel = supabase
-      .channel(`realtime-project-${selectedProjectId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'houses_data',
-          filter: `project_id=eq.${selectedProjectId}`
-        },
-        (payload) => {
-          const updatedRow = payload.new as any;
-          if (updatedRow && updatedRow.unit_key) {
-            setHousesData(prev => ({
-              ...prev,
-              [updatedRow.unit_key]: updatedRow.data
-            }));
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `project_id=eq.${selectedProjectId}`
-        },
-        (payload) => {
-          const newNotif = payload.new as any;
-          if (newNotif) {
-            setNotifications(prev => [newNotif, ...prev].slice(0, 50));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [selectedProjectId, setHousesData]);
 
   // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح
