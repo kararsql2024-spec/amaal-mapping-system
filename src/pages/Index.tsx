@@ -510,19 +510,34 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const unitKey = item.unit_key;
     const projectId = item.project_id;
     
-    // تفعيل حالة التحميل وتصفير العناصر فوراً لمنع تداخل المخططات القديمة والجديدة
-    setIsProjectLoading(true);
-    setActiveElements([]);
-    setSelectedProjectId(projectId);
-    
-    if (unitKey.includes('_F') && unitKey.includes('_A')) {
-      const towerId = unitKey.split('_F')[0];
-      setPendingOpen({ elementId: towerId, isTower: true });
-      setPendingApartmentKey(unitKey); // حفظ مفتاح الشقة لفتحها تلقائياً داخل العمارة
+    // التمييز الذكي بين البحث في نفس المشروع أو الانتقال لمشروع آخر
+    if (selectedProjectId === projectId) {
+      // نفس المشروع: نقوم بتحديث المعرفات مباشرة دون إعادة تحميل المخطط بالكامل
+      setSelectedElementId(null);
+      if (unitKey.includes('_F') && unitKey.includes('_A')) {
+        const towerId = unitKey.split('_F')[0];
+        setPendingOpen({ elementId: towerId, isTower: true });
+        setPendingApartmentKey(unitKey);
+      } else {
+        setPendingOpen({ elementId: unitKey, isTower: false });
+        setPendingApartmentKey(null);
+      }
     } else {
-      setPendingOpen({ elementId: unitKey, isTower: false });
-      setPendingApartmentKey(null);
+      // مشروع آخر: نقوم بتفعيل حالة التحميل وتصفير العناصر فوراً لمنع التداخل
+      setIsProjectLoading(true);
+      setActiveElements([]);
+      setSelectedProjectId(projectId);
+      
+      if (unitKey.includes('_F') && unitKey.includes('_A')) {
+        const towerId = unitKey.split('_F')[0];
+        setPendingOpen({ elementId: towerId, isTower: true });
+        setPendingApartmentKey(unitKey);
+      } else {
+        setPendingOpen({ elementId: unitKey, isTower: false });
+        setPendingApartmentKey(null);
+      }
     }
+    
     setSearchQuery('');
     setSearchResults([]);
     showSuccess(`جاري الانتقال وعرض الوحدة ${unitKey}...`);
