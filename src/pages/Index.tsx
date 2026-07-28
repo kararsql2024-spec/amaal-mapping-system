@@ -295,18 +295,20 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [selectedProjectId, setHousesData]);
 
-  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح
+  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح (مع تأخير 1.2 ثانية للسماح باكتمال الزووم الانسيابي)
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
       const { elementId, isTower } = pendingOpen;
       const exists = activeElements.some(el => el.id === elementId);
       if (exists) {
         setSelectedElementId(elementId);
-        if (isTower) {
-          setIsTowerModalOpen(true);
-        } else {
-          setIsUnitModalOpen(true);
-        }
+        setTimeout(() => {
+          if (isTower) {
+            setIsTowerModalOpen(true);
+          } else {
+            setIsUnitModalOpen(true);
+          }
+        }, 1200); // تأخير 1.2 ثانية للسماح باكتمال تأثير الزووم الانسيابي
       } else {
         showError("تعذر عرض الوحدة على المخطط الحالي");
       }
