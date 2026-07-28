@@ -295,20 +295,18 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [selectedProjectId, setHousesData]);
 
-  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح (مع تأخير 3.5 ثانية للسماح باكتمال الزووم البطيء والانسيابي)
+  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
       const { elementId, isTower } = pendingOpen;
       const exists = activeElements.some(el => el.id === elementId);
       if (exists) {
         setSelectedElementId(elementId);
-        setTimeout(() => {
-          if (isTower) {
-            setIsTowerModalOpen(true);
-          } else {
-            setIsUnitModalOpen(true);
-          }
-        }, 3500); // تأخير 3.5 ثانية ليتطابق مع حركة الزووم البطيئة والانسيابية
+        if (isTower) {
+          setIsTowerModalOpen(true);
+        } else {
+          setIsUnitModalOpen(true);
+        }
       } else {
         showError("تعذر عرض الوحدة على المخطط الحالي");
       }
@@ -510,34 +508,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const unitKey = item.unit_key;
     const projectId = item.project_id;
     
-    // التمييز الذكي بين البحث في نفس المشروع أو الانتقال لمشروع آخر
-    if (selectedProjectId === projectId) {
-      // نفس المشروع: نقوم بتحديث المعرفات مباشرة دون إعادة تحميل المخطط بالكامل
-      setSelectedElementId(null);
-      if (unitKey.includes('_F') && unitKey.includes('_A')) {
-        const towerId = unitKey.split('_F')[0];
-        setPendingOpen({ elementId: towerId, isTower: true });
-        setPendingApartmentKey(unitKey);
-      } else {
-        setPendingOpen({ elementId: unitKey, isTower: false });
-        setPendingApartmentKey(null);
-      }
-    } else {
-      // مشروع آخر: نقوم بتفعيل حالة التحميل وتصفير العناصر فوراً لمنع التداخل
-      setIsProjectLoading(true);
-      setActiveElements([]);
-      setSelectedProjectId(projectId);
-      
-      if (unitKey.includes('_F') && unitKey.includes('_A')) {
-        const towerId = unitKey.split('_F')[0];
-        setPendingOpen({ elementId: towerId, isTower: true });
-        setPendingApartmentKey(unitKey);
-      } else {
-        setPendingOpen({ elementId: unitKey, isTower: false });
-        setPendingApartmentKey(null);
-      }
-    }
+    setSelectedProjectId(projectId);
     
+    if (unitKey.includes('_F') && unitKey.includes('_A')) {
+      const towerId = unitKey.split('_F')[0];
+      setPendingOpen({ elementId: towerId, isTower: true });
+      setPendingApartmentKey(unitKey); // حفظ مفتاح الشقة لفتحها تلقائياً داخل العمارة
+    } else {
+      setPendingOpen({ elementId: unitKey, isTower: false });
+      setPendingApartmentKey(null);
+    }
     setSearchQuery('');
     setSearchResults([]);
     showSuccess(`جاري الانتقال وعرض الوحدة ${unitKey}...`);

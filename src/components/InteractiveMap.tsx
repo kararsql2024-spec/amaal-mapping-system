@@ -38,7 +38,6 @@ const InteractiveMap = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
-  const [pulseActive, setPulseActive] = useState(false);
 
   // لمنع تفعيل النقر عن طريق الخطأ أثناء السحب والتحريك
   const dragStartCoords = useRef({ x: 0, y: 0 });
@@ -68,19 +67,6 @@ const InteractiveMap = ({
     const timer = setTimeout(autoFit, 100);
     return () => clearTimeout(timer);
   }, [mapWidth, mapHeight, isFullScreen]);
-
-  // تأثير التحكم بمدة الوميض النبضي (ينتهي بعد 10 ثوانٍ)
-  useEffect(() => {
-    if (selectedHouseId) {
-      setPulseActive(true);
-      const timer = setTimeout(() => {
-        setPulseActive(false);
-      }, 10000); // 10 ثوانٍ
-      return () => clearTimeout(timer);
-    } else {
-      setPulseActive(false);
-    }
-  }, [selectedHouseId]);
 
   // تأثير التركيز التلقائي والزووم الذكي (Auto-focus) عند اختيار وحدة من البحث
   useEffect(() => {
@@ -333,12 +319,7 @@ const InteractiveMap = ({
         shapeRendering="geometricPrecision"
         style={{ backgroundColor: backgroundColor }}
       >
-        <g 
-          transform={`translate(${position.x}, ${position.y}) scale(${scale})`}
-          style={{
-            transition: isDragging ? 'none' : 'transform 3.5s cubic-bezier(0.15, 1, 0.2, 1)'
-          }}
-        >
+        <g transform={`translate(${position.x}, ${position.y}) scale(${scale})`}>
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5" opacity="0.4"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
@@ -434,8 +415,7 @@ const InteractiveMap = ({
                       strokeLinecap="round" 
                       className={cn(
                         "transition-all duration-300", 
-                        isSelected && "stroke-black stroke-[4px] filter brightness-90",
-                        isSelected && pulseActive && "animate-pulse",
+                        isSelected && "stroke-black stroke-[4px] filter brightness-90 animate-pulse", 
                         !!el.linkProjectId && "hover:filter hover:brightness-110 transition-colors"
                       )} 
                     />
