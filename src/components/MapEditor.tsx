@@ -11,7 +11,7 @@ import {
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
-  Frame, Ruler, Plus
+  Frame, Ruler, Plus, Undo2, Redo2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -113,6 +113,10 @@ const MapEditor = ({
   const [scale, setScale] = useState(1);
   const [viewPos, setViewPos] = useState({ x: 0, y: 0 });
   
+  // ميزة التراجع والإعادة (Undo / Redo)
+  const [history, setHistory] = useState<MapElement[][]>([]);
+  const [redoStack, setRedoStack] = useState<MapElement[][]>([]);
+
   const svgRef = useRef<SVGSVGElement>(null);
   const contentRef = useRef<SVGGElement>(null);
 
@@ -135,13 +139,51 @@ const MapEditor = ({
     if (maxY > dims.h - 50) setDims(prev => ({ ...prev, h: Math.round(maxY + 200) }));
   };
 
+  // حفظ الحالة الحالية في التاريخ قبل إجراء أي تعديل
+  const saveStateToHistory = (currentElements: MapElement[]) => {
+    setHistory(prev => [...prev, currentElements]);
+    setRedoStack([]); // تصفير الإعادة عند إجراء حركة جديدة
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const previousState = history[history.length - 1];
+    setRedoStack(prev => [...prev, elements]);
+    setElements(previousState);
+    setHistory(prev => prev.slice(0, -1));
+    setSelectedId(null);
+    showSuccess("تم التراجع");
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const nextState = redoStack[redoStack.length - 1];
+    setHistory(prev => [...prev, elements]);
+    setElements(nextState);
+    setRedoStack(prev => prev.slice(0, -1));
+    setSelectedId(null);
+    showSuccess("تمت الإعادة");
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if (e.ctrlKey && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
       
       const step = gridLock ? GRID_SIZE : 1;
       
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        saveStateToHistory(elements);
         setElements(prev => prev.filter(el => el.id !== selectedId));
         setSelectedId(null);
         return;
@@ -150,6 +192,7 @@ const MapEditor = ({
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
 
       e.preventDefault();
+      saveStateToHistory(elements);
       setElements(prev => {
         const el = prev.find(item => item.id === selectedId);
         if (!el || el.locked) return prev;
@@ -184,7 +227,7 @@ const MapEditor = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, gridLock, dims]);
+  }, [selectedId, gridLock, dims, elements, history, redoStack]);
 
   const getMousePos = (e: React.MouseEvent | WheelEvent | React.TouchEvent) => {
     if (!svgRef.current || !contentRef.current) return { x: 0, y: 0 };
@@ -217,6 +260,7 @@ const MapEditor = ({
 
   const createElement = (type: ElementType, pts: Point[], isStroke = false, customLabel?: string) => {
     checkAndExpandMap(pts);
+    saveStateToHistory(elements);
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
       type,
@@ -348,6 +392,7 @@ const MapEditor = ({
 
   const handleMouseUp = () => {
     if (dragMode?.type === 'boundary' && tempPoints.length === 4) {
+      saveStateToHistory(elements);
       const minX = Math.min(...tempPoints.map(p => p.x));
       const minY = Math.min(...tempPoints.map(p => p.y));
       const maxX = Math.max(...tempPoints.map(p => p.x));
@@ -373,6 +418,9 @@ const MapEditor = ({
       }
     } else if (dragMode?.type === 'brush' && activeTool && tempPoints.length > 1) {
       createElement(activeTool as ElementType, tempPoints, true);
+    } else if (dragMode && dragMode.type !== 'pan') {
+      // حفظ الحالة بعد انتهاء السحب أو التعديل
+      saveStateToHistory(elements);
     }
     setDragMode(null);
     setTempPoints([]);
@@ -442,8 +490,47 @@ const MapEditor = ({
       locked: false
     };
     
+    saveStateToHistory(elements);
     setElements(prev => [...prev, newElement]);
     setSelectedId(newId);
+  };
+
+  // أدوات المحاذاة والدوران السريعة (Alignment Power Tools)
+  const handleAlign = (type: 'horizontal' | 'vertical') => {
+    if (!selectedId) return;
+    const el = elements.find(e => e.id === selectedId);
+    if (!el || el.locked) return;
+
+    const pts = getElementPoints(el);
+    const minX = Math.min(...pts.map(p => p.x));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxY = Math.max(...pts.map(p => p.y));
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (type === 'horizontal') {
+      const targetX = (dims.w - width) / 2;
+      dx = targetX - minX;
+    } else if (type === 'vertical') {
+      const targetY = (dims.h - height) / 2;
+      dy = targetY - minY;
+    }
+
+    const newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+    saveStateToHistory(elements);
+    updateSelectedElement({ points: newPoints, x: newPoints[0].x, y: newPoints[0].y });
+    showSuccess("تمت محاذاة العنصر بنجاح");
+  };
+
+  const handleQuickRotate = (angle: number) => {
+    if (!selectedId) return;
+    saveStateToHistory(elements);
+    updateSelectedElement({ rotation: angle });
+    showSuccess(`تم تدوير العنصر إلى ${angle} درجة`);
   };
 
   const pointsToPath = (points: Point[], closed = true) => {
@@ -510,6 +597,7 @@ const MapEditor = ({
       y: centerY + (p.y - centerY) * scaleY 
     }));
     
+    saveStateToHistory(elements);
     updateSelectedElement({ 
       points: newPoints, 
       width: dim === 'w' ? value : selectedElement.width, 
@@ -543,6 +631,7 @@ const MapEditor = ({
         showInMain: false,
         isBold: false
       };
+      saveStateToHistory(elements);
       setElements(prev => [newElement, ...prev]);
       setSelectedId(newElement.id);
     };
@@ -556,6 +645,7 @@ const MapEditor = ({
     const reader = new FileReader();
     reader.onload = (evt) => {
       const url = evt.target?.result as string;
+      saveStateToHistory(elements);
       updateSelectedElement({ color: url });
       showSuccess("تم استبدال الصورة بنجاح");
     };
@@ -591,6 +681,7 @@ const MapEditor = ({
     const newGround = Array(count).fill(0).map((_, i) => currentGround[i] || 0);
     const newTypical = Array(count).fill(0).map((_, i) => currentTypical[i] || 0);
     
+    saveStateToHistory(elements);
     updateSelectedElement({
       apartmentsPerFloor: count,
       groundFloorSizes: newGround,
@@ -659,6 +750,13 @@ const MapEditor = ({
             <Button variant="ghost" size="icon" onClick={() => setScale(s => Math.max(s - 0.2, 0.1))}><ZoomOut size={18} /></Button>
             <Button variant="ghost" size="icon" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={18} /></Button>
           </div>
+          
+          {/* أزرار التراجع والإعادة */}
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <Button variant="ghost" size="icon" onClick={handleUndo} disabled={history.length === 0} className="disabled:opacity-40"><Undo2 size={18} /></Button>
+            <Button variant="ghost" size="icon" onClick={handleRedo} disabled={redoStack.length === 0} className="disabled:opacity-40"><Redo2 size={18} /></Button>
+          </div>
+
           <Button variant={gridLock ? "default" : "outline"} size="icon" onClick={() => setGridLock(!gridLock)} className={cn("rounded-xl", gridLock && "bg-indigo-600")}><Grid3X3 size={18} /></Button>
           <Button variant="outline" size="icon" onClick={() => setIsFullScreen(!isFullScreen)} className="rounded-xl">
             {isFullScreen ? <Minimize size={18} /> : <Maximize size={18} />}
@@ -871,6 +969,7 @@ const MapEditor = ({
                                   e.stopPropagation();
                                   const newPoints = [...pts];
                                   newPoints.splice(i + 1, 0, { x: snap(midX), y: snap(midY) });
+                                  saveStateToHistory(elements);
                                   updateSelectedElement({ points: newPoints });
                                   showSuccess("تم إضافة زاوية جديدة للشكل بنجاح");
                                 }}
@@ -879,7 +978,7 @@ const MapEditor = ({
                           );
                         })}
 
-                        {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:fill-blue-50 transition-colors" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />)}
+                        {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="fill-white stroke-blue-600 stroke-2 cursor-pointer hover:fill-blue-50 transition-colors" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pts.length > 3) { saveStateToHistory(elements); const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />)}
                         
                         <circle cx={centerX} cy={pts[0].y - 30} r={8} className="fill-blue-600 cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
                       </>
@@ -1088,6 +1187,17 @@ const MapEditor = ({
                       })()}
                     </div>
                   )}
+
+                  {/* أدوات المحاذاة والدوران السريعة */}
+                  <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <Label className="text-xs font-black text-slate-500 uppercase tracking-wider">أدوات المحاذاة والدوران السريعة</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleAlign('horizontal')} className="rounded-lg text-xs font-bold gap-1.5"><AlignHorizontalJustifyCenter size={14} /> محاذاة أفقية</Button>
+                      <Button variant="outline" size="sm" onClick={() => handleAlign('vertical')} className="rounded-lg text-xs font-bold gap-1.5"><AlignVerticalJustifyCenter size={14} /> محاذاة عمودية</Button>
+                      <Button variant="outline" size="sm" onClick={() => handleQuickRotate(0)} className="rounded-lg text-xs font-bold">دوران 0°</Button>
+                      <Button variant="outline" size="sm" onClick={() => handleQuickRotate(90)} className="rounded-lg text-xs font-bold">دوران 90°</Button>
+                    </div>
+                  </div>
 
                   <div className="space-y-2">
                     <Label className="text-xs font-black text-slate-400 uppercase tracking-wider">زاوية الدوران (درجة)</Label>
@@ -1328,7 +1438,7 @@ const MapEditor = ({
                     <Button variant="outline" onClick={() => handleDuplicate('down')} className="rounded-xl h-12 gap-2 font-bold border-slate-200"><ArrowDown size={16} /> تكرار أسفل</Button>
                   </div>
                 </div>
-                <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
+                <div className="pt-6 border-t border-slate-100"><Button variant="destructive" className="w-full rounded-xl h-12 gap-2 font-black shadow-lg shadow-rose-100" onClick={() => { saveStateToHistory(elements); setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
               </div>
             </div>
           )}

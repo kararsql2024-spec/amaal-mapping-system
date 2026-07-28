@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowRight, BarChart3, TrendingUp, DollarSign, Coins, FileText, 
   Home, Building2, CheckCircle2, Clock, ShieldCheck, PieChart as PieIcon,
-  Percent, Loader2, Filter, Tags, AlertTriangle, Ruler, RefreshCcw
+  Percent, Loader2, Filter, Tags, AlertTriangle, Ruler, RefreshCcw, Download
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 interface ReportsProps {
   projects: Project[];
@@ -655,6 +656,73 @@ const Reports = ({ projects }: ReportsProps) => {
     })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
   }, [fetchedElements, housesData, selectedProjectId]);
 
+  // ميزة تصدير البيانات والتقارير إلى ملف Excel
+  const handleExportToExcel = () => {
+    try {
+      const exportData = filteredElementsForGlobal.map(el => {
+        if (el.type === 'house') {
+          const data = housesData[el.id] || {};
+          const projName = projects.find(p => p.id === el._projectId)?.name || "المخطط العام";
+          return {
+            'المشروع': projName,
+            'رقم الوحدة': el.label,
+            'النوع': 'منزل',
+            'الحالة': data.status === 'sold' ? 'مباع' : data.status === 'investment' ? 'استثمار' : data.status === 'reserved' ? 'محجوز' : data.status === 'pending' ? 'حجز أولي' : 'متوفر',
+            'اسم الزبون': data.name || '',
+            'رقم الهاتف': data.phone || '',
+            'تاريخ البيع/الحجز': data.saleDate || '',
+            'السعر': data.price || '',
+            'العملة': data.currency || 'IQD',
+            'رقم الطابو': data.taboNum || '',
+            'حالة الطابو': data.taboStatus || 'غير مروج',
+            'تاريخ الاستلام': data.handoverDate || '',
+            'المساحة (م²)': el.customArea || ''
+          };
+        } else if (el.type === 'tower') {
+          const apts: any[] = [];
+          const floors = el.floors || 0;
+          const aptsPerFloor = el.apartmentsPerFloor || 0;
+          const projName = projects.find(p => p.id === el._projectId)?.name || "المخطط العام";
+          
+          for (let f = 1; f <= floors; f++) {
+            for (let a = 1; a <= aptsPerFloor; a++) {
+              const key = `${el.id}_F${f}_A${a}`;
+              const data = housesData[key] || {};
+              if (data.status === 'frozen_hidden') continue;
+              const size = f === 1 ? (el.groundFloorSizes?.[a - 1] || 0) : (el.typicalFloorSizes?.[a - 1] || 0);
+              apts.push({
+                'المشروع': projName,
+                'رقم الوحدة': `${el.label}-F${f}-A${a}`,
+                'النوع': 'شقة',
+                'الحالة': data.status === 'sold' ? 'مباع' : data.status === 'investment' ? 'استثمار' : data.status === 'reserved' ? 'محجوز' : data.status === 'pending' ? 'حجز أولي' : 'متوفر',
+                'اسم الزبون': data.name || '',
+                'رقم الهاتف': data.phone || '',
+                'تاريخ البيع/الحجز': data.saleDate || '',
+                'السعر': data.price || '',
+                'العملة': data.currency || 'IQD',
+                'رقم الطابو': data.taboNum || '',
+                'حالة الطابو': data.taboStatus || 'غير مروج',
+                'تاريخ الاستلام': data.handoverDate || '',
+                'المساحة (م²)': size || ''
+              });
+            }
+          }
+          return apts;
+        }
+        return null;
+      }).filter(Boolean).flat();
+
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "الوحدات السكنية");
+      XLSX.writeFile(wb, `تقرير_الوحدات_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showSuccess("تم تصدير ملف Excel بنجاح");
+    } catch (error) {
+      console.error(error);
+      showError("فشل تصدير ملف Excel");
+    }
+  };
+
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('en-US').format(Math.round(num));
   };
@@ -716,9 +784,9 @@ const Reports = ({ projects }: ReportsProps) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-xs font-black text-slate-400 uppercase tracking-wider">المشروع المستهدف:</span>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <Select value={selectedProjectId} onValueChange={(val) => setSelectedProjectId(val)}>
               <SelectTrigger className="w-[220px] rounded-xl h-12 font-black border-slate-200 bg-slate-50/50">
                 <SelectValue placeholder="اختر المشروع..." />
               </SelectTrigger>
@@ -729,6 +797,15 @@ const Reports = ({ projects }: ReportsProps) => {
                 ))}
               </SelectContent>
             </Select>
+            
+            {/* زر تصدير البيانات إلى Excel */}
+            <Button 
+              onClick={handleExportToExcel} 
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 h-12 px-5 font-black text-xs shadow-md shadow-emerald-100"
+            >
+              <Download size={16} />
+              تصدير البيانات إلى Excel
+            </Button>
           </div>
         </header>
 
