@@ -336,7 +336,7 @@ const InteractiveMap = ({
         <g 
           transform={`translate(${position.x}, ${position.y}) scale(${scale})`}
           style={{
-            transition: isDragging ? 'none' : 'transform 1.2s cubic-bezier(0.25, 1, 0.5, 1)'
+            transition: isDragging ? 'none' : 'transform 3.5s cubic-bezier(0.15, 1, 0.2, 1)'
           }}
         >
           <defs>

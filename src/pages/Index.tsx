@@ -295,7 +295,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [selectedProjectId, setHousesData]);
 
-  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح (مع تأخير 1.2 ثانية للسماح باكتمال الزووم الانسيابي)
+  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح (مع تأخير 3.5 ثانية للسماح باكتمال الزووم البطيء والانسيابي)
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
       const { elementId, isTower } = pendingOpen;
@@ -308,7 +308,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           } else {
             setIsUnitModalOpen(true);
           }
-        }, 1200); // تأخير 1.2 ثانية للسماح باكتمال تأثير الزووم الانسيابي
+        }, 3500); // تأخير 3.5 ثانية ليتطابق مع حركة الزووم البطيئة والانسيابية
       } else {
         showError("تعذر عرض الوحدة على المخطط الحالي");
       }
@@ -510,6 +510,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const unitKey = item.unit_key;
     const projectId = item.project_id;
     
+    // تفعيل حالة التحميل وتصفير العناصر فوراً لمنع تداخل المخططات القديمة والجديدة
+    setIsProjectLoading(true);
+    setActiveElements([]);
     setSelectedProjectId(projectId);
     
     if (unitKey.includes('_F') && unitKey.includes('_A')) {
