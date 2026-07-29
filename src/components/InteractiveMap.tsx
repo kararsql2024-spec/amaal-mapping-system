@@ -19,6 +19,11 @@ interface InteractiveMapProps {
   permissions?: any;
   backgroundColor?: string; // خلفية انسيابية ممررة ديناميكياً
   showGrid?: boolean;       // شبكة مربعات قابلة للتحكم
+  filterZone?: string;      // فلتر الزون للمنازل
+  filterClass?: string;     // فلتر الصنف للمنازل
+  filterSize?: string;      // فلتر مساحة الشقق
+  filterStatus?: string;    // فلتر الحالة المباشرة للوحدات
+  houseTypeAreas?: Record<string, number>; // مساحات أصناف المنازل القياسية
 }
 
 const InteractiveMap = ({ 
@@ -30,7 +35,12 @@ const InteractiveMap = ({
   mapHeight, 
   permissions,
   backgroundColor = '#f1f5f9',
-  showGrid = true
+  showGrid = true,
+  filterZone = 'all',
+  filterClass = 'all',
+  filterSize = 'all',
+  filterStatus = 'all',
+  houseTypeAreas = {}
 }: InteractiveMapProps) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -262,6 +272,98 @@ const InteractiveMap = ({
     );
   };
 
+  // دوال مساعدة لحساب مساحات المنازل والعمارات للفلاتر المباشرة
+  const getHouseArea = (el: MapElement) => {
+    if (el.customArea !== undefined && el.customArea > 0) {
+      return el.customArea;
+    }
+    const parts = el.label.split('-');
+    const lastPart = parts[parts.length - 1] || '';
+    const match = lastPart.match(/^([a-zA-Z]+)/);
+    const type = match ? match[1].toUpperCase() : lastPart.toUpperCase();
+    return houseTypeAreas[type] || 0;
+  };
+
+  // التحقق من تفعيل أي فلتر مباشر للخريطة
+  const isAnyFilterActive = 
+    (filterZone && filterZone !== 'all') || 
+    (filterClass && filterClass !== 'all') || 
+    (filterSize && filterSize !== 'all') || 
+    (filterStatus && filterStatus !== 'all');
+
+  // التحقق مما إذا كان العنصر يطابق الفلتر المفتوح
+  const matchesFilter = (el: MapElement): boolean => {
+    if (el.type !== 'house' && el.type !== 'tower') return false;
+
+    // 1. فلترة الزون (للمنازل فقط)
+    if (filterZone && filterZone !== 'all') {
+      if (el.type === 'house') {
+        const parts = el.label.split('-');
+        const zone = parts[0] || '';
+        if (zone !== filterZone) return false;
+      } else {
+        return false;
+      }
+    }
+
+    // 2. فلترة الصنف (للمنازل فقط)
+    if (filterClass && filterClass !== 'all') {
+      if (el.type === 'house') {
+        const parts = el.label.split('-');
+        let uClass = '';
+        if (parts.length >= 3) {
+          const typeMatch = parts[2].match(/[a-zA-Z]+/);
+          uClass = typeMatch ? typeMatch[0] : '';
+        }
+        if (uClass !== filterClass) return false;
+      } else {
+        return false;
+      }
+    }
+
+    // 3. فلترة المساحة (منازل أو عمارات)
+    if (filterSize && filterSize !== 'all') {
+      const targetSize = parseFloat(filterSize);
+      if (el.type === 'house') {
+        if (getHouseArea(el) !== targetSize) return false;
+      } else if (el.type === 'tower') {
+        const hasGroundMatch = el.groundFloorSizes?.some(s => s === targetSize);
+        const hasTypicalMatch = el.typicalFloorSizes?.some(s => s === targetSize);
+        if (!hasGroundMatch && !hasTypicalMatch) return false;
+      } else {
+        return false;
+      }
+    }
+
+    // 4. فلترة الحالة
+    if (filterStatus && filterStatus !== 'all') {
+      if (el.type === 'house') {
+        const data = housesData[el.id] || { status: 'available' };
+        if (data.status !== filterStatus) return false;
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 0;
+        const aptsPerFloor = el.apartmentsPerFloor || 0;
+        let hasStatusMatch = false;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            const data = housesData[key] || { status: 'available' };
+            if (data.status === filterStatus) {
+              hasStatusMatch = true;
+              break;
+            }
+          }
+          if (hasStatusMatch) break;
+        }
+        if (!hasStatusMatch) return false;
+      } else {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   const sortedElements = [...elements]
     .filter(el => el.type !== 'reference_image' || el.showInMain)
     .sort((a, b) => {
@@ -362,11 +464,27 @@ const InteractiveMap = ({
             const dynamicIconSize = minDim * 0.6; 
             const dynamicFontSize = minDim * 0.3;
 
+            // حساب كلاسات الفلترة والتوهج المباشر (Feature 6)
+            let filterClasses = "";
+            let isDimmed = false;
+            
+            if (isAnyFilterActive) {
+              const matched = matchesFilter(el);
+              if (matched) {
+                // تفعيل التوهج الضوئي النيون النباض بلون أزرق فوسفوري مميز لسهولة الرؤية
+                filterClasses = "filter drop-shadow-[0_0_15px_#3b82f6] animate-pulse stroke-blue-400 stroke-[2.5px] scale-[1.01] origin-center duration-1000";
+              } else {
+                // تخفيض شفافية وإزالة تلوين العناصر الأخرى لتسهيل المقارنة البصرية للزبون
+                filterClasses = "opacity-15 saturate-50 pointer-events-none";
+                isDimmed = true;
+              }
+            }
+
             return (
               <g 
                 key={el.id} 
-                onClick={(e) => handleElementClick(e, el.id, isInteractive)} 
-                className={cn(isInteractive ? "cursor-pointer" : "pointer-events-none")} 
+                onClick={(e) => handleElementClick(e, el.id, isInteractive && !isDimmed)} 
+                className={cn(isInteractive && !isDimmed ? "cursor-pointer" : "pointer-events-none", filterClasses, "transition-all duration-500")} 
                 transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
               >
                 <defs>

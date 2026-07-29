@@ -6,7 +6,11 @@ import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
 import { showSuccess, showError } from '@/utils/toast';
-import { Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, BarChart3, MapPin, Search, RefreshCcw, X } from 'lucide-react';
+import { 
+  Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, 
+  Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, 
+  BarChart3, MapPin, Search, RefreshCcw, X, SlidersHorizontal, AlertTriangle, Ruler 
+} from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,6 +68,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [mainMapData, setMainMapData] = useState<any>(null);
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
 
+  // متغيرات تصفية الخريطة التفاعلية والتوهج (Feature 6)
+  const [mapFilterZone, setMapFilterZone] = useState<string>('all');
+  const [mapFilterClass, setMapFilterClass] = useState<string>('all');
+  const [mapFilterSize, setMapFilterSize] = useState<string>('all');
+  const [mapFilterStatus, setMapFilterStatus] = useState<string>('all');
+
   // متغيرات البحث والآخر تحديث المضافين بشكل مخصص
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -108,6 +118,160 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
   }, [projects, currentCenter]);
 
+  // استخراج معلمات التصفية الذكية بناءً على المخطط الحالي لتوليد فلاتر الخريطة تلقائياً (Feature 6)
+  const { mapZones, mapClasses, mapSizes } = React.useMemo(() => {
+    const zones = new Set<string>();
+    const classes = new Set<string>();
+    const sizes = new Set<number>();
+
+    activeElements.forEach(el => {
+      if (el.type === 'house') {
+        const parts = el.label.split('-');
+        if (parts[0]) zones.add(parts[0]);
+        if (parts.length >= 3) {
+          const typeMatch = parts[2].match(/[a-zA-Z]+/);
+          if (typeMatch) classes.add(typeMatch[0]);
+        }
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 1;
+        const aptsPerFloor = el.apartmentsPerFloor || 1;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            const data = housesData[key];
+            if (data?.status === 'frozen_hidden') continue;
+
+            const size = f === 1 
+              ? (el.groundFloorSizes?.[a - 1] || 0) 
+              : (el.typicalFloorSizes?.[a - 1] || 0);
+            if (size > 0) {
+              sizes.add(size);
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      mapZones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      mapClasses: Array.from(classes).sort(),
+      mapSizes: Array.from(sizes).sort((a, b) => a - b)
+    };
+  }, [activeElements, housesData]);
+
+  // حساب الحجوزات التي أوشكت مدتها على الانتهاء (24-48 ساعة قبل مرور 7 أيام) (Feature 8)
+  const expiringSoonBookings = React.useMemo(() => {
+    if (selectedProjectId === 'main_map' || !activeProject) return [];
+    const soon: any[] = [];
+    const now = new Date();
+
+    const checkUnit = (key: string, label: string) => {
+      const data = housesData[key];
+      // الحجز الأولي (Pending) فقط يخضع للتصفية والانتهاء
+      if (data?.status === 'pending' && data?.saleDate) {
+        const bookingDate = new Date(data.saleDate);
+        const diffTime = now.getTime() - bookingDate.getTime();
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+        // إذا مر أكثر من 5 أيام وأقل من 7 أيام، فإن الحجز ينتهي قريباً جداً (أقل من 48 ساعة)
+        if (diffDays >= 5 && diffDays <= 7) {
+          const daysLeft = (7 - diffDays).toFixed(1);
+          soon.push({
+            key,
+            label,
+            daysLeft,
+            data
+          });
+        }
+      }
+    };
+
+    activeElements.forEach(el => {
+      if (el.type === 'house') {
+        checkUnit(el.id, el.label);
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 0;
+        const aptsPerFloor = el.apartmentsPerFloor || 0;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            
+            // حساب كود الطابق والشقة للحصول على الاسم الرمزي الحقيقي للشقة
+            let pCounter = 0;
+            for (let f_idx = 1; f_idx <= floors; f_idx++) {
+              for (let a_idx = 1; a_idx <= aptsPerFloor; a_idx++) {
+                const innerKey = `${el.id}_F${f_idx}_A${a_idx}`;
+                const innerData = housesData[innerKey];
+                if (innerData?.status !== 'frozen_uncounted' && innerData?.status !== 'frozen_hidden') {
+                  pCounter++;
+                }
+                if (f_idx === f && a_idx === a) {
+                  const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                  const aptCode = (innerData?.status === 'frozen_uncounted' || innerData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
+                  const label = `${el.label}-${floorCode}-${aptCode}`;
+                  checkUnit(key, label);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return soon;
+  }, [selectedProjectId, activeProject, activeElements, housesData]);
+
+  // دالة تمديد الحجز الأولي لمدة 7 أيام إضافية وتوثيق ذلك بالتاريخ والملاحظات (Feature 8)
+  const handleExtendBooking = async (key: string, currentData: any) => {
+    if (!selectedProjectId) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayLabel = new Date().toLocaleDateString('ar-EG');
+    const updatedNotes = [...(currentData.notes || [])];
+    
+    // توثيق عملية تمديد الحجز رسمياً في سجل الملاحظات الخاص بالوحدة
+    updatedNotes.unshift({
+      text: `قام القسم (${currentCenter?.name || 'مبيعات'}) بعمل تمديد يدوي للحجز الأولي لمدة 7 أيام إضافية تبدأ من تاريخ اليوم ${todayLabel}`,
+      author: 'النظام تلقائياً',
+      date: new Date().toISOString()
+    });
+
+    const updatedData = {
+      ...currentData,
+      saleDate: todayStr, // تصفير العداد لتبدأ 7 أيام جديدة بالكامل
+      notes: updatedNotes
+    };
+
+    try {
+      await supabase.from('houses_data').upsert({ 
+        unit_key: key, 
+        project_id: selectedProjectId, 
+        data: updatedData 
+      }, { onConflict: 'unit_key' });
+
+      // تدوين إشعار تمديد رسمي في سجل الإشعارات
+      await supabase.from('notifications').insert({
+        project_id: selectedProjectId,
+        message: `تم تمديد الحجز الأولي للوحدة ${key} بنجاح من قبل مركز ${currentCenter?.name || ''} لمدة 7 أيام إضافية.`
+      });
+
+      setHousesData(prev => ({ ...prev, [key]: updatedData }));
+      
+      // جلب الإشعارات والعمليات الحية
+      const { data: newNotifs } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('project_id', selectedProjectId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (newNotifs) setNotifications(newNotifs);
+
+      showSuccess(`تم تمديد حجز الوحدة ${key} لمدة 7 أيام إضافية بنجاح!`);
+    } catch (e) {
+      console.error(e);
+      showError("فشل تحديث وتمديد الحجز، يرجى المحاولة لاحقاً.");
+    }
+  };
+
   // تعيين المخطط العام كخيار افتراضي أولي عند فتح الواجهة ليعطي تجربة تصفح للمدينة كاملة
   useEffect(() => {
     if (!selectedProjectId) {
@@ -150,6 +314,14 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
     fetchCentersAndPermissions();
   }, []);
+
+  // إعادة تعيين فلاتر الخريطة التفاعلية عند تغيير المشروع لتجنب تضارب التصفية
+  useEffect(() => {
+    setMapFilterZone('all');
+    setMapFilterClass('all');
+    setMapFilterSize('all');
+    setMapFilterStatus('all');
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -892,6 +1064,88 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         )}
 
+        {/* شريط تصفية الخريطة التفاعلية والتوهج البصري (Feature 6) */}
+        {selectedProjectId !== 'main_map' && activeProject && (
+          <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-center gap-4 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2 text-slate-700 font-black text-xs shrink-0">
+              <SlidersHorizontal size={16} className="text-blue-600 animate-pulse" />
+              <span>تصفية الخريطة وتوهج الوحدات:</span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-slate-400">الزون:</span>
+              <Select value={mapFilterZone} onValueChange={setMapFilterZone}>
+                <SelectTrigger className="w-[110px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                  {mapZones.map(z => (
+                    <SelectItem key={z} value={z} className="font-bold text-xs">زون {z}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-slate-400">الصنف:</span>
+              <Select value={mapFilterClass} onValueChange={setMapFilterClass}>
+                <SelectTrigger className="w-[110px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                  {mapClasses.map(c => (
+                    <SelectItem key={c} value={c} className="font-bold text-xs">صنف {c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-slate-400">المساحة:</span>
+              <Select value={mapFilterSize} onValueChange={setMapFilterSize}>
+                <SelectTrigger className="w-[120px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                  {mapSizes.map(s => (
+                    <SelectItem key={s} value={s.toString()} className="font-bold text-xs">{s} م²</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-slate-400">الحالة:</span>
+              <Select value={mapFilterStatus} onValueChange={setMapFilterStatus}>
+                <SelectTrigger className="w-[120px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold text-xs">كل الحالات</SelectItem>
+                  <SelectItem value="available" className="font-bold text-xs text-emerald-600">🟢 متوفر</SelectItem>
+                  <SelectItem value="sold" className="font-bold text-xs text-rose-600">🔴 مباع</SelectItem>
+                  <SelectItem value="investment" className="font-bold text-xs text-purple-600">🟣 استثمار</SelectItem>
+                  <SelectItem value="reserved" className="font-bold text-xs text-amber-600">🟡 محجوز</SelectItem>
+                  <SelectItem value="pending" className="font-bold text-xs text-blue-600">🔵 حجز أولي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(mapFilterZone !== 'all' || mapFilterClass !== 'all' || mapFilterSize !== 'all' || mapFilterStatus !== 'all') && (
+              <Button 
+                variant="ghost" 
+                onClick={() => { setMapFilterZone('all'); setMapFilterClass('all'); setMapFilterSize('all'); setMapFilterStatus('all'); }}
+                className="text-xs font-black text-rose-500 hover:bg-rose-50 rounded-xl h-10 px-3 shrink-0"
+              >
+                إعادة ضبط
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* شريط فرعي أسفل الهيدر يحتوي على زر التقارير والتحليلات بشكل مستقل وأنيق */}
         {permissions.canAccessReports !== false && (
           <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
@@ -939,6 +1193,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                   permissions={permissions} 
                   backgroundColor={currentBgColor}
                   showGrid={currentShowGrid}
+                  filterZone={mapFilterZone}
+                  filterClass={mapFilterClass}
+                  filterSize={mapFilterSize}
+                  filterStatus={mapFilterStatus}
+                  houseTypeAreas={projectConfigs[selectedProjectId || '']?.houseTypeAreas || {}}
                 />
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>
@@ -949,6 +1208,36 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
           {selectedProjectId !== 'main_map' && (permissions.showGeneralStats || permissions.showNotifications) && (
             <div className="space-y-6 animate-in fade-in slide-in-from-left-4">
+              
+              {/* التنبيهات الذكية وجدولة تمديد الحجوزات التي توشك صلاحيتها على الانتهاء (Feature 8) */}
+              {expiringSoonBookings.length > 0 && (
+                <div className="bg-amber-50/60 border border-amber-200 p-6 rounded-[2rem] shadow-sm space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="flex items-center gap-2 text-amber-800 font-black text-xs shrink-0">
+                    <AlertTriangle className="text-amber-500 animate-bounce shrink-0" size={18} />
+                    <span>حجوزات أولية توشك على الانتهاء:</span>
+                  </div>
+                  <div className="space-y-3 max-h-48 overflow-y-auto no-scrollbar">
+                    {expiringSoonBookings.map((b) => (
+                      <div key={b.key} className="bg-white p-3 rounded-xl border border-amber-100 flex items-center justify-between gap-3 text-xs shadow-sm">
+                        <div className="text-right">
+                          <p className="font-black text-slate-800 text-[11px]">{b.label}</p>
+                          <p className="text-[9px] text-amber-600 font-bold mt-0.5">
+                            متبقي: <strong className="font-black text-amber-700">{b.daysLeft} يوم</strong> (تاريخ: {b.data.saleDate})
+                          </p>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleExtendBooking(b.key, b.data)}
+                          className="bg-amber-500 hover:bg-amber-600 text-white rounded-lg h-8 px-2.5 font-black text-[10px] shrink-0"
+                        >
+                          تمديد 7 أيام
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {permissions.showGeneralStats && (
                 <div className="bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100">
                   <h3 className="text-xl font-bold mb-6 text-slate-800">إحصائيات {activeProject?.name}</h3>
