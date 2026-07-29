@@ -467,16 +467,24 @@ const InteractiveMap = ({
             // حساب كلاسات الفلترة والتوهج المباشر (Feature 6)
             let filterClasses = "";
             let isDimmed = false;
+            let overrideStyles: any = null;
             
             if (isAnyFilterActive) {
-              const matched = matchesFilter(el);
-              if (matched) {
-                // تفعيل التوهج الضوئي النيون النباض بلون أزرق فوسفوري مميز لسهولة الرؤية
-                filterClasses = "filter drop-shadow-[0_0_15px_#3b82f6] animate-pulse stroke-blue-400 stroke-[2.5px] scale-[1.01] origin-center duration-1000";
-              } else {
-                // تخفيض شفافية وإزالة تلوين العناصر الأخرى لتسهيل المقارنة البصرية للزبون
-                filterClasses = "opacity-15 saturate-50 pointer-events-none";
-                isDimmed = true;
+              // نطبق التصفية والتوهج والتعتيم فقط على المنازل والعمارات السكنية
+              if (el.type === 'house' || el.type === 'tower') {
+                const matched = matchesFilter(el);
+                if (matched) {
+                  // التوهج للمحيط الخارجي فقط (الحدود) مع النبض والحفاظ على الألوان الأصلية للوحدة بالداخل
+                  filterClasses = "filter drop-shadow-[0_0_12px_#3b82f6] animate-pulse scale-[1.01] origin-center duration-1000";
+                  overrideStyles = {
+                    stroke: "#3b82f6",
+                    strokeWidth: 3.5
+                  };
+                } else {
+                  // تعتيم الوحدات السكنية غير المطابقة فقط وجعلها رمادية (grey) بدلاً من إخفائها تماماً
+                  filterClasses = "opacity-30 grayscale pointer-events-none transition-all duration-500";
+                  isDimmed = true;
+                }
               }
             }
 
@@ -498,9 +506,9 @@ const InteractiveMap = ({
                     <path 
                       d={pathD} 
                       fill={el.isStroke ? "none" : styles.fill} 
-                      stroke={el.isStroke ? styles.fill : styles.stroke} 
+                      stroke={el.isStroke ? styles.fill : (overrideStyles?.stroke || styles.stroke)} 
                       fillOpacity={styles.opacity} 
-                      strokeWidth={el.isStroke ? el.strokeWidth : styles.strokeWidth} 
+                      strokeWidth={el.isStroke ? el.strokeWidth : (overrideStyles?.strokeWidth || styles.strokeWidth)} 
                       strokeLinejoin="round" 
                       strokeLinecap="round" 
                       className={cn(
