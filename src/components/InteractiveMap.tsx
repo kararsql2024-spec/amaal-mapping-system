@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { cn } from "@/lib/utils";
 import { MapElement, Point, ElementType } from '@/types/project';
 import { 
@@ -53,6 +53,9 @@ const InteractiveMap = ({
   // حالات بطاقة المعاينة السريعة عند التمرير (Feature 2)
   const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
+  // تحديد ما إذا كنا نتصفح المخطط العام للمدينة (لا تتوفر صلاحيات الأقسام في المخطط العام)
+  const isMainMap = !permissions;
 
   // لمنع تفعيل النقر عن طريق الخطأ أثناء السحب والتحريك
   const dragStartCoords = useRef({ x: 0, y: 0 });
@@ -296,86 +299,97 @@ const InteractiveMap = ({
     (filterSize && filterSize !== 'all') || 
     (filterStatus && filterStatus !== 'all');
 
-  // التحقق مما إذا كان العنصر يطابق الفلتر المفتوح
-  const matchesFilter = (el: MapElement): boolean => {
-    if (el.type !== 'house' && el.type !== 'tower') return false;
+  // تحسين الأداء (Optimization): تجميع وفلترة نتائج البحث مسبقاً وتخزينها لحماية موارد المتصفح أثناء التنقل والسحب
+  const filteredMatchesMap = useMemo(() => {
+    const matches: Record<string, boolean> = {};
+    if (!isAnyFilterActive) return matches;
 
-    // 1. فلترة الزون (للمنازل فقط)
-    if (filterZone && filterZone !== 'all') {
-      if (el.type === 'house') {
-        const parts = el.label.split('-');
-        const zone = parts[0] || '';
-        if (zone !== filterZone) return false;
-      } else {
-        return false;
-      }
-    }
+    elements.forEach(el => {
+      if (el.type !== 'house' && el.type !== 'tower') return;
 
-    // 2. فلترة الصنف (للمنازل فقط)
-    if (filterClass && filterClass !== 'all') {
-      if (el.type === 'house') {
-        const parts = el.label.split('-');
-        let uClass = '';
-        if (parts.length >= 3) {
-          const typeMatch = parts[2].match(/[a-zA-Z]+/);
-          uClass = typeMatch ? typeMatch[0] : '';
+      let isMatch = true;
+
+      // 1. فلترة الزون (للمنازل فقط)
+      if (filterZone && filterZone !== 'all') {
+        if (el.type === 'house') {
+          const parts = el.label.split('-');
+          const zone = parts[0] || '';
+          if (zone !== filterZone) isMatch = false;
+        } else {
+          isMatch = false;
         }
-        if (uClass !== filterClass) return false;
-      } else {
-        return false;
       }
-    }
 
-    // 3. فلترة المساحة (منازل أو عمارات)
-    if (filterSize && filterSize !== 'all') {
-      const targetSize = parseFloat(filterSize);
-      if (el.type === 'house') {
-        if (getHouseArea(el) !== targetSize) return false;
-      } else if (el.type === 'tower') {
-        const hasGroundMatch = el.groundFloorSizes?.some(s => s === targetSize);
-        const hasTypicalMatch = el.typicalFloorSizes?.some(s => s === targetSize);
-        if (!hasGroundMatch && !hasTypicalMatch) return false;
-      } else {
-        return false;
-      }
-    }
-
-    // 4. فلترة الحالة
-    if (filterStatus && filterStatus !== 'all') {
-      if (el.type === 'house') {
-        const data = housesData[el.id] || { status: 'available' };
-        if (data.status !== filterStatus) return false;
-      } else if (el.type === 'tower') {
-        const floors = el.floors || 0;
-        const aptsPerFloor = el.apartmentsPerFloor || 0;
-        let hasStatusMatch = false;
-        for (let f = 1; f <= floors; f++) {
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            const key = `${el.id}_F${f}_A${a}`;
-            const data = housesData[key] || { status: 'available' };
-            if (data.status === filterStatus) {
-              hasStatusMatch = true;
-              break;
-            }
+      // 2. فلترة الصنف (للمنازل فقط)
+      if (isMatch && filterClass && filterClass !== 'all') {
+        if (el.type === 'house') {
+          const parts = el.label.split('-');
+          let uClass = '';
+          if (parts.length >= 3) {
+            const typeMatch = parts[2].match(/[a-zA-Z]+/);
+            uClass = typeMatch ? typeMatch[0] : '';
           }
-          if (hasStatusMatch) break;
+          if (uClass !== filterClass) isMatch = false;
+        } else {
+          isMatch = false;
         }
-        if (!hasStatusMatch) return false;
-      } else {
-        return false;
       }
-    }
 
-    return true;
-  };
+      // 3. فلترة المساحة (منازل أو عمارات)
+      if (isMatch && filterSize && filterSize !== 'all') {
+        const targetSize = parseFloat(filterSize);
+        if (el.type === 'house') {
+          if (getHouseArea(el) !== targetSize) isMatch = false;
+        } else if (el.type === 'tower') {
+          const hasGroundMatch = el.groundFloorSizes?.some(s => s === targetSize);
+          const hasTypicalMatch = el.typicalFloorSizes?.some(s => s === targetSize);
+          if (!hasGroundMatch && !hasTypicalMatch) isMatch = false;
+        } else {
+          isMatch = false;
+        }
+      }
+
+      // 4. فلترة الحالة
+      if (isMatch && filterStatus && filterStatus !== 'all') {
+        if (el.type === 'house') {
+          const data = housesData[el.id] || { status: 'available' };
+          if (data.status !== filterStatus) isMatch = false;
+        } else if (el.type === 'tower') {
+          const floors = el.floors || 0;
+          const aptsPerFloor = el.apartmentsPerFloor || 0;
+          let hasStatusMatch = false;
+          for (let f = 1; f <= floors; f++) {
+            for (let a = 1; a <= aptsPerFloor; a++) {
+              const key = `${el.id}_F${f}_A${a}`;
+              const data = housesData[key] || { status: 'available' };
+              if (data.status === filterStatus) {
+                hasStatusMatch = true;
+                break;
+              }
+            }
+            if (hasStatusMatch) break;
+          }
+          if (!hasStatusMatch) isMatch = false;
+        } else {
+          isMatch = false;
+        }
+      }
+
+      matches[el.id] = isMatch;
+    });
+
+    return matches;
+  }, [elements, filterZone, filterClass, filterSize, filterStatus, housesData, houseTypeAreas]);
 
   const handleMouseEnterElement = (e: React.MouseEvent, el: MapElement) => {
+    // منع المعاينة السريعة بالكامل داخل المخطط العام للمدينة
+    if (isMainMap) return;
     if (el.type !== 'house' && el.type !== 'tower') return;
     setHoveredElement(el);
   };
 
   const handleMouseMoveElement = (e: React.MouseEvent) => {
-    if (!containerRef.current) return;
+    if (isMainMap || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     setTooltipPos({
       x: e.clientX - rect.left,
@@ -456,7 +470,7 @@ const InteractiveMap = ({
             const pts = getElementPoints(el);
             const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
             const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-            const minY = Math.min(...pts.map(p => p.y));
+            const minY = Math.min(...pts.map(p => y => p.y));
             const minX = Math.min(...pts.map(p => p.x));
             const maxX = Math.max(...pts.map(p => p.x));
             const maxY = Math.max(...pts.map(p => p.y));
@@ -470,7 +484,7 @@ const InteractiveMap = ({
                 <image 
                   key={el.id}
                   href={el.color} 
-                  x={minX} y={minY} 
+                  x={minX} y={Math.min(...pts.map(p => p.y))} 
                   width={elWidth} height={elHeight} 
                   opacity={el.opacity}
                   transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
@@ -495,7 +509,7 @@ const InteractiveMap = ({
             if (isAnyFilterActive) {
               // نطبق التصفية والتوهج والتعتيم فقط على المنازل والعمارات السكنية
               if (el.type === 'house' || el.type === 'tower') {
-                const matched = matchesFilter(el);
+                const matched = filteredMatchesMap[el.id];
                 if (matched) {
                   // التوهج للمحيط الخارجي فقط (الحدود) بلون ذهبي ثابت مريح للعين بدون أي إزاحة أو تكبير
                   filterClasses = "filter drop-shadow-[0_0_10px_#fbbf24] transition-all duration-300";
@@ -546,8 +560,8 @@ const InteractiveMap = ({
                     {el.hasTexture && (
                       <g clipPath={`url(#clip-${el.id})`} style={{ color: el.textureColor || 'white' }}>
                         <rect 
-                          x={minX - 500} y={minY - 500} 
-                          width={(maxX - minX) + 1000} height={(maxY - minY) + 1000} 
+                          x={minX - 500} y={Math.min(...pts.map(p => p.y)) - 500} 
+                          width={(maxX - minX) + 1000} height={(maxY - Math.min(...pts.map(p => p.y))) + 1000} 
                           fill={`url(#texture-${el.textureType || 'glass'})`} 
                           pointerEvents="none" 
                           transform={`scale(${el.textureSize || 1})`}
@@ -595,7 +609,7 @@ const InteractiveMap = ({
                 
                 {el.type === 'road' && !el.isStroke && (
                   el.orientation === 'vertical' ? 
-                  <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
+                  <line x1={centerX} y1={Math.min(...pts.map(p => p.y))} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
                   <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
                 )}
 
@@ -622,7 +636,7 @@ const InteractiveMap = ({
       </svg>
       
       {/* بطاقة المعاينة السريعة العائمة عند التمرير (Feature 2) */}
-      {hoveredElement && (
+      {!isMainMap && hoveredElement && (
         (() => {
           const isHouse = hoveredElement.type === 'house';
           const isTower = hoveredElement.type === 'tower';
