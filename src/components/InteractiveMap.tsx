@@ -68,7 +68,7 @@ const InteractiveMap = ({
     const availableH = rect.height - padding;
 
     const scaleW = availableW / mapWidth;
-    const scaleH = availableH / mapHeight;
+    const scaleH = availableH / rect.height;
     const newScale = Math.min(scaleW, scaleH, 1.5);
 
     const newX = (rect.width - mapWidth * newScale) / 2;
@@ -497,14 +497,14 @@ const InteractiveMap = ({
               if (el.type === 'house' || el.type === 'tower') {
                 const matched = matchesFilter(el);
                 if (matched) {
-                  // التوهج للمحيط الخارجي فقط (الحدود) بلون ذهبي ثابت مريح للعين
-                  filterClasses = "filter drop-shadow-[0_0_10px_#fbbf24] scale-[1.01] origin-center transition-all duration-300";
+                  // التوهج للمحيط الخارجي فقط (الحدود) بلون ذهبي ثابت مريح للعين بدون أي إزاحة أو تكبير
+                  filterClasses = "filter drop-shadow-[0_0_10px_#fbbf24] transition-all duration-300";
                   overrideStyles = {
                     stroke: "#fbbf24",
                     strokeWidth: 3.5
                   };
                 } else {
-                  // جعل الوحدات السكنية غير المطابقة باهتة اللون (Gray/Washed-out) دون تقليل الشفافية
+                  // جعل الوحدات السكنية غير المطابقة باهتة اللون (Gray/Washed-out) دون تغيير الشفافية
                   filterClasses = "grayscale saturate-50 contrast-75 brightness-110 opacity-100 transition-all duration-500";
                   isDimmed = true;
                 }
@@ -649,15 +649,7 @@ const InteractiveMap = ({
             }
           };
 
-          const formatPriceValue = (price: string) => {
-            if (!price) return 'غير محدد';
-            const num = Number(price.replace(/,/g, ''));
-            return isNaN(num) ? price : num.toLocaleString('en-US');
-          };
-
-          // إظهار بطاقة المعاينة فقط إذا سمحت الصلاحيات
-          const showCustomerName = permissions?.showCustomerName !== false;
-          const showPrice = permissions?.showPrice !== false;
+          const area = getHouseArea(hoveredElement);
 
           return (
             <div 
@@ -679,46 +671,21 @@ const InteractiveMap = ({
                 </div>
               </div>
 
-              {isTower ? (
-                <div className="space-y-1.5 text-[11px] font-bold text-slate-600">
-                  <div className="flex justify-between"><span>عدد الطوابق:</span><span className="text-slate-900">{hoveredElement.floors || 1}</span></div>
-                  <div className="flex justify-between"><span>شقق كل طابق:</span><span className="text-slate-900">{hoveredElement.apartmentsPerFloor || 1}</span></div>
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 font-bold text-[10px]">حالة الوحدة:</span>
+                  <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-full border", getStatusColor(unitData?.status || 'available'))}>
+                    {getStatusText(unitData?.status || 'available')}
+                  </span>
                 </div>
-              ) : (
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-400 font-bold text-[10px]">حالة الوحدة:</span>
-                    <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-full border", getStatusColor(unitData?.status || 'available'))}>
-                      {getStatusText(unitData?.status || 'available')}
-                    </span>
+
+                {area > 0 && (
+                  <div className="flex justify-between items-center border-t pt-2.5">
+                    <span className="text-slate-400 font-bold text-[10px]">المساحة:</span>
+                    <span className="text-slate-700 font-black text-[11px]">{area} م²</span>
                   </div>
-
-                  {hasData && unitData.status !== 'available' && (
-                    <div className="space-y-1.5 border-t pt-2 mt-2">
-                      {showCustomerName && unitData.name && (
-                        <div className="flex items-center gap-1.5 text-slate-600 text-[11px] font-bold">
-                          <User size={12} className="text-slate-400" />
-                          <span className="truncate max-w-[180px]">{unitData.name}</span>
-                        </div>
-                      )}
-                      
-                      {showPrice && unitData.price && (
-                        <div className="flex items-center gap-1.5 text-slate-600 text-[11px] font-black">
-                          <Banknote size={12} className="text-emerald-500" />
-                          <span>{formatPriceValue(unitData.price)} {unitData.currency === 'USD' ? '$' : 'د.ع'}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {getHouseArea(hoveredElement) > 0 && (
-                    <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold border-t pt-2 mt-2">
-                      <Ruler size={12} className="text-indigo-500" />
-                      <span>المساحة: {getHouseArea(hoveredElement)} م²</span>
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })()
