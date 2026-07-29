@@ -1186,6 +1186,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 mapHeight={mainMapData?.height || 800} 
                 backgroundColor={currentBgColor}
                 showGrid={currentShowGrid}
+                showTooltips={false} // إيقاف بطاقة المعاينة في المخطط العام
               />
             ) : activeProject ? (
               <>
@@ -1204,6 +1205,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                   filterSize={mapFilterSize}
                   filterStatus={mapFilterStatus}
                   houseTypeAreas={projectConfigs[selectedProjectId || '']?.houseTypeAreas || {}}
+                  showTooltips={true} // تفعيل بطاقة المعاينة داخل المشاريع
                 />
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>

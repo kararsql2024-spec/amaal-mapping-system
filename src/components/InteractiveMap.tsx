@@ -25,6 +25,7 @@ interface InteractiveMapProps {
   filterSize?: string;      // فلتر مساحة الشقق
   filterStatus?: string;    // فلتر الحالة المباشرة للوحدات
   houseTypeAreas?: Record<string, number>; // مساحات أصناف المنازل القياسية
+  showTooltips?: boolean;   // خيار للتحكم في ظهور بطاقة المعاينة
 }
 
 const InteractiveMap = ({ 
@@ -41,7 +42,8 @@ const InteractiveMap = ({
   filterClass = 'all',
   filterSize = 'all',
   filterStatus = 'all',
-  houseTypeAreas = {}
+  houseTypeAreas = {},
+  showTooltips = true
 }: InteractiveMapProps) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -370,11 +372,13 @@ const InteractiveMap = ({
   };
 
   const handleMouseEnterElement = (e: React.MouseEvent, el: MapElement) => {
+    if (!showTooltips) return; // منع عرض البطاقة إذا كان الخيار معطلاً
     if (el.type !== 'house' && el.type !== 'tower') return;
     setHoveredElement(el);
   };
 
   const handleMouseMoveElement = (e: React.MouseEvent) => {
+    if (!showTooltips) return;
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     setTooltipPos({
@@ -622,7 +626,7 @@ const InteractiveMap = ({
       </svg>
       
       {/* بطاقة المعاينة السريعة العائمة عند التمرير (Feature 2) */}
-      {hoveredElement && (
+      {showTooltips && hoveredElement && (
         (() => {
           const isHouse = hoveredElement.type === 'house';
           const isTower = hoveredElement.type === 'tower';
