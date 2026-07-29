@@ -277,6 +277,38 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   };
 
+  // ميزة التحديث اللحظي الفوري (Real-time Sync) للبيانات من خلال اشتراكات Supabase (Feature 1)
+  useEffect(() => {
+    if (!selectedProjectId || selectedProjectId === 'main_map') return;
+
+    // الاشتراك في التغييرات اللحظية لجدول مبيعات الوحدات للمشروع الحالي
+    const channel = supabase
+      .channel(`realtime_sync_${selectedProjectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'houses_data',
+          filter: `project_id=eq.${selectedProjectId}`
+        },
+        (payload) => {
+          const updatedUnit = payload.new as any;
+          if (updatedUnit && updatedUnit.unit_key) {
+            setHousesData(prev => ({
+              ...prev,
+              [updatedUnit.unit_key]: updatedUnit.data
+            }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedProjectId, setHousesData]);
+
   // تعيين المخطط العام كخيار افتراضي أولي عند فتح الواجهة ليعطي تجربة تصفح للمدينة كاملة
   useEffect(() => {
     if (!selectedProjectId) {
@@ -767,44 +799,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     });
   };
 
-  const selectedElement = activeElements.find(el => el.id === selectedElementId);
-
-  const handleElementClick = (id: string) => {
-    const element = activeElements.find(el => el.id === id);
-    if (!element) return;
-
-    // إذا كان للعنصر ارتباط مباشر بمشروع سكني، يتم الانتقال التلقائي دون فتح نافذة التفاصيل
-    if (element.linkProjectId) {
-      const linkedP = projects.find(p => p.id === element.linkProjectId);
-      if (linkedP) {
-        setSelectedProjectId(element.linkProjectId);
-        setSelectedElementId(null);
-        showSuccess(`تم الانتقال التلقائي لمخطط: ${linkedP.name}`);
-      } else {
-        showError("المشروع المرتبط لم يعد متوفراً");
-      }
-      return;
-    }
-
-    // إذا كنا نتصفح المخطط العام، ولا يوجد ارتباط للمجسم بالمشاريع، لا تفتح نوافذ الوحدات لعدم وجود مبيعات في المخطط العام نفسه
-    if (selectedProjectId === 'main_map') {
-      return;
-    }
-
-    setSelectedElementId(id);
-    if (element.type === 'tower') setIsTowerModalOpen(true);
-    else setIsUnitModalOpen(true);
-  };
-
-  const handleSaveData = async (key: string, data: any) => {
-    if (!selectedProjectId || selectedProjectId === 'main_map') return;
-    try {
-      await supabase.from('houses_data').upsert({ unit_key: key, project_id: selectedProjectId, data: data }, { onConflict: 'unit_key' });
-      setHousesData(prev => ({ ...prev, [key]: data }));
-      showSuccess(`تم تحديث البيانات بنجاح`);
-    } catch (error) { showError("فشل في حفظ البيانات"); }
-  };
-
   const calculateStats = () => {
     if (selectedProjectId === 'main_map' || !activeProject || !activeElements) return { total: 0, sold: 0, investment: 0, promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0 };
     let total = 0; let sold = 0; let investment = 0;
@@ -873,6 +867,37 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const currentShowGrid = selectedProjectId === 'main_map'
     ? (mainMapData?.showGrid !== false)
     : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-100 mx-auto mb-6"><Store className="text-white w-10 h-10" /></div>
+            <h1 className="text-2xl font-black text-slate-800">دخول المراكز التسويقية</h1>
+            <p className="text-slate-500 font-medium mt-2">يرجى اختيار المركز وإدخال كلمة المرور</p>
+          </div>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-600 mr-2">المركز التسويقي</label>
+              <div className="relative">
+                <Select onValueChange={(val) => setLoginData({...loginData, centerId: val})}>
+                  <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold"><SelectValue placeholder="اختر المركز التسويقي..." /></SelectTrigger>
+                  <SelectContent className="rounded-xl">{marketingCenters.map(center => (<SelectItem key={center.id} value={center.id} className="text-right font-bold">{center.name}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-600 mr-2">كلمة المرور</label>
+              <div className="relative"><Lock className="absolute right-4 top-4 text-slate-400 w-5 h-5" /><Input type="password" placeholder="أدخل كلمة المرور..." className="pr-12 rounded-2xl h-14 border-slate-200 font-bold" value={loginData.password} onChange={(e) => setLoginData({...loginData, password: e.target.value})} /></div>
+            </div>
+            <Button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-700 rounded-2xl h-14 text-lg font-black shadow-lg shadow-blue-100">دخول للنظام</Button>
+          </div>
+          <div className="mt-8 pt-6 border-t border-slate-50"><MadeWithDyad /></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f0f4f8] p-4 md:p-8" dir="rtl">

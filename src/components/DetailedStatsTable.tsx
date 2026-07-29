@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Home, BarChart3, Filter } from "lucide-react";
+import { Building2, Home, BarChart3, Filter, FileSpreadsheet } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { showSuccess } from "@/utils/toast";
+import * as XLSX from 'xlsx';
 
 interface DetailedStatsTableProps {
   elements: MapElement[];
@@ -267,13 +270,97 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
     return stats;
   }, [elements, housesData, selectedType]);
 
+  // تصدير الإحصائيات لملف Excel منسق واحترافي (Feature 4)
+  const handleExportStatsToExcel = () => {
+    try {
+      const rows: any[] = [];
+
+      // 1. معالجة وتجهيز صفوف المنازل
+      rows.push(["تقرير إحصائيات المنازل"]);
+      rows.push([
+        "الزون", "البلوك", "الصنف", "المتاح", "المباع", "الاستثمار", "المحجوز", 
+        "الحجز الأولي", "المجموع الكلي", "مروج", "غير مروج", "مستلم الطابو", "مستلم الوحدة", "غير مستلم الوحدة", "إجمالي المبيعات (د.ع)", "إجمالي المبيعات ($)"
+      ]);
+
+      Object.entries(houseStats).forEach(([zone, zoneData]) => {
+        Object.entries(zoneData.blocks).forEach(([block, types]) => {
+          Object.entries(types).forEach(([type, s]: [string, any]) => {
+            rows.push([
+              zone, block, type, s.available, s.sold, s.investment, s.reserved, 
+              s.pending, s.total, s.promoted, s.notPromoted, s.receivedTabo, s.receivedUnit, s.notReceivedUnit, s.priceIQD, s.priceUSD
+            ]);
+          });
+        });
+        // إضافة صف المجموع للزون
+        rows.push([
+          `مجموع زون ${zone}`, "", "", zoneData.totals.available, zoneData.totals.sold, zoneData.totals.investment, 
+          zoneData.totals.reserved, zoneData.totals.pending, zoneData.totals.total, zoneData.totals.promoted, 
+          zoneData.totals.notPromoted, zoneData.totals.receivedTabo, zoneData.totals.receivedUnit, zoneData.totals.notReceivedUnit, 
+          zoneData.totals.priceIQD, zoneData.totals.priceUSD
+        ]);
+        rows.push([]); // صف فارغ للفصل
+      });
+
+      rows.push([]);
+      rows.push(["تقرير إحصائيات العمارات"]);
+      rows.push([
+        "اسم العمارة", "الطابق", "المساحة (م²)", "المتاح", "المباع", "الاستثمار", "المحجوز", 
+        "الحجز الأولي", "المجموع الكلي", "مروج", "غير مروج", "مستلم الطابو", "مستلم الوحدة", "غير مستلم الوحدة", "إجمالي المبيعات (د.ع)", "إجمالي المبيعات ($)"
+      ]);
+
+      // 2. معالجة وتجهيز صفوف العمارات
+      towerStats.forEach((tower) => {
+        tower.floors.forEach((floor: any) => {
+          Object.entries(floor.sizes).forEach(([size, s]: [string, any]) => {
+            rows.push([
+              tower.name, floor.label, parseFloat(size) > 0 ? `${size} م²` : "خدمية", 
+              s.available, s.sold, s.investment, s.reserved, s.pending, s.total, s.promoted, 
+              s.notPromoted, s.receivedTabo, s.receivedUnit, s.notReceivedUnit, s.priceIQD, s.priceUSD
+            ]);
+          });
+        });
+        // إضافة صف مجموع العمارة
+        rows.push([
+          `مجموع عمارة ${tower.name}`, "", "", tower.totals.available, tower.totals.sold, tower.totals.investment, 
+          tower.totals.reserved, tower.totals.pending, tower.totals.total, tower.totals.promoted, 
+          tower.totals.notPromoted, tower.totals.receivedTabo, tower.totals.receivedUnit, tower.totals.notReceivedUnit, 
+          tower.totals.priceIQD, tower.totals.priceUSD
+        ]);
+        rows.push([]); // صف فارغ
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // تحديد اتجاه الشيت لليمين لليونة العرض باللغة العربية
+      ws['!dir'] = "rtl";
+
+      XLSX.utils.book_append_sheet(wb, ws, "الإحصائيات المفصلة");
+      XLSX.writeFile(wb, `تقرير_الاحصائيات_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      showSuccess("تم تصدير الإحصائيات لملف Excel بنجاح!");
+    } catch (e) {
+      console.error(e);
+      showSuccess("فشل تصدير الإحصائيات لملف Excel");
+    }
+  };
+
   return (
     <Card className="rounded-[2rem] border-slate-100 shadow-lg overflow-hidden bg-white">
-      <CardHeader className="bg-slate-50/50 border-b border-slate-100">
+      <CardHeader className="bg-slate-50/50 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <CardTitle className="text-xl font-black flex items-center gap-2 text-slate-800">
           <BarChart3 className="text-blue-600" />
           الإحصائيات المفصلة
         </CardTitle>
+
+        {/* زر التصدير الفوري المباشر لملف Excel (Feature 4) */}
+        <Button 
+          onClick={handleExportStatsToExcel}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-11 px-5 font-black text-xs gap-2 shadow-sm"
+        >
+          <FileSpreadsheet size={16} />
+          تصدير التقرير لملف Excel
+        </Button>
       </CardHeader>
       <CardContent className="p-6">
         <Tabs defaultValue="houses" className="w-full" dir="rtl">

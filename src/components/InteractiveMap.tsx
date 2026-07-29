@@ -6,7 +6,8 @@ import { MapElement, Point, ElementType } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
   Home, Building2, Store, GraduationCap, Stethoscope, 
-  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, MapPin
+  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, MapPin,
+  Ruler, Banknote, ShieldCheck, User
 } from "lucide-react";
 
 interface InteractiveMapProps {
@@ -48,6 +49,10 @@ const InteractiveMap = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
+
+  // حالات بطاقة المعاينة السريعة عند التمرير (Feature 2)
+  const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   // لمنع تفعيل النقر عن طريق الخطأ أثناء السحب والتحريك
   const dragStartCoords = useRef({ x: 0, y: 0 });
@@ -364,6 +369,24 @@ const InteractiveMap = ({
     return true;
   };
 
+  const handleMouseEnterElement = (e: React.MouseEvent, el: MapElement) => {
+    if (el.type !== 'house' && el.type !== 'tower') return;
+    setHoveredElement(el);
+  };
+
+  const handleMouseMoveElement = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setTooltipPos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+  };
+
+  const handleMouseLeaveElement = () => {
+    setHoveredElement(null);
+  };
+
   const sortedElements = [...elements]
     .filter(el => el.type !== 'reference_image' || el.showInMain)
     .sort((a, b) => {
@@ -383,7 +406,7 @@ const InteractiveMap = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={() => setIsDragging(false)}
-      onMouseLeave={() => setIsDragging(false)}
+      onMouseLeave={() => { setIsDragging(false); setHoveredElement(null); }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -474,15 +497,15 @@ const InteractiveMap = ({
               if (el.type === 'house' || el.type === 'tower') {
                 const matched = matchesFilter(el);
                 if (matched) {
-                  // التوهج للمحيط الخارجي فقط (الحدود) مع النبض والحفاظ على الألوان الأصلية للوحدة بالداخل
-                  filterClasses = "filter drop-shadow-[0_0_12px_#3b82f6] animate-pulse scale-[1.01] origin-center duration-1000";
+                  // التوهج للمحيط الخارجي فقط (الحدود) بلون ذهبي ثابت مريح للعين
+                  filterClasses = "filter drop-shadow-[0_0_10px_#fbbf24] scale-[1.01] origin-center transition-all duration-300";
                   overrideStyles = {
-                    stroke: "#3b82f6",
+                    stroke: "#fbbf24",
                     strokeWidth: 3.5
                   };
                 } else {
-                  // تعتيم الوحدات السكنية غير المطابقة فقط وجعلها رمادية (grey) بدلاً من إخفائها تماماً
-                  filterClasses = "opacity-30 grayscale pointer-events-none transition-all duration-500";
+                  // جعل الوحدات السكنية غير المطابقة باهتة اللون (Gray/Washed-out) دون تقليل الشفافية
+                  filterClasses = "grayscale saturate-50 contrast-75 brightness-110 opacity-100 transition-all duration-500";
                   isDimmed = true;
                 }
               }
@@ -491,7 +514,10 @@ const InteractiveMap = ({
             return (
               <g 
                 key={el.id} 
-                onClick={(e) => handleElementClick(e, el.id, isInteractive && !isDimmed)} 
+                onClick={(e) => handleElementClick(e, el.id, isInteractive && !isDimmed)}
+                onMouseEnter={(e) => handleMouseEnterElement(e, el)}
+                onMouseMove={handleMouseMoveElement}
+                onMouseLeave={handleMouseLeaveElement}
                 className={cn(isInteractive && !isDimmed ? "cursor-pointer" : "pointer-events-none", filterClasses, "transition-all duration-500")} 
                 transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
               >
@@ -595,6 +621,109 @@ const InteractiveMap = ({
         </g>
       </svg>
       
+      {/* بطاقة المعاينة السريعة العائمة عند التمرير (Feature 2) */}
+      {hoveredElement && (
+        (() => {
+          const isHouse = hoveredElement.type === 'house';
+          const isTower = hoveredElement.type === 'tower';
+          const unitData = housesData[hoveredElement.id];
+          const hasData = !!unitData;
+
+          const getStatusText = (status: string) => {
+            switch (status) {
+              case 'sold': return 'مباع';
+              case 'investment': return 'استثمار';
+              case 'reserved': return 'محجوز';
+              case 'pending': return 'حجز أولي';
+              default: return 'متوفر';
+            }
+          };
+
+          const getStatusColor = (status: string) => {
+            switch (status) {
+              case 'sold': return 'text-rose-600 bg-rose-50 border-rose-100';
+              case 'investment': return 'text-purple-600 bg-purple-50 border-purple-100';
+              case 'reserved': return 'text-amber-600 bg-amber-50 border-amber-100';
+              case 'pending': return 'text-blue-600 bg-blue-50 border-blue-100';
+              default: return 'text-emerald-600 bg-emerald-50 border-emerald-100';
+            }
+          };
+
+          const formatPriceValue = (price: string) => {
+            if (!price) return 'غير محدد';
+            const num = Number(price.replace(/,/g, ''));
+            return isNaN(num) ? price : num.toLocaleString('en-US');
+          };
+
+          // إظهار بطاقة المعاينة فقط إذا سمحت الصلاحيات
+          const showCustomerName = permissions?.showCustomerName !== false;
+          const showPrice = permissions?.showPrice !== false;
+
+          return (
+            <div 
+              className="absolute z-50 bg-white/95 backdrop-blur-md p-5 rounded-2xl shadow-xl border border-slate-100 pointer-events-none w-64 text-right animate-in fade-in duration-200"
+              style={{
+                left: `${Math.min(tooltipPos.x + 15, (containerRef.current?.getBoundingClientRect().width || 600) - 270)}px`,
+                top: `${Math.min(tooltipPos.y + 15, (containerRef.current?.getBoundingClientRect().height || 500) - 180)}px`
+              }}
+            >
+              <div className="flex items-center gap-2 border-b pb-2 mb-3">
+                <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                  {isTower ? <Building2 size={16} /> : <Home size={16} />}
+                </div>
+                <div>
+                  <h4 className="font-black text-slate-800 text-xs">
+                    {isTower ? `عمارة: ${hoveredElement.label}` : `منزل: ${hoveredElement.label}`}
+                  </h4>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">معاينة سريعة</p>
+                </div>
+              </div>
+
+              {isTower ? (
+                <div className="space-y-1.5 text-[11px] font-bold text-slate-600">
+                  <div className="flex justify-between"><span>عدد الطوابق:</span><span className="text-slate-900">{hoveredElement.floors || 1}</span></div>
+                  <div className="flex justify-between"><span>شقق كل طابق:</span><span className="text-slate-900">{hoveredElement.apartmentsPerFloor || 1}</span></div>
+                </div>
+              ) : (
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-bold text-[10px]">حالة الوحدة:</span>
+                    <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-full border", getStatusColor(unitData?.status || 'available'))}>
+                      {getStatusText(unitData?.status || 'available')}
+                    </span>
+                  </div>
+
+                  {hasData && unitData.status !== 'available' && (
+                    <div className="space-y-1.5 border-t pt-2 mt-2">
+                      {showCustomerName && unitData.name && (
+                        <div className="flex items-center gap-1.5 text-slate-600 text-[11px] font-bold">
+                          <User size={12} className="text-slate-400" />
+                          <span className="truncate max-w-[180px]">{unitData.name}</span>
+                        </div>
+                      )}
+                      
+                      {showPrice && unitData.price && (
+                        <div className="flex items-center gap-1.5 text-slate-600 text-[11px] font-black">
+                          <Banknote size={12} className="text-emerald-500" />
+                          <span>{formatPriceValue(unitData.price)} {unitData.currency === 'USD' ? '$' : 'د.ع'}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {getHouseArea(hoveredElement) > 0 && (
+                    <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold border-t pt-2 mt-2">
+                      <Ruler size={12} className="text-indigo-500" />
+                      <span>المساحة: {getHouseArea(hoveredElement)} م²</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()
+      )}
+
       <div className="absolute top-6 left-6 flex flex-col gap-2 z-10">
         <button onClick={() => {
           if (!containerRef.current) return;
