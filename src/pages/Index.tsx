@@ -60,7 +60,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
 
+  // حالات تسجيل الدخول والأقسام
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [loginData, setLoginData] = useState({ centerId: '', password: '' });
   const [currentCenter, setCurrentCenter] = useState<any>(null);
@@ -68,7 +70,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [mainMapData, setMainMapData] = useState<any>(null);
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
 
-  // متغيرات تصفية الخريطة التفاعلية والتوهج (Feature 6)
+  // متغيرات تصفية الخريطة التفاعلية والتوهج
   const [mapFilterZone, setMapFilterZone] = useState<string>('all');
   const [mapFilterClass, setMapFilterClass] = useState<string>('all');
   const [mapFilterSize, setMapFilterSize] = useState<string>('all');
@@ -126,7 +128,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   // تعريف المكون السكني المختار حالياً
   const selectedElement = activeElements.find(el => el.id === selectedElementId);
 
-  // استخراج معلمات التصفية الذكية بناءً على المخطط الحالي لتوليد فلاتر الخريطة تلقائياً (Feature 6)
+  // استخراج معلمات التصفية الذكية بناءً على المخطط الحالي لتوليد فلاتر الخريطة تلقائياً
   const { mapZones, mapClasses, mapSizes } = React.useMemo(() => {
     const zones = new Set<string>();
     const classes = new Set<string>();
@@ -167,7 +169,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [activeElements, housesData]);
 
-  // حساب الحجوزات التي أوشكت مدتها على الانتهاء (24-48 ساعة قبل مرور 7 أيام) (Feature 8)
+  // حساب الحجوزات التي أوشكت مدتها على الانتهاء
   const expiringSoonBookings = React.useMemo(() => {
     if (selectedProjectId === 'main_map' || !activeProject) return [];
     const soon: any[] = [];
@@ -175,13 +177,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
     const checkUnit = (key: string, label: string) => {
       const data = housesData[key];
-      // الحجز الأولي (Pending) فقط يخضع للتصفية والانتهاء
       if (data?.status === 'pending' && data?.saleDate) {
         const bookingDate = new Date(data.saleDate);
         const diffTime = now.getTime() - bookingDate.getTime();
         const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
-        // إذا مر أكثر من 5 أيام وأقل من 7 أيام، فإن الحجز ينتهي قريباً جداً (أقل من 48 ساعة)
         if (diffDays >= 5 && diffDays <= 7) {
           const daysLeft = (7 - diffDays).toFixed(1);
           soon.push({
@@ -204,7 +204,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           for (let a = 1; a <= aptsPerFloor; a++) {
             const key = `${el.id}_F${f}_A${a}`;
             
-            // حساب كود الطابق والشقة للحصول على الاسم الرمزي الحقيقي للشقة
             let pCounter = 0;
             for (let f_idx = 1; f_idx <= floors; f_idx++) {
               for (let a_idx = 1; a_idx <= aptsPerFloor; a_idx++) {
@@ -229,14 +228,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return soon;
   }, [selectedProjectId, activeProject, activeElements, housesData]);
 
-  // دالة تمديد الحجز الأولي لمدة 7 أيام إضافية وتوثيق ذلك بالتاريخ والملاحظات (Feature 8)
+  // دالة تمديد الحجز الأولي لمدة 7 أيام إضافية
   const handleExtendBooking = async (key: string, currentData: any) => {
     if (!selectedProjectId) return;
     const todayStr = new Date().toISOString().split('T')[0];
     const todayLabel = new Date().toLocaleDateString('ar-EG');
     const updatedNotes = [...(currentData.notes || [])];
     
-    // توثيق عملية تمديد الحجز رسمياً في سجل الملاحظات الخاص بالوحدة
     updatedNotes.unshift({
       text: `قام القسم (${currentCenter?.name || 'مبيعات'}) بعمل تمديد يدوي للحجز الأولي لمدة 7 أيام إضافية تبدأ من تاريخ اليوم ${todayLabel}`,
       author: 'النظام تلقائياً',
@@ -245,7 +243,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
     const updatedData = {
       ...currentData,
-      saleDate: todayStr, // تصفير العداد لتبدأ 7 أيام جديدة بالكامل
+      saleDate: todayStr,
       notes: updatedNotes
     };
 
@@ -256,7 +254,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         data: updatedData 
       }, { onConflict: 'unit_key' });
 
-      // تدوين إشعار تمديد رسمي في سجل الإشعارات
       await supabase.from('notifications').insert({
         project_id: selectedProjectId,
         message: `تم تمديد الحجز الأولي للوحدة ${key} بنجاح من قبل مركز ${currentCenter?.name || ''} لمدة 7 أيام إضافية.`
@@ -264,7 +261,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
       setHousesData(prev => ({ ...prev, [key]: updatedData }));
       
-      // جلب الإشعارات والعمليات الحية
       const { data: newNotifs } = await supabase
         .from('notifications')
         .select('*')
@@ -280,11 +276,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   };
 
-  // ميزة التحديث اللحظي الفوري (Real-time Sync) للبيانات من خلال اشتراكات Supabase (Feature 1)
+  // ميزة التحديث اللحظي الفوري (Real-time Sync)
   useEffect(() => {
     if (!selectedProjectId || selectedProjectId === 'main_map') return;
 
-    // الاشتراك في التغييرات اللحظية لجدول مبيعات الوحدات للمشروع الحالي
     const channel = supabase
       .channel(`realtime_sync_${selectedProjectId}`)
       .on(
@@ -312,50 +307,62 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [selectedProjectId, setHousesData]);
 
-  // تعيين المخطط العام كخيار افتراضي أولي عند فتح الواجهة ليعطي تجربة تصفح للمدينة كاملة
+  // تعيين المخطط العام كخيار افتراضي أولي
   useEffect(() => {
     if (!selectedProjectId) {
       setSelectedProjectId('main_map');
     }
   }, [selectedProjectId]);
 
+  // التحقق من وجود القيمة المسجلة مسبقاً في الـ localStorage
   useEffect(() => {
     const fetchCentersAndPermissions = async () => {
-      const { data: centers } = await supabase.from('marketing_centers').select('*');
-      if (centers) setMarketingCenters(centers);
+      setIsAuthChecking(true);
+      try {
+        const { data: centers } = await supabase.from('marketing_centers').select('*');
+        if (centers) setMarketingCenters(centers);
 
-      const savedCenterId = localStorage.getItem('marketing_center_session');
-      if (savedCenterId && centers) {
-        const center = centers.find(c => c.id === savedCenterId);
-        if (center) {
-          setCurrentCenter(center);
-          setIsLoggedIn(true);
-          localStorage.setItem('marketing_center_name', center.name);
-          
-          const { data: settings } = await supabase.from('settings').select('*');
-          if (settings) {
-            const permsSetting = settings.find(s => s.key === 'dept_permissions');
-            if (permsSetting && permsSetting.value && center.type) {
-              const deptPerms = permsSetting.value[center.type];
-              if (deptPerms) setPermissions(deptPerms);
+        const savedCenterId = localStorage.getItem('marketing_center_session');
+        if (savedCenterId && centers) {
+          const center = centers.find(c => c.id === savedCenterId);
+          if (center) {
+            setCurrentCenter(center);
+            setIsLoggedIn(true);
+            localStorage.setItem('marketing_center_name', center.name);
+            
+            const { data: settings } = await supabase.from('settings').select('*');
+            if (settings) {
+              const permsSetting = settings.find(s => s.key === 'dept_permissions');
+              if (permsSetting && permsSetting.value && center.type) {
+                const deptPerms = permsSetting.value[center.type];
+                if (deptPerms) setPermissions(deptPerms);
+              }
+
+              const mainMap = settings.find(s => s.key === 'main_map_config');
+              if (mainMap) setMainMapData(mainMap.value);
+
+              const configs = settings.find(s => s.key === 'project_configs');
+              if (configs) setProjectConfigs(configs.value || {});
+
+              const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
+              if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
             }
-
-            const mainMap = settings.find(s => s.key === 'main_map_config');
-            if (mainMap) setMainMapData(mainMap.value);
-
-            const configs = settings.find(s => s.key === 'project_configs');
-            if (configs) setProjectConfigs(configs.value || {});
-
-            const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
-            if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
+          } else {
+            // جلسة ملغاة أو غير موجودة
+            localStorage.removeItem('marketing_center_session');
+            localStorage.removeItem('marketing_center_name');
           }
         }
+      } catch (err) {
+        console.error("Error loading centers or permissions:", err);
+      } finally {
+        setIsAuthChecking(false);
       }
     };
     fetchCentersAndPermissions();
   }, []);
 
-  // إعادة تعيين فلاتر الخريطة التفاعلية عند تغيير المشروع لتجنب تضارب التصفية
+  // إعادة تعيين فلاتر الخريطة التفاعلية عند تغيير المشروع
   useEffect(() => {
     setMapFilterZone('all');
     setMapFilterClass('all');
@@ -364,7 +371,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   }, [selectedProjectId]);
 
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || !isLoggedIn) return;
 
     if (selectedProjectId === 'main_map') {
       const fetchMainMap = async () => {
@@ -396,7 +403,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const fetchProjectData = async () => {
       setIsProjectLoading(true);
       try {
-        // 1. جلب تفاصيل مخطط المشروع مع إعادة محاولة تلقائية في حال الفشل
         const projectDetails = await fetchWithRetry(async () => {
           const { data, error } = await supabase
             .from('projects')
@@ -408,7 +414,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         });
         setActiveElements(projectDetails?.elements || []);
 
-        // 2. جلب الإشعارات
         const notifs = await fetchWithRetry(async () => {
           const { data, error } = await supabase
             .from('notifications')
@@ -418,10 +423,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             .limit(50);
           if (error) throw error;
           return data;
-        }).catch(() => []); // فشل الإشعارات البسيط لا يجب أن يعيق المخطط بالكامل
+        }).catch(() => []);
         if (notifs) setNotifications(notifs);
 
-        // 3. جلب بيانات الوحدات والمبيعات مع إعادة محاولة لكل دفعة
         let allUnits: any[] = [];
         let from = 0;
         const step = 1000;
@@ -463,9 +467,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       }
     };
     fetchProjectData();
-  }, [selectedProjectId, setHousesData]);
+  }, [selectedProjectId, isLoggedIn, setHousesData]);
 
-  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتحميل المخطط بنجاح
+  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
       const { elementId, isTower } = pendingOpen;
@@ -484,7 +488,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   }, [isProjectLoading, activeElements, pendingOpen]);
 
-  // تطبيق ميزة تأخير الاستعلام (Debounce) بمقدار 300 ملي ثانية
+  // تأخير الاستعلام (Debounce)
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
@@ -495,7 +499,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [searchQuery]);
 
-  // تأثير البحث المحسن والديناميكي مع دعم الفلترة والصفحات وحل مشكلة الشقق
+  // تأثير البحث المحسن والديناميكي
   useEffect(() => {
     const performSearch = async () => {
       if (!debouncedSearchQuery || debouncedSearchQuery.trim().length < 2) {
@@ -510,12 +514,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         const match = trimmedQuery.match(aptPattern);
 
         if (match) {
-          // هذا بحث عن شقة بنمط (العمارة-الطابق-الشقة)
           const towerLabel = match[1].trim().toUpperCase();
           const floorCode = match[2].trim().toUpperCase();
           const aptCode = match[3].trim().toUpperCase();
 
-          // 1. جلب المشاريع مع عناصر المخطط للبحث عن العمارة المطابقة
           let projQuery = supabase.from('projects').select('id, name, elements');
           if (searchProjectFilter !== 'all') {
             projQuery = projQuery.eq('id', searchProjectFilter);
@@ -533,13 +535,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               );
 
               for (const tower of matchingTowers) {
-                // جلب كافة الوحدات التابعة لهذه العمارة لحساب التسلسل P بدقة
                 const { data: towerUnits } = await supabase
                   .from('houses_data')
                   .select('unit_key, data')
                   .like('unit_key', `${tower.id}_%`);
 
-                // تحديد رقم الطابق المستهدف هندسياً
                 let targetFloor = -1;
                 if (floorCode === 'FG') {
                   targetFloor = 1;
@@ -585,7 +585,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             }
           }
 
-          // البحث أيضاً عن أي تطابق نصي مباشر مخزن قديماً كاحتياط
           let rawQuery = supabase
             .from('houses_data')
             .select('unit_key, project_id, data')
@@ -605,7 +604,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           setSearchResults(matchedResults.slice(0, searchLimit));
           setHasMoreResults(matchedResults.length > searchLimit);
         } else {
-          // البحث الاعتيادي عن اسم الزبون، رمز المنزل، أو رقم الهاتف مع توحيد الحروف العربية ذكياً
           let query = supabase
             .from('houses_data')
             .select('unit_key, project_id, data');
@@ -614,14 +612,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             query = query.eq('project_id', searchProjectFilter);
           }
           
-          // بناء شروط البحث مع دعم رقم الهاتف وتوحيد الحروف العربية
           const orConditions = [
             `unit_key.ilike.%${trimmedQuery}%`,
             `data->>name.ilike.%${trimmedQuery}%`,
             `data->>phone.ilike.%${trimmedQuery}%`
           ];
 
-          // توحيد الحروف العربية (أ، إ، آ -> ا) و (ة -> ه) و (ى -> ي)
           const normalizedTerm = trimmedQuery
             .replace(/[أإآ]/g, 'ا')
             .replace(/ة/g, 'ه')
@@ -631,7 +627,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             orConditions.push(`data->>name.ilike.%${normalizedTerm}%`);
           }
 
-          // معالجة الحالة العكسية (إذا كتب المستخدم ا والاسم مخزن بـ أ)
           const alternativeTerm = trimmedQuery
             .replace(/ا/g, 'أ')
             .replace(/ه/g, 'ة')
@@ -666,11 +661,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   const handleSearchInputChange = (val: string) => {
     setSearchQuery(val);
-    setSearchLimit(10); // إعادة تعيين الحد عند تغيير نص البحث
+    setSearchLimit(10);
   };
 
   const handleShowMore = (e: React.MouseEvent) => {
-    e.stopPropagation(); // منع إغلاق القائمة
+    e.stopPropagation();
     setSearchLimit(prev => prev + 10);
   };
 
@@ -683,7 +678,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     if (unitKey.includes('_F') && unitKey.includes('_A')) {
       const towerId = unitKey.split('_F')[0];
       setPendingOpen({ elementId: towerId, isTower: true });
-      setPendingApartmentKey(unitKey); // حفظ مفتاح الشقة لفتحها تلقائياً داخل العمارة
+      setPendingApartmentKey(unitKey);
     } else {
       setPendingOpen({ elementId: unitKey, isTower: false });
       setPendingApartmentKey(null);
@@ -740,6 +735,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   };
 
   const handleLogin = async () => {
+    if (!loginData.centerId) {
+      showError("يرجى اختيار القسم أولاً");
+      return;
+    }
     const center = marketingCenters.find(c => c.id === loginData.centerId);
     if (center && center.password === loginData.password) {
       setIsLoggedIn(true);
@@ -774,6 +773,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentCenter(null);
+    setLoginData({ centerId: '', password: '' });
     localStorage.removeItem('marketing_center_session');
     localStorage.removeItem('marketing_center_name');
     setPermissions({
@@ -806,7 +806,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const element = activeElements.find(el => el.id === id);
     if (!element) return;
 
-    // إذا كان للعنصر ارتباط مباشر بمشروع سكني، يتم الانتقال التلقائي دون فتح نافذة التفاصيل
     if (element.linkProjectId) {
       const linkedP = projects.find(p => p.id === element.linkProjectId);
       if (linkedP) {
@@ -819,7 +818,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       return;
     }
 
-    // إذا كنا نتصفح المخطط العام، ولا يوجد ارتباط للمجسم بالمشاريع، لا تفتح نوافذ الوحدات لعدم وجود مبيعات في المخطط العام نفسه
     if (selectedProjectId === 'main_map') {
       return;
     }
@@ -885,7 +883,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return 'bg-slate-50 border-slate-100 text-slate-700';
   };
 
-  // دالة ذكية لحساب مساحة المنزل بناءً على المساحة المخصصة يدوياً أو الصنف القياسي
   const getHouseArea = (el: MapElement) => {
     if (el.customArea !== undefined && el.customArea > 0) {
       return el.customArea;
@@ -898,7 +895,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     return houseTypeAreas[type] || 0;
   };
 
-  // جلب إعادات الخلفية والشبكة المخصصة بناءً على المشروع الحالي أو المخطط العام
   const currentBgColor = selectedProjectId === 'main_map' 
     ? (mainMapData?.backgroundColor || '#ffffff') 
     : (projectConfigs[selectedProjectId || '']?.backgroundColor || '#ffffff');
@@ -906,6 +902,71 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const currentShowGrid = selectedProjectId === 'main_map'
     ? (mainMapData?.showGrid !== false)
     : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
+
+  // شاشة التحقق الأولية من الجلسة
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center font-bold" dir="rtl">
+        <div className="text-center space-y-4">
+          <RefreshCcw className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
+          <p className="text-slate-600 font-bold">جاري التحقق من الجلسة...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // شاشة تسجيل دخول القسم الإجبارية
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-100 mx-auto mb-6">
+              <Store className="text-white w-10 h-10" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول القسم</h1>
+            <p className="text-slate-500 font-medium mt-2 text-xs">اختر القسم وأدخل كلمة المرور للدخول للنظام</p>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-600 mr-2">اختر القسم / مركز التسويق</label>
+              <Select value={loginData.centerId} onValueChange={(val) => setLoginData({ ...loginData, centerId: val })}>
+                <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold text-sm bg-slate-50/50">
+                  <SelectValue placeholder="اختر القسم..." />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {marketingCenters.map(center => (
+                    <SelectItem key={center.id} value={center.id} className="font-bold text-xs">
+                      {center.name} ({center.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-600 mr-2">كلمة المرور</label>
+              <div className="relative">
+                <Lock className="absolute right-4 top-4 text-slate-400 w-5 h-5" />
+                <Input 
+                  type="password" 
+                  placeholder="أدخل كلمة المرور..." 
+                  className="pr-12 rounded-2xl h-14 border-slate-200 font-bold" 
+                  value={loginData.password} 
+                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })} 
+                />
+              </div>
+            </div>
+            <Button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-700 rounded-2xl h-14 text-base font-black shadow-lg shadow-blue-100"
+            >
+              تسجيل الدخول
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f0f4f8] p-4 md:p-8" dir="rtl">
@@ -930,7 +991,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3 shrink-0">
-            {/* زر وزر إظهار آخر مزامنة للبيانات المالية */}
             {lastUpdate && (
               <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-emerald-50/50 px-3 py-2.5 rounded-xl border border-emerald-100/50 font-black">
                 <RefreshCcw size={12} className="text-emerald-500 animate-spin-slow" />
@@ -949,7 +1009,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="rounded-xl">
-                {/* إتاحة خيار تصفح المخطط العام للمدينة كخيار تفاعلي وأساسي */}
                 <DropdownMenuItem onClick={() => setSelectedProjectId('main_map')} className="text-right font-black text-indigo-600 hover:bg-indigo-50 focus:bg-indigo-50">
                   🌐 المخطط العام للمدينة
                 </DropdownMenuItem>
@@ -965,7 +1024,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         </header>
 
-        {/* مربع البحث العام الذكي والمحسن في صف مستقل أسفل الهيدر ليعطي مساحة كافية ومريحة */}
+        {/* مربع البحث العام الذكي */}
         {permissions.showSearchBox !== false && (
           <div className="relative bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-3 items-center w-full animate-in fade-in duration-300">
             <div className="w-full sm:w-48 shrink-0">
@@ -1005,7 +1064,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               )}
             </div>
             
-            {/* قائمة نتائج البحث السريعة والتفاعلية */}
             {searchResults.length > 0 && (
               <div className="absolute z-[999] right-4 left-4 top-16 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
                 {searchResults.map((item) => {
@@ -1070,7 +1128,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         )}
 
-        {/* شريط تصفية الخريطة التفاعلية والتوهج البصري (Feature 6) */}
+        {/* شريط تصفية الخريطة التفاعلية والتوهج البصري */}
         {selectedProjectId !== 'main_map' && activeProject && (
           <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-center gap-4 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 text-slate-700 font-black text-xs shrink-0">
@@ -1152,7 +1210,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         )}
 
-        {/* شريط فرعي أسفل الهيدر يحتوي على زر التقارير والتحليلات بشكل مستقل وأنيق */}
+        {/* شريط فرعي أسفل الهيدر يحتوي على زر التقارير */}
         {permissions.canAccessReports !== false && (
           <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
             <div className="flex items-center gap-3 text-slate-600 text-xs font-bold">
@@ -1186,7 +1244,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                 mapHeight={mainMapData?.height || 800} 
                 backgroundColor={currentBgColor}
                 showGrid={currentShowGrid}
-                showTooltips={false} // إيقاف بطاقة المعاينة في المخطط العام
+                showTooltips={false}
               />
             ) : activeProject ? (
               <>
@@ -1205,7 +1263,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                   filterSize={mapFilterSize}
                   filterStatus={mapFilterStatus}
                   houseTypeAreas={projectConfigs[selectedProjectId || '']?.houseTypeAreas || {}}
-                  showTooltips={true} // تفعيل بطاقة المعاينة داخل المشاريع
+                  showTooltips={true}
                 />
                 {permissions.showStatsTable && <DetailedStatsTable elements={activeElements} housesData={housesData} permissions={permissions} />}
               </>
@@ -1217,7 +1275,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           {selectedProjectId !== 'main_map' && (permissions.showGeneralStats || permissions.showNotifications) && (
             <div className="space-y-6 animate-in fade-in slide-in-from-left-4">
               
-              {/* التنبيهات الذكية وجدولة تمديد الحجوزات التي توشك صلاحيتها على الانتهاء (Feature 8) */}
               {expiringSoonBookings.length > 0 && (
                 <div className="bg-amber-50/60 border border-amber-200 p-6 rounded-[2rem] shadow-sm space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
                   <div className="flex items-center gap-2 text-amber-800 font-black text-xs shrink-0">
