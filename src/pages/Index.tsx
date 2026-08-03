@@ -118,7 +118,666 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     showStatusField: true,
     canEditUnitData: false,
     showSearchBox: true,
-    canAccessReports: true
+    canAccessReports: true,
+    showDiagnosticTerminal: true
+  });
+
+  const addDiagLog = (message: string, type: 'info' | 'warn' | 'success' | 'danger' = 'info') => {
+    const time = new Date().toLocaleTimeString('ar-EG', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setDiagLogs(prev => [{ time, message, type }, ...prev.slice(0, 49)]);
+  };
+
+  // قياس عدد الإطارات FPS والذاكرة بالـ Realtime
+  useEffect(() => {
+    let animId: number;
+    const updateMetrics = () => {
+      frameCount.current += 1;
+      const now = performance.now();
+      const delta = now - lastFpsCheck.current;
+
+      if (delta >= 1000) {
+        const calculatedFps = Math.round((frameCount.current * 1000) / delta);
+        setFps(calculatedFps);
+        frameCount.current = 0;
+        lastFpsCheck.current = now;
+
+        if ((performance as any).memory) {
+          const usedMB = Math.round((performance as any).memory.usedJSHeapSize / 1048576);
+          setMemoryUsage(`${usedMB} MB`);
+        }
+      }
+      animId = requestAnimationFrame(updateMetrics);
+    };
+
+    animId = requestAnimationFrame(updateMetrics);
+    return () => cancelAnimationFrame(animId);
+  }, []);
+
+  const filteredProjects = React.useMemo(() => {
+    if (!currentCenter || !currentCenter.allowed_projects || currentCenter.allowed_projects.length === 0) return projects;
+    return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
+  }, [projects, currentCenter]);
+
+  const activeProject = React.useMemo(() => {
+    return filteredProjects.find(p => p.id === selectedProjectId);
+  }, [filteredProjects, selectedProjectId]);
+
+  const selectedElement = activeElements.find(el => el.id === selectedElementId);
+
+  const expiringSoonBookings = React.useMemo(() => {
+    if (selectedProjectId === 'main_map' || !activeProject) return [];
+    const soon: any[] = [];
+    const now = new Date();
+
+    const checkUnit = (key: string, label: string) => {
+      const data = housesData[key];
+      if (data?.status === 'pending' && data?.saleDate) {
+        const bookingDate = new Date(data.saleDate);
+        const diffTime = now.getTime() - bookingDate.getTime();
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+        if (diffDays >= 5 && diffDays <= 7) {
+          const daysLeft = (7 - diffDays).toFixed(1);
+          soon.push({
+            key,
+            label,
+            daysLeft,
+            data
+          });
+        }
+      }
+    };
+
+    activeElements.forEach(el => {
+      if (el.type === 'house') {
+        checkUnit(el.id, el.label);
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 0;
+        const aptsPerFloor = el.apartmentsPerFloor || 0;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            
+            let pCounter = 0;
+            for (let f_idx = 1; f_idx <= floors; f_idx++) {
+              for (let a_idx = 1; a_idx <= aptsPerFloor; a_idx++) {
+                const innerKey = `${el.id}_F${f_idx}_A${a_idx}`;
+                const innerData = housesData[innerKey];
+                if (innerData?.status !== 'frozen_uncounted' && innerData?.status !== 'frozen_hidden') {
+                  pCounter++;
+                }
+                if (f_idx === f && a_idx === a) {
+                  const floorCode = f === 1 ? "FG" : `F${f - 1}`;
+                  const aptCode = (innerData?.status === 'frozen_uncounted' || innerData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
+                  const label = `${el.label}-${floorCode}-${aptCode}`;
+                  checkUnit(key, label);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return soon;
+  }, [selectedProjectId, activeProject, activeElements, housesData]);
+
+  const handleExtendBooking = async (key: string, currentData: any) => {
+    if (!selectedProjectId) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayLabel = new Date().toLocaleDateString('ar-EG');
+    const updatedNotes = [...(currentData.notes || [])];
+    
+    updatedNotes.unshift({
+      text: `قام القسم (${currentCenter?.name || 'مبيعات'}) بعمل تمديد يدوي للحجز الأولي لمدة 7 أيام إضافية تبدأ من تاريخ اليوم ${todayLabel}`,
+      author: 'النظام تلقائياً',
+      date: new Date().toISOString()
+    });
+
+    const updatedData = {
+      ...currentData,
+      saleDate: todayStr,
+      notes: updatedNotes
+    };
+
+    try {
+      await supabase.from('houses_data').upsert({ 
+        unit_key: key, 
+        project_id: selectedProjectId, 
+        data: updatedData 
+      }, { onConflict: 'unit_key' });
+
+      await supabase.from('notifications').insert({
+        project_id: selectedProjectId,
+        message: `تم تمديد الحجز الأولي للوحدة ${key} بنجاح من قبل مركز ${currentCenter?.name || ''} لمدة 7 أيام إضافية.`
+      });
+
+      setHousesData(prev => ({ ...prev, [key]: updatedData }));
+      showSuccess(`تم تمديد حجز الوحدة ${key} لمدة 7 أيام إضافية بنجاح!`);
+    } catch (e) {
+      console.error(e);
+      showError("فشل تحديث وتمديد الحجز، يرجى المحاولة لاحقاً.");
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedProjectId || selectedProjectId === 'main_map') return;
+
+    const channel = supabase
+      .channel(`realtime_sync_${selectedProjectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'houses_data',
+          filter: `project_id=eq.${selectedProjectId}`
+        },
+        (payload) => {
+          const updatedUnit = payload.new as any;
+          if (updatedUnit && updatedUnit.unit_key) {
+            setHousesData(prev => ({
+              ...prev,
+              [updatedUnit.unit_key]: {
+                ...prev[updatedUnit.unit_key],
+                ...updatedUnit.data
+              }
+            }));
+            addDiagLog(`تحديث مجاميع Real-time للوحدة ${updatedUnit.unit_key}`, 'warn');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedProjectId, setHousesData]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setSelectedProjectId('main_map');
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    const fetchCentersAndPermissions = async () => {
+      setIsAuthChecking(true);
+      const startTime = performance.now();
+      try {
+        const { data: centers } = await supabase.from('marketing_centers').select('*');
+        if (centers) setMarketingCenters(centers);
+
+        const savedCenterId = localStorage.getItem('marketing_center_session');
+        if (savedCenterId && centers) {
+          const center = centers.find(c => c.id === savedCenterId);
+          if (center) {
+            setCurrentCenter(center);
+            setIsLoggedIn(true);
+            localStorage.setItem('marketing_center_name', center.name);
+            
+            const { data: settings } = await supabase.from('settings').select('*');
+            if (settings) {
+              const permsSetting = settings.find(s => s.key === 'dept_permissions');
+              if (permsSetting && permsSetting.value && center.type) {
+                const deptPerms = permsSetting.value[center.type];
+                if (deptPerms) setPermissions(deptPerms);
+              }
+
+              const mainMap = settings.find(s => s.key === 'main_map_config');
+              if (mainMap) setMainMapData(mainMap.value);
+
+              const configs = settings.find(s => s.key === 'project_configs');
+              if (configs) setProjectConfigs(configs.value || {});
+
+              const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
+              if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
+            }
+          } else {
+            localStorage.removeItem('marketing_center_session');
+            localStorage.removeItem('marketing_center_name');
+          }
+        }
+        const endTime = performance.now();
+        addDiagLog(`تمت تهيئة الجلسة والإعدادات بنجاح خلال ${(endTime - startTime).toFixed(1)} ملي ثانية`, 'success');
+      } catch (err) {
+        console.error("Error loading centers or permissions:", err);
+      } font-bold text-slate-600 text-xs flex items-center gap-1">
+          {icon} {label}
+        </span>
+      </div>
+    </div>
+    <span className="text-xl font-black text-slate-800">{value}</span>
+  </div>
+);
+
+  const calculateStats = () => {
+    if (selectedProjectId === 'main_map' || !activeProject || !activeElements) return { total: 0, sold: 0, investment: 0, promoted: 0, notPromoted: 0, receivedTabo: 0, receivedUnit: 0, notReceivedUnit: 0 };
+    let total = 0; let sold = 0; let investment = 0;
+    let promoted = 0; let notPromoted = 0; let receivedTabo = 0;
+    let receivedUnit = 0; let notReceivedUnit = 0;
+
+    const processUnit = (data: any) => {
+      if (data?.status === 'frozen_hidden') return;
+      
+      if (data?.status !== 'frozen_uncounted') total++;
+      if (data?.status === 'sold') sold++;
+      if (data?.status === 'investment') investment++;
+
+      const tabo = data?.taboStatus?.trim();
+      if (tabo === 'مروج') promoted++;
+      else if (tabo === 'مستلم') receivedTabo++;
+      else notPromoted++;
+
+      if (data?.handoverDate) receivedUnit++;
+      else notReceivedUnit++;
+    };
+
+    activeElements.forEach(el => {
+      if (el.type === 'house') {
+        processUnit(housesData[el.id]);
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 0;
+        const aptsPerFloor = el.apartmentsPerFloor || 0;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            processUnit(housesData[`${el.id}_F${f}_A${a}`]);
+          }
+        }
+      }
+    });
+    return { total, sold, investment, promoted, notPromoted, receivedTabo, receivedUnit, notReceivedUnit };
+  };
+
+  const stats = calculateStats();
+
+  const getNotificationColor = (message: string) => {
+    if (message.includes('مباع') || message.includes('بيع')) return 'bg-rose-50 border-rose-100 text-rose-700';
+    if (message.includes('استثمار')) return 'bg-purple-50 border-purple-100 text-purple-700';
+    if (message.includes('متوفر') || message.includes('انتهى الحجز')) return 'bg-blue-50 border-blue-100 text-blue-700';
+    return 'bg-slate-50 border-slate-100 text-slate-700';
+  };
+
+  const getHouseArea = (el: MapElement) => {
+    if (el.customArea !== undefined && el.customArea > 0) {
+      return el.customArea;
+    }
+    const houseTypeAreas = projectConfigs[selectedProjectId || '']?.houseTypeAreas || {};
+    const parts = el.label.split('-');
+    const lastPart = parts[parts.length - 1] || '';
+    const match = lastPart.match(/^([a-zA-Z]+)/);
+    const type = match ? match[1].toUpperCase() : lastPart.toUpperCase();
+    return houseTypeAreas[type] || 0;
+  };
+
+  const currentBgColor = selectedProjectId === 'main_map' 
+    ? (mainMapData?.backgroundColor || '#ffffff') 
+    : (projectConfigs[selectedProjectId || '']?.backgroundColor || '#ffffff');
+
+  const currentShowGrid = selectedProjectId === 'main_map'
+    ? (mainMapData?.showGrid !== false)
+    : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
+
+  // مكون اللوحة الفائقة للتشخيص العائمة (تظهر دائماً وبشكل مستقل عند منح الصلاحية)
+  const DiagnosticTerminalFloating = permissions.showDiagnosticTerminal !== false ? (
+    <div className="fixed bottom-4 left-4 z-[99999] max-w-sm w-full font-mono text-xs shadow-2xl rounded-2xl overflow-hidden border-2 border-emerald-500/50 bg-slate-950/95 text-slate-200 backdrop-blur-md animate-in fade-in slide-in-from-bottom-5">
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <Terminal size={16} className="text-emerald-400 animate-pulse" />
+          <span className="font-bold text-slate-200 text-xs">لوحة تحليل الأداء الفورية (Realtime)</span>
+        </div>
+        <button 
+          onClick={() => setShowTerminal(!showTerminal)}
+          className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors bg-slate-800"
+        >
+          {showTerminal ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+
+      {showTerminal && (
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2 text-[11px] font-bold">
+            <div className="bg-slate-900 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-slate-400"><Cpu size={14} className="text-amber-400" /> FPS:</span>
+              <span className={cn("font-black text-xs", fps < 30 ? "text-rose-400" : "text-emerald-400")}>{fps} FPS</span>
+            </div>
+            <div className="bg-slate-900 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-slate-400"><HardDrive size={14} className="text-blue-400" /> RAM:</span>
+              <span className="font-black text-xs text-blue-400">{memoryUsage}</span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold border-b border-slate-800 pb-1">
+              <span>سجل الاستجابة بالملي ثانية (ms):</span>
+              <button onClick={() => setDiagLogs([])} className="hover:text-rose-400 underline text-[9px]">تفريغ</button>
+            </div>
+            <div className="max-h-36 overflow-y-auto space-y-1.5 text-[10px] pr-1 no-scrollbar">
+              {diagLogs.length > 0 ? (
+                diagLogs.map((log, idx) => (
+                  <div key={idx} className="flex items-start gap-2 border-b border-slate-900/50 pb-1">
+                    <span className="text-slate-500 shrink-0">[{log.time}]</span>
+                    <span className={cn(
+                      "break-all font-semibold",
+                      log.type === 'success' ? "text-emerald-400" :
+                      log.type === 'warn' ? "text-amber-400" :
+                      log.type === 'danger' ? "text-rose-400" : "text-slate-300"
+                    )}>
+                      {log.message}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-slate-600 text-center py-2 text-[10px]">في انتظار تنفيذ أي عملية...</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center font-bold" dir="rtl">
+        {DiagnosticTerminalFloating}
+        <div className="text-center space-y-4">
+          <RefreshCcw className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
+          <p className="text-slate-600 font-bold">جاري التحقق من الجلسة...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center p-4 relative" dir="rtl">
+        {DiagnosticTerminalFloating}
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-100 mx-auto mb-6">
+              <Store className="text-white w-10 h-10" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-800">تسجيل دخول القسم</h1>
+            <p className="text-slate-500 font-medium mt-2 text-xs">اختر القسم وأدخل كلمة المرور للدخول للنظام</p>
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-600 mr-2">اختر القسم / مركز التسويق</label>
+              <Select value={loginData.centerId} onValueChange={(val) => setLoginData({ ...loginData, centerId: val })}>
+                <SelectTrigger className="rounded-2xl h-14 border-slate-200 font-bold text-sm bg-slate-50/50">
+                  <SelectValue placeholder="اختر القسم..." />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {marketingCenters.map(center => (
+                    <SelectItem key={center.id} value={center.id} className="font-bold text-xs">
+                      {center.name} ({center.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-600 mr-2">كلمة المرور</label>
+              <div className="relative">
+                <Lock className="absolute right-4 top-4 text-slate-400 w-5 h-5" />
+                <Input 
+                  type="password" 
+                  placeholder="أدخل كلمة المرور..." 
+                  className="pr-12 rounded-2xl h-14 border-slate-200 font-bold" 
+                  value={loginData.password} 
+                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })} 
+                />
+              </div>
+            </div>
+            <Button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-700 rounded-2xl h-14 text-base font-black shadow-lg shadow-blue-100"
+            >
+              تسجيل الدخول
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f0f4f8] p-4 md:p-8 relative" dir="rtl">
+      {DiagnosticTerminalFloating}
+      <div className="max-w-6xl mx-auto space-y-8">
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><MapIcon className="text-white w-8 h-8" /></div>
+            <div>
+              <h1 className="text-xl font-black text-slate-800 leading-tight">نظام ادارة الوحدات السكنية</h1>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-slate-500 text-xs font-bold">خريطة تفاعلية للمخطط السكني</p>
+                {currentCenter && (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-blue-600 text-xs font-black bg-blue-50 px-2 py-0.5 rounded-full">
+                      القسم الحالي: {currentCenter.name}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-3 shrink-0">
+            {lastUpdate && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-emerald-50/50 px-3 py-2.5 rounded-xl border border-emerald-100/50 font-black">
+                <RefreshCcw size={12} className="text-emerald-500 animate-spin-slow" />
+                <span>آخر مزامنة:</span>
+                <span className="text-slate-700 font-black">
+                  {new Date(lastUpdate).toLocaleString('ar-EG', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                </span>
+              </div>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="rounded-xl gap-2 border-slate-200 min-w-[180px] font-black h-12 text-slate-700 shadow-sm text-xs">
+                  {selectedProjectId === 'main_map' ? "المخطط العام للمدينة" : (activeProject?.name || "اختر المخطط...")}
+                  <ChevronDown size={14} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="rounded-xl">
+                <DropdownMenuItem onClick={() => setSelectedProjectId('main_map')} className="text-right font-black text-indigo-600 hover:bg-indigo-50 focus:bg-indigo-50">
+                  🌐 المخطط العام للمدينة
+                </DropdownMenuItem>
+                <div className="h-px bg-slate-100 my-1" />
+                {filteredProjects.map(p => (
+                  <DropdownMenuItem key={p.id} onClick={() => setSelectedProjectId(p.id)} className="text-right font-bold">
+                    {p.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:bg-rose-50 gap-2 h-12 font-bold text-xs"><LogOut size={16} /> خروج</Button>
+          </div>
+        </header>
+
+        {permissions.showSearchBox !== false && (
+          <div className="relative bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-3 items-center w-full animate-in fade-in duration-300">
+            <div className="w-full sm:w-48 shrink-0">
+              <Select value={searchProjectFilter} onValueChange={(val) => { setSearchProjectFilter(val); setSearchLimit(10); }}>
+                <SelectTrigger className="rounded-2xl h-12 border-slate-200 font-black text-xs bg-slate-50/50 w-full">
+                  <SelectValue placeholder="كل المشاريع" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="all" className="font-bold text-xs">🌐 كل المشاريع</SelectItem>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={p.id} className="font-bold text-xs">{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="relative flex-1 w-full">
+              <Search className="absolute right-4 top-3.5 text-slate-400 w-5 h-5" />
+              <Input 
+                type="text" 
+                placeholder="ابحث عن اسم زبون، رقم هاتف، أو رقم وحدة..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pr-12 pl-12 rounded-2xl h-12 border-slate-200 font-bold focus-visible:ring-blue-500 focus-visible:ring-2 w-full text-sm bg-slate-50/50" 
+              />
+              {isSearching && (
+                <div className="absolute left-10 top-3.5">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
+              {searchQuery && (
+                <button 
+                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                  className="absolute left-4 top-3.5 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+            
+            {searchResults.length > 0 && (
+              <div className="absolute z-[999] right-4 left-4 top-16 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                {searchResults.map((item) => {
+                  const projName = projects.find(p => p.id === item.project_id)?.name || "المخطط العام";
+                  const isInvestment = item.data?.status === 'investment';
+                  const isSold = item.data?.status === 'sold';
+                  const isReserved = item.data?.status === 'reserved';
+                  const isPending = item.data?.status === 'pending';
+                  
+                  let statusBadge = "متاح";
+                  let statusClass = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                  if (isSold) {
+                    statusBadge = "مباع";
+                    statusClass = "bg-rose-50 text-rose-700 border-rose-100";
+                  } else if (isInvestment) {
+                    statusBadge = "استثمار";
+                    statusClass = "bg-purple-50 text-purple-700 border-purple-100";
+                  } else if<dyad-write path="src/pages/Index.tsx" description="تكملة وإصلاح كود صفحة Index.tsx بالكامل مع تفعيل شرط صلاحية لوحة تحليل الأداء الفورية">
+"use client";
+
+import React, { useState, useEffect, useRef } from 'react';
+import InteractiveMap from '@/components/InteractiveMap';
+import UnitDetailsModal from '@/components/UnitDetailsModal';
+import TowerDetailsModal from '@/components/TowerDetailsModal';
+import DetailedStatsTable from '@/components/DetailedStatsTable';
+import { showSuccess, showError } from '@/utils/toast';
+import { 
+  Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, 
+  Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, 
+  BarChart3, MapPin, Search, RefreshCcw, X, AlertTriangle, Ruler,
+  Terminal, Cpu, HardDrive, Eye, EyeOff
+} from 'lucide-react';
+import { MadeWithDyad } from "@/components/made-with-dyad";
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Project, MapElement } from '@/types/project';
+import { supabase } from "@/integrations/supabase/client";
+import { Link } from 'react-router-dom';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+
+interface IndexProps {
+  projects: Project[];
+  housesData: Record<string, any>;
+  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+}
+
+const fetchWithRetry = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 1) throw error;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return fetchWithRetry(fn, retries - 1, delay * 1.5);
+  }
+};
+
+const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [activeElements, setActiveElements] = useState<MapElement[]>([]);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
+  const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
+  const [isProjectLoading, setIsProjectLoading] = useState(false);
+
+  // حالات لوحة الفحص والتشخيص اللحظية (Performance Terminal State)
+  const [showTerminal, setShowTerminal] = useState(true);
+  const [fps, setFps] = useState(60);
+  const [memoryUsage, setMemoryUsage] = useState<string>('N/A');
+  const [diagLogs, setDiagLogs] = useState<Array<{ time: string; message: string; type: 'info' | 'warn' | 'success' | 'danger' }>>([]);
+  const frameCount = useRef(0);
+  const lastFpsCheck = useRef(performance.now());
+
+  // حالات تسجيل الدخول والأقسام
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
+  const [loginData, setLoginData] = useState({ centerId: '', password: '' });
+  const [currentCenter, setCurrentCenter] = useState<any>(null);
+  
+  const [mainMapData, setMainMapData] = useState<any>(null);
+  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
+
+  // متغيرات تصفية الخريطة التفاعلية والتوهج
+  const [mapFilterZone, setMapFilterZone] = useState<string>('all');
+  const [mapFilterClass, setMapFilterClass] = useState<string>('all');
+  const [mapFilterSize, setMapFilterSize] = useState<string>('all');
+  const [mapFilterStatus, setMapFilterStatus] = useState<string>('all');
+
+  // متغيرات البحث والآخر تحديث المضافين بشكل مخصص
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [pendingOpen, setPendingOpen] = useState<{ elementId: string; isTower: boolean } | null>(null);
+
+  const [searchProjectFilter, setSearchProjectFilter] = useState<string>('all');
+  const [searchLimit, setSearchLimit] = useState<number>(10);
+  const [pendingApartmentKey, setPendingApartmentKey] = useState<string | null>(null);
+
+  const [permissions, setPermissions] = useState<any>({
+    showPrice: true,
+    showCustomerName: true,
+    showCustomerPhone: true,
+    showTaboInfo: true,
+    showHandoverInfo: true,
+    showStatsTable: true,
+    showGeneralStats: true,
+    showSideTotal: true,
+    showSideSold: true,
+    showSideInvestment: true,
+    showSideAvailable: true,
+    showSidePromoted: true,
+    showSideNotPromoted: true,
+    showSideReceivedTabo: true,
+    showSideReceivedUnit: true,
+    showSideNotReceivedUnit: true,
+    showNotifications: true,
+    colorMode: 'default',
+    showStatusField: true,
+    canEditUnitData: false,
+    showSearchBox: true,
+    canAccessReports: true,
+    showDiagnosticTerminal: true
   });
 
   const addDiagLog = (message: string, type: 'info' | 'warn' | 'success' | 'danger' = 'info') => {
@@ -714,8 +1373,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     ? (mainMapData?.showGrid !== false)
     : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
 
-  // مكون اللوحة الفائقة للتشخيص العائمة (تظهر دائماً وبشكل مستقل)
-  const DiagnosticTerminalFloating = (
+  // مكون اللوحة الفائقة للتشخيص العائمة (تظهر دائماً وبشكل مستقل عند منح الصلاحية)
+  const DiagnosticTerminalFloating = permissions.showDiagnosticTerminal !== false ? (
     <div className="fixed bottom-4 left-4 z-[99999] max-w-sm w-full font-mono text-xs shadow-2xl rounded-2xl overflow-hidden border-2 border-emerald-500/50 bg-slate-950/95 text-slate-200 backdrop-blur-md animate-in fade-in slide-in-from-bottom-5">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
         <div className="flex items-center gap-2">
@@ -771,7 +1430,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         </div>
       )}
     </div>
-  );
+  ) : null;
 
   if (isAuthChecking) {
     return (

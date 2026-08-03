@@ -379,7 +379,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showOtherDeptsNotes: true,
       canDeleteNotes: false,
       showSearchBox: true,
-      canAccessReports: true
+      canAccessReports: true,
+      showDiagnosticTerminal: true
     };
     
     const currentValue = current[permission];
@@ -1028,6 +1029,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'showGeneralStats', label: 'عرض كارت الإحصائيات العام الجانبي بالكامل' },
         { key: 'showSearchBox', label: 'رؤية واستخدام مربع البحث في الواجهة الرئيسية' },
         { key: 'canAccessReports', label: 'صلاحية الوصول إلى نافذة التقارير والتحليلات' },
+        { key: 'showDiagnosticTerminal', label: 'رؤية لوحة تحليل الأداء الفورية (Realtime)' },
       ]
     },
     {
