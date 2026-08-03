@@ -87,7 +87,7 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
         if (typeMatch) types.add(typeMatch[0]);
       }
     });
-    return Array.from(types).sort();
+    return Array.from(types).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [elements]);
 
   const availableSizes = useMemo(() => {
@@ -302,8 +302,14 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
       ]);
 
       sortedHouseStats.forEach(([zone, zoneData]) => {
-        Object.entries(zoneData.blocks).forEach(([block, types]) => {
-          Object.entries(types).forEach(([type, s]: [string, any]) => {
+        const sortedBlocks = Object.entries(zoneData.blocks).sort(([blockA], [blockB]) => 
+          blockA.localeCompare(blockB, undefined, { numeric: true, sensitivity: 'base' })
+        );
+        sortedBlocks.forEach(([block, types]) => {
+          const sortedTypes = Object.entries(types).sort(([typeA], [typeB]) => 
+            typeA.localeCompare(typeB, undefined, { numeric: true, sensitivity: 'base' })
+          );
+          sortedTypes.forEach(([type, s]: [string, any]) => {
             rows.push([
               zone, block, type, s.available, s.sold, s.investment, s.reserved, 
               s.pending, s.total, s.promoted, s.notPromoted, s.receivedTabo, s.receivedUnit, s.notReceivedUnit, s.priceIQD, s.priceUSD
@@ -470,43 +476,47 @@ const DetailedStatsTable = ({ elements, housesData, permissions }: DetailedStats
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {Object.entries(zoneData.blocks).map(([block, types], bIdx) => (
-                            Object.entries(types).map(([type, s]: [string, any], tIdx) => (
-                              <TableRow 
-                                key={`${block}-${type}`} 
-                                className={cn(
-                                  "hover:opacity-80 transition-all",
-                                  bIdx % 2 === 0 ? "bg-orange-50/30" : "bg-sky-50/30"
-                                )}
-                              >
-                                <TableCell className={cn("font-bold border-l", tIdx === 0 && "bg-black/5")}>
-                                  {tIdx === 0 ? block : ""}
-                                </TableCell>
-                                <TableCell className="font-bold text-slate-600">{type}</TableCell>
-                                {perms.showStatsAvailable && <TableCell className="text-center font-black">{s.available}</TableCell>}
-                                {perms.showStatsSold && <TableCell className="text-center font-black">{s.sold}</TableCell>}
-                                {perms.showStatsInvestment && <TableCell className="text-center font-black">{s.investment}</TableCell>}
-                                {perms.showStatsReserved && <TableCell className="text-center font-black">{s.reserved}</TableCell>}
-                                {perms.showStatsPending && <TableCell className="text-center font-black">{s.pending}</TableCell>}
-                                {perms.showStatsTotal && <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>}
-                                {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-600">{s.promoted}</TableCell>}
-                                {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-500">{s.notPromoted}</TableCell>}
-                                {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-700">{s.receivedTabo}</TableCell>}
-                                {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-600">{s.receivedUnit}</TableCell>}
-                                {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-400">{s.notReceivedUnit}</TableCell>}
-                                {perms.showStatsPriceIQD && (
-                                  <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
-                                    {formatNumber(s.priceIQD)}
-                                  </TableCell>
-                                )}
-                                {perms.showStatsPriceUSD && (
-                                  <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
-                                    {formatNumber(s.priceUSD)}
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            ))
-                          ))}
+                          {Object.entries(zoneData.blocks)
+                            .sort(([blockA], [blockB]) => blockA.localeCompare(blockB, undefined, { numeric: true, sensitivity: 'base' }))
+                            .map(([block, types], bIdx) => (
+                              Object.entries(types)
+                                .sort(([typeA], [typeB]) => typeA.localeCompare(typeB, undefined, { numeric: true, sensitivity: 'base' }))
+                                .map(([type, s]: [string, any], tIdx) => (
+                                  <TableRow 
+                                    key={`${block}-${type}`} 
+                                    className={cn(
+                                      "hover:opacity-80 transition-all",
+                                      bIdx % 2 === 0 ? "bg-orange-50/30" : "bg-sky-50/30"
+                                    )}
+                                  >
+                                    <TableCell className={cn("font-bold border-l", tIdx === 0 && "bg-black/5")}>
+                                      {tIdx === 0 ? block : ""}
+                                    </TableCell>
+                                    <TableCell className="font-bold text-slate-600">{type}</TableCell>
+                                    {perms.showStatsAvailable && <TableCell className="text-center font-black">{s.available}</TableCell>}
+                                    {perms.showStatsSold && <TableCell className="text-center font-black">{s.sold}</TableCell>}
+                                    {perms.showStatsInvestment && <TableCell className="text-center font-black">{s.investment}</TableCell>}
+                                    {perms.showStatsReserved && <TableCell className="text-center font-black">{s.reserved}</TableCell>}
+                                    {perms.showStatsPending && <TableCell className="text-center font-black">{s.pending}</TableCell>}
+                                    {perms.showStatsTotal && <TableCell className="text-center font-black bg-black/5">{s.total}</TableCell>}
+                                    {perms.showStatsPromoted && <TableCell className="text-center font-black text-indigo-600">{s.promoted}</TableCell>}
+                                    {perms.showStatsNotPromoted && <TableCell className="text-center font-black text-slate-500">{s.notPromoted}</TableCell>}
+                                    {perms.showStatsReceivedTabo && <TableCell className="text-center font-black text-amber-700">{s.receivedTabo}</TableCell>}
+                                    {perms.showStatsReceivedUnit && <TableCell className="text-center font-black text-sky-600">{s.receivedUnit}</TableCell>}
+                                    {perms.showStatsNotReceivedUnit && <TableCell className="text-center font-black text-rose-400">{s.notReceivedUnit}</TableCell>}
+                                    {perms.showStatsPriceIQD && (
+                                      <TableCell className="text-center font-black text-emerald-700 bg-emerald-50/30">
+                                        {formatNumber(s.priceIQD)}
+                                      </TableCell>
+                                    )}
+                                    {perms.showStatsPriceUSD && (
+                                      <TableCell className="text-center font-black text-blue-700 bg-blue-50/30">
+                                        {formatNumber(s.priceUSD)}
+                                      </TableCell>
+                                    )}
+                                  </TableRow>
+                                ))
+                            ))}
                         </TableBody>
                         <TableFooter className="bg-slate-900 text-white">
                           <TableRow>
