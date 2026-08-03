@@ -366,14 +366,31 @@ const InteractiveMap = ({
         ctx.globalAlpha = el.opacity ?? styles.opacity ?? 1.0;
       }
 
-      // معالجة ورسم الصورة المرجعية بشكل حقيقي
+      // معالجة ورسم الصورة المرجعية بمطابقة تامة ونسب قياسية لحسابات SVG preserveAspectRatio
       if (el.type === 'reference_image') {
         if (el.color) {
           const refImg = getCachedReferenceImage(el.color, () => {
             setImagesLoadedCount(c => c + 1);
           });
-          if (refImg && refImg.complete && refImg.naturalWidth > 0) {
-            ctx.drawImage(refImg, minX, minY, elWidth, elHeight);
+          if (refImg && refImg.complete && refImg.naturalWidth > 0 && refImg.naturalHeight > 0) {
+            const imgAspect = refImg.naturalWidth / refImg.naturalHeight;
+            const boxAspect = elWidth / elHeight;
+            let drawW = elWidth;
+            let drawH = elHeight;
+            let drawX = minX;
+            let drawY = minY;
+
+            if (imgAspect > boxAspect) {
+              drawW = elWidth;
+              drawH = elWidth / imgAspect;
+              drawY = minY + (elHeight - drawH) / 2;
+            } else {
+              drawH = elHeight;
+              drawW = elHeight * imgAspect;
+              drawX = minX + (elWidth - drawW) / 2;
+            }
+
+            ctx.drawImage(refImg, drawX, drawY, drawW, drawH);
           }
         }
         ctx.restore();
