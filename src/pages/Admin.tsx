@@ -97,8 +97,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '', allowed_projects: [] as string[] });
   const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
+  
+  // أنواع الأقسام وتعديلها
   const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
   const [newDeptType, setNewDeptType] = useState('');
+  const [editingDeptTypeOldName, setEditingDeptTypeOldName] = useState<string | null>(null);
+  const [editingDeptTypeName, setEditingDeptTypeName] = useState('');
+
   const [deptPermissions, setDeptPermissions] = useState<Record<string, any>>({});
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [processLogs, setProcessLogs] = useState<string[]>([]);
@@ -306,16 +311,76 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleAddDeptType = async () => {
-    if (!newDeptType) return;
-    const updated = [...departmentTypes, newDeptType];
+    if (!newDeptType.trim()) return;
+    const trimmed = newDeptType.trim();
+    if (departmentTypes.includes(trimmed)) {
+      showError("نوع القسم هذا مضاف بالفعل");
+      return;
+    }
+    const updated = [...departmentTypes, trimmed];
     try {
       await supabase.from('settings').upsert({ key: 'department_types', value: updated });
       setDepartmentTypes(updated);
-      if (!activePermsTab) setActivePermsTab(newDeptType);
+      if (!activePermsTab) setActivePermsTab(trimmed);
       setNewDeptType('');
       showSuccess("تم إضافة نوع القسم");
     } catch (error) {
       showError("فشل في الحفظ");
+    }
+  };
+
+  const handleStartEditDeptType = (type: string) => {
+    setEditingDeptTypeOldName(type);
+    setEditingDeptTypeName(type);
+  };
+
+  const handleSaveEditDeptType = async () => {
+    if (!editingDeptTypeOldName || !editingDeptTypeName.trim()) return;
+    const newName = editingDeptTypeName.trim();
+    
+    if (newName === editingDeptTypeOldName) {
+      setEditingDeptTypeOldName(null);
+      setEditingDeptTypeName('');
+      return;
+    }
+
+    if (departmentTypes.includes(newName)) {
+      showError("هذا الاسم مستخدم بالفعل لنوع آخر");
+      return;
+    }
+
+    try {
+      const updatedTypes = departmentTypes.map(t => t === editingDeptTypeOldName ? newName : t);
+      
+      const updatedPerms = { ...deptPermissions };
+      if (updatedPerms[editingDeptTypeOldName]) {
+        updatedPerms[newName] = updatedPerms[editingDeptTypeOldName];
+        delete updatedPerms[editingDeptTypeOldName];
+      }
+
+      await supabase.from('settings').upsert({ key: 'department_types', value: updatedTypes });
+      await supabase.from('settings').upsert({ key: 'dept_permissions', value: updatedPerms });
+
+      // تحديث نوع الأقسام المسجلة في جدول أقسام التسويق
+      await supabase
+        .from('marketing_centers')
+        .update({ type: newName })
+        .eq('type', editingDeptTypeOldName);
+
+      setDepartmentTypes(updatedTypes);
+      setDeptPermissions(updatedPerms);
+      setMarketingCenters(prev => prev.map(c => c.type === editingDeptTypeOldName ? { ...c, type: newName } : c));
+      
+      if (activePermsTab === editingDeptTypeOldName) {
+        setActivePermsTab(newName);
+      }
+
+      setEditingDeptTypeOldName(null);
+      setEditingDeptTypeName('');
+      showSuccess("تم تحديث اسم نوع القسم بنجاح");
+    } catch (error) {
+      console.error(error);
+      showError("فشل في تعديل اسم النوع");
     }
   };
 
@@ -1339,19 +1404,45 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           onChange={(e) => setNewDeptType(e.target.value)} 
                           placeholder="مثال: حسابات، مبيعات..." 
                           className="rounded-xl h-11 font-bold"
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleAddDeptType(); }}
                         />
-                        <Button onClick={handleAddDeptType} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-11 px-4 font-bold">
+                        <Button onClick={handleAddDeptType} className="bg-indigo-600 hover:bg-indigo-700 rounded-xl h-11 px-4 font-bold shrink-0">
                           إضافة
                         </Button>
                       </div>
-                      <ScrollArea className="h-40 border rounded-xl p-2 bg-white">
-                        <div className="space-y-1">
+                      <ScrollArea className="h-44 border rounded-xl p-2 bg-white">
+                        <div className="space-y-1.5">
                           {departmentTypes.map((type, idx) => (
-                            <div key={type} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border text-xs font-bold">
-                              <span>{type}</span>
-                              <Button variant="ghost" size="icon" onClick={() => handleDeleteDeptType(idx)} className="h-6 w-6 text-rose-500 hover:bg-rose-50">
-                                <X size={12} />
-                              </Button>
+                            <div key={type} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 text-xs font-bold transition-all hover:bg-slate-100/70">
+                              {editingDeptTypeOldName === type ? (
+                                <div className="flex items-center gap-1.5 w-full">
+                                  <Input 
+                                    value={editingDeptTypeName} 
+                                    onChange={(e) => setEditingDeptTypeName(e.target.value)}
+                                    className="h-8 text-xs font-bold rounded-lg border-indigo-200"
+                                    autoFocus
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEditDeptType(); }}
+                                  />
+                                  <Button size="icon" className="h-8 w-8 bg-emerald-600 hover:bg-emerald-700 shrink-0 rounded-lg text-white" onClick={handleSaveEditDeptType}>
+                                    <Check size={14} />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0 rounded-lg" onClick={() => setEditingDeptTypeOldName(null)}>
+                                    <X size={14} />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <>
+                                  <span className="truncate max-w-[140px]">{type}</span>
+                                  <div className="flex items-center gap-1">
+                                    <Button variant="ghost" size="icon" onClick={() => handleStartEditDeptType(type)} className="h-7 w-7 text-blue-500 hover:bg-blue-50 hover:text-blue-600 rounded-lg">
+                                      <Edit2 size={13} />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => handleDeleteDeptType(idx)} className="h-7 w-7 text-rose-500 hover:bg-rose-50 hover:text-rose-600 rounded-lg">
+                                      <Trash2 size={13} />
+                                    </Button>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           ))}
                           {departmentTypes.length === 0 && (
