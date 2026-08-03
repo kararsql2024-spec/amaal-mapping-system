@@ -560,8 +560,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         setSearchResults(data || []);
       } catch (err) {
         console.error("Search error:", err);
-      } font-bold
-      finally {
+      } finally {
         setIsSearching(false);
       }
     };
