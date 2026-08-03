@@ -572,11 +572,7 @@ const InteractiveMap = ({
       }
       ctx.translate(-centerX, -centerY);
 
-      if (isDimmed) {
-        ctx.globalAlpha = 0.25;
-      } else {
-        ctx.globalAlpha = el.opacity ?? styles.opacity ?? 1.0;
-      }
+      ctx.globalAlpha = el.opacity ?? styles.opacity ?? 1.0;
 
       // معالجة ورسم الصورة المرجعية بمطابقة تامة ونسب قياسية لحسابات SVG preserveAspectRatio
       if (el.type === 'reference_image') {
@@ -618,12 +614,12 @@ const InteractiveMap = ({
       path2d.closePath();
 
       if (el.type !== 'text') {
-        // التعبئة الأساسية (Fill)
-        ctx.fillStyle = styles.fill;
+        // التعبئة الأساسية (Fill) - إذا كانت الوحدة خارج الفلتر تلوّن بالرمادي
+        ctx.fillStyle = isDimmed ? '#cbd5e1' : styles.fill;
         ctx.fill(path2d);
 
-        // رسم الـ Texture والمظاهر إذا كانت مفعلة للعنصر
-        if (el.hasTexture) {
+        // رسم الـ Texture والمظاهر إذا كانت مفعلة للعنصر (فقط للوحدات المشمولة بالفلتر)
+        if (el.hasTexture && !isDimmed) {
           ctx.save();
           ctx.clip(path2d);
           const texturePattern = getCanvasTexturePattern(ctx, el.textureType || 'glass', el.textureColor || '#ffffff');
@@ -635,7 +631,7 @@ const InteractiveMap = ({
         }
 
         // رسم الحدود (Stroke/Border)
-        const strokeColor = isFilteredIn ? '#fbbf24' : (isSelected ? '#000000' : (el.hasBorder && el.borderColor ? el.borderColor : styles.stroke));
+        const strokeColor = isFilteredIn ? '#fbbf24' : (isDimmed ? '#94a3b8' : (isSelected ? '#000000' : (el.hasBorder && el.borderColor ? el.borderColor : styles.stroke)));
         const strokeWidth = isFilteredIn ? 3.5 : (isSelected ? 3.5 : (el.hasBorder ? 3 : styles.strokeWidth));
 
         ctx.strokeStyle = strokeColor;
@@ -670,12 +666,11 @@ const InteractiveMap = ({
       const showIcon = (el.type === 'house' || el.type === 'tower' || el.type === 'amenity') && !el.hideIcon;
       const dynamicIconSize = showIcon ? minDim * 0.42 : 0;
       const iconType = el.type === 'house' ? 'house' : el.type === 'tower' ? 'tower' : el.amenityType || 'amenity';
-      const iconColor = el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b');
+      const iconColor = isDimmed ? '#64748b' : (el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b'));
 
       if (showIcon) {
         const img = getCachedIconImage(iconType, iconColor);
         if (img.complete) {
-          // تمكين وضع الأيقونة أعلى المركز قليلاً لترك مسافة أمان فاصلة للنص أسفلها
           const iconY = centerY - (dynamicIconSize * 0.45);
           ctx.drawImage(
             img,
@@ -688,7 +683,6 @@ const InteractiveMap = ({
       }
 
       // رسم النص / الرقم التوضيحي
-      // إذا كان العنصر من نوع "نص" صريح (type === 'text'): يرسم كالسابق دون تقييد بالطول والعرض
       if (el.type === 'text') {
         ctx.fillStyle = el.textColor || '#000000';
         ctx.font = `${el.isBold ? 'bold' : 'normal'} ${el.fontSize || 24}px ${el.fontFamily || 'Arial'}`;
@@ -696,7 +690,6 @@ const InteractiveMap = ({
         ctx.textBaseline = 'middle';
         ctx.fillText(el.label || '', centerX, centerY);
       } else if (el.label) {
-        // الأشكال العادية (منازل/عمارات/مرافق): يرسم النص بداخل حدود الشكل ذكياً
         const textLabel = el.label.split('-').pop() || '';
         const maxTextW = elWidth * 0.82;
         const maxTextH = showIcon ? (elHeight * 0.45) : (elHeight * 0.8);
@@ -730,7 +723,7 @@ const InteractiveMap = ({
     matchesFilter, getElementStyles
   ]);
 
-  // فحص النقر المباشر والدقيق Hit Testing
+  // فحص النقر المباشر والدقيق Hit Testing (تتجاهل الوحدات المظللة بالرمادي إذا كان هناك فلتر نشط)
   const getElementAtCoords = useCallback((screenX: number, screenY: number): MapElement | null => {
     if (!containerRef.current) return null;
     const rect = containerRef.current.getBoundingClientRect();
@@ -743,6 +736,11 @@ const InteractiveMap = ({
     for (let i = sortedElements.length - 1; i >= 0; i--) {
       const el = sortedElements[i];
       if (el.type !== 'house' && el.type !== 'tower' && !el.linkProjectId) continue;
+
+      // عند تفعيل فلتر معين، يتم منع النقر على الوحدات التي لا تطابق الفلتر (الرمادية)
+      if (isAnyFilterActive && (el.type === 'house' || el.type === 'tower') && !matchesFilter(el)) {
+        continue;
+      }
 
       const pts = getElementPoints(el);
       const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
@@ -767,7 +765,7 @@ const InteractiveMap = ({
       if (inside) return el;
     }
     return null;
-  }, [sortedElements, position, scale]);
+  }, [sortedElements, position, scale, isAnyFilterActive, matchesFilter]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
