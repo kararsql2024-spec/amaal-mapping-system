@@ -300,6 +300,59 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   }, [selectedProjectId]);
 
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentCenter(null);
+    setLoginData({ centerId: '', password: '' });
+    localStorage.removeItem('marketing_center_session');
+    localStorage.removeItem('marketing_center_password');
+    localStorage.removeItem('marketing_center_name');
+  };
+
+  // المراقبة اللحظية (Realtime Logout) لتغيير كلمة المرور أو حذف الحساب من الإدارة
+  useEffect(() => {
+    if (!currentCenter?.id || !isLoggedIn) return;
+
+    const savedCenterPass = localStorage.getItem('marketing_center_password');
+
+    const channel = supabase
+      .channel(`center_auth_check_${currentCenter.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'marketing_centers',
+          filter: `id=eq.${currentCenter.id}`
+        },
+        (payload) => {
+          const updatedCenter = payload.new as any;
+          if (updatedCenter && updatedCenter.password !== savedCenterPass) {
+            handleLogout();
+            showError("تم تغيير كلمة المرور لهذا القسم من قِبل الإدارة. تم تسجيل الخروج تلقائياً.");
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'marketing_centers',
+          filter: `id=eq.${currentCenter.id}`
+        },
+        () => {
+          handleLogout();
+          showError("تم حذف هذا القسم من قِبل الإدارة.");
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentCenter?.id, isLoggedIn]);
+
   useEffect(() => {
     const fetchCentersAndPermissions = async () => {
       setIsAuthChecking(true);
@@ -309,9 +362,13 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         if (centers) setMarketingCenters(centers);
 
         const savedCenterId = localStorage.getItem('marketing_center_session');
+        const savedCenterPass = localStorage.getItem('marketing_center_password');
+
         if (savedCenterId && centers) {
           const center = centers.find(c => c.id === savedCenterId);
-          if (center) {
+          
+          // التحقق من صحة كلمة المرور المعتمدة للجلسة
+          if (center && center.password === savedCenterPass) {
             setCurrentCenter(center);
             setIsLoggedIn(true);
             localStorage.setItem('marketing_center_name', center.name);
@@ -334,8 +391,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
             }
           } else {
-            localStorage.removeItem('marketing_center_session');
-            localStorage.removeItem('marketing_center_name');
+            // في حال تم تغيير كلمة المرور أو حذف الحساب
+            handleLogout();
+            if (center && center.password !== savedCenterPass) {
+              showError("تم تغيير كلمة المرور لهذا القسم من قِبل الإدارة. يرجى إعادة تسجيل الدخول.");
+            }
           }
         }
         const endTime = performance.now();
@@ -500,7 +560,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         setSearchResults(data || []);
       } catch (err) {
         console.error("Search error:", err);
-      } finally {
+      } font-bold
+      finally {
         setIsSearching(false);
       }
     };
@@ -617,19 +678,12 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       setIsLoggedIn(true);
       setCurrentCenter(center);
       localStorage.setItem('marketing_center_session', center.id);
+      localStorage.setItem('marketing_center_password', center.password);
       localStorage.setItem('marketing_center_name', center.name);
       showSuccess(`مرحباً بك في مركز ${center.name}`);
     } else {
       showError("بيانات الدخول غير صحيحة");
     }
-  };
-
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setCurrentCenter(null);
-    setLoginData({ centerId: '', password: '' });
-    localStorage.removeItem('marketing_center_session');
-    localStorage.removeItem('marketing_center_name');
   };
 
   const handleElementClick = async (id: string) => {
