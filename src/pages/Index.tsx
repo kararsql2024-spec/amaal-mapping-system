@@ -462,6 +462,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     fetchProjectDataPhase1();
   }, [selectedProjectId, isLoggedIn, setHousesData]);
 
+  // تأخير الاستعلام (Debounce) للبحث
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
@@ -472,23 +473,85 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [searchQuery]);
 
+  // تنفيذ البحث الفعلي في قاعدة البيانات بجدول houses_data
+  useEffect(() => {
+    if (!debouncedSearchQuery.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const performSearch = async () => {
+      setIsSearching(true);
+      try {
+        const queryText = debouncedSearchQuery.trim().toLowerCase();
+        let query = supabase
+          .from('houses_data')
+          .select('unit_key, project_id, data')
+          .or(`unit_key.ilike.%${queryText}%,data->>name.ilike.%${queryText}%,data->>phone.ilike.%${queryText}%`)
+          .limit(searchLimit);
+
+        if (searchProjectFilter && searchProjectFilter !== 'all') {
+          query = query.eq('project_id', searchProjectFilter);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        setSearchResults(data || []);
+      } catch (err) {
+        console.error("Search error:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    performSearch();
+  }, [debouncedSearchQuery, searchProjectFilter, searchLimit]);
+
+  // معالجة النقر على عنصر في نتائج البحث مع مطابقة زكية ومرنة
   const parseSearchClick = async (item: any) => {
     const unitKey = item.unit_key;
     const projectId = item.project_id;
     
-    setSelectedProjectId(projectId);
-    
+    let isTower = false;
+    let targetElementId = unitKey;
+    let targetApartmentKey: string | null = null;
+
     if (unitKey.includes('_F') && unitKey.includes('_A')) {
-      const towerId = unitKey.split('_F')[0];
-      setPendingOpen({ elementId: towerId, isTower: true });
-      setPendingApartmentKey(unitKey);
+      isTower = true;
+      targetElementId = unitKey.split('_F')[0];
+      targetApartmentKey = unitKey;
+    }
+
+    // إذا كنا بنفس المشروع بالفعل والبيانات محملة
+    if (selectedProjectId === projectId) {
+      const matchedEl = activeElements.find(
+        el => el.id === targetElementId || 
+              (el.label && el.label.trim().toLowerCase() === targetElementId.trim().toLowerCase()) ||
+              (isTower && (el.id === targetElementId || (el.label && el.label.trim().toLowerCase() === targetElementId.trim().toLowerCase())))
+      );
+      if (matchedEl) {
+        if (isTower) setPendingApartmentKey(targetApartmentKey);
+        handleElementClick(matchedEl.id);
+        setSearchQuery('');
+        setSearchResults([]);
+        showSuccess(`تم الانتقال للوحدة ${unitKey}`);
+        return;
+      }
+    }
+
+    // إذا كان مشروعاً مختلفاً أو لم نجد العنصر بعد في activeElements
+    if (isTower) {
+      setPendingApartmentKey(targetApartmentKey);
     } else {
-      setPendingOpen({ elementId: unitKey, isTower: false });
       setPendingApartmentKey(null);
     }
+
+    setPendingOpen({ elementId: targetElementId, isTower });
+    setSelectedProjectId(projectId);
     setSearchQuery('');
     setSearchResults([]);
-    showSuccess(`جاري الانتقال وعرض الوحدة ${unitKey}...`);
+    showSuccess(`جاري الانتقال لـ ${projects.find(p => p.id === projectId)?.name || 'المشروع'}...`);
   };
 
   const checkExpiredBookings = async (units: any[], projectId: string) => {
@@ -625,14 +688,22 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   };
 
+  // فتح الوحدة المعلقة تلقائياً ومطابقتها بمرونة بعد اكتمال جلب عناصر المخطط الجديد
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
-      const { elementId } = pendingOpen;
-      const exists = activeElements.some(el => el.id === elementId);
-      if (exists) {
-        handleElementClick(elementId);
+      const { elementId, isTower } = pendingOpen;
+      
+      const matchedEl = activeElements.find(el => {
+        if (el.id === elementId) return true;
+        if (el.label && el.label.trim().toLowerCase() === elementId.trim().toLowerCase()) return true;
+        if (isTower && (el.id === elementId || (el.label && el.label.trim().toLowerCase() === elementId.trim().toLowerCase()))) return true;
+        return false;
+      });
+
+      if (matchedEl) {
+        handleElementClick(matchedEl.id);
       } else {
-        showError("تعذر عرض الوحدة على المخطط الحالي");
+        showError("تعذر عرض الوحدة على المخطط المحدد");
       }
       setPendingOpen(null);
     }
