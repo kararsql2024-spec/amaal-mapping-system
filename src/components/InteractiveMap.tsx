@@ -148,7 +148,7 @@ const getCanvasTexturePattern = (
   return pattern;
 };
 
-// دالة رسم النص الذكي داخل حدود أي عنصر بدون الخروج عن الحواف
+// دالة رسم النص الذكي داخل حدود الأشكال المبنية (منازل/عمارات/مرافق)
 const drawBoundedText = (
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -185,7 +185,6 @@ const drawBoundedText = (
     lines.push(currentLine.trim());
   }
 
-  // تقليص حجم الخط تلقائياً إذا كان أحد الأسطر أطول من عرض العنصر
   while (fontSize > 6) {
     ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
     const overflows = lines.some(l => ctx.measureText(l).width > maxWidth);
@@ -688,28 +687,20 @@ const InteractiveMap = ({
         }
       }
 
-      // رسم النص / الرقم التوضيحي بداخل حدود الشكل وبدون خروج إطلاقاً
+      // رسم النص / الرقم التوضيحي
+      // إذا كان العنصر من نوع "نص" صريح (type === 'text'): يرسم كالسابق دون تقييد بالطول والعرض
       if (el.type === 'text') {
-        const maxTextW = elWidth * 0.9;
-        const maxTextH = elHeight * 0.9;
-        drawBoundedText(
-          ctx,
-          el.label || '',
-          centerX,
-          centerY,
-          maxTextW,
-          maxTextH,
-          el.fontFamily || 'Arial',
-          el.isBold ?? true,
-          el.textColor || '#000000',
-          el.fontSize || 24
-        );
+        ctx.fillStyle = el.textColor || '#000000';
+        ctx.font = `${el.isBold ? 'bold' : 'normal'} ${el.fontSize || 24}px ${el.fontFamily || 'Arial'}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(el.label || '', centerX, centerY);
       } else if (el.label) {
+        // الأشكال العادية (منازل/عمارات/مرافق): يرسم النص بداخل حدود الشكل ذكياً
         const textLabel = el.label.split('-').pop() || '';
         const maxTextW = elWidth * 0.82;
         const maxTextH = showIcon ? (elHeight * 0.45) : (elHeight * 0.8);
         
-        // حساب مركز النص أسفل الأيقونة بمسافة أمان واضحة لمنع أي التصاق
         const textStartY = showIcon 
           ? centerY + (dynamicIconSize * 0.45) 
           : centerY;
@@ -921,23 +912,31 @@ const InteractiveMap = ({
         className="w-full h-full block"
       />
 
-      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين */}
-      <div className="absolute top-6 right-6 z-20">
+      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين مع عزل الأحداث بالكامل عن الخريطة */}
+      <div 
+        className="absolute top-6 right-6 z-20"
+        onMouseDown={(e) => e.stopPropagation()}
+        onMouseUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+      >
         {!isFilterPanelOpen ? (
           <button
             onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(true); }}
-            className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-100 flex items-center gap-2 hover:bg-slate-50 transition-all font-black text-xs text-slate-700"
+            className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all font-black text-xs text-slate-700 relative"
+            title="تصفية الخريطة وتوهج الوحدات"
           >
-            <SlidersHorizontal size={18} className="text-blue-600" />
-            <span>تصفية الخريطة وتوهج الوحدات</span>
+            <SlidersHorizontal size={20} className="text-blue-600" />
             {isAnyFilterActive && (
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-500 animate-pulse border-2 border-white" />
             )}
           </button>
         ) : (
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="w-72 bg-white/95 backdrop-blur-md p-5 rounded-3xl shadow-2xl border border-slate-100 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
+            className="w-72 bg-white/95 backdrop-blur-md p-5 rounded-3xl shadow-2xl border border-slate-100 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 text-right"
           >
             <div className="flex items-center justify-between border-b pb-3">
               <div className="flex items-center gap-2 font-black text-xs text-slate-800">
