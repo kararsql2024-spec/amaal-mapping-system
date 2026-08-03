@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { cn } from "@/lib/utils";
-import { MapElement, Point, ElementType } from '@/types/project';
+import { MapElement, Point } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
   Home, Building2, Store, GraduationCap, Stethoscope, 
@@ -26,6 +26,42 @@ interface InteractiveMapProps {
   houseTypeAreas?: Record<string, number>;
   showTooltips?: boolean;
 }
+
+// كاش الأيقونات لضمان الرسم الفائق على Canvas
+const iconImageCache = new Map<string, HTMLImageElement>();
+
+const getIconSvgUri = (type: string, color: string) => {
+  let svgContent = '';
+  if (type === 'house') {
+    svgContent = `<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`;
+  } else if (type === 'tower') {
+    svgContent = `<rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="9" y1="6" x2="9" y2="6.01"/><line x1="15" y1="6" x2="15" y2="6.01"/><line x1="9" y1="10" x2="9" y2="10.01"/><line x1="15" y1="10" x2="15" y2="10.01"/><line x1="9" y1="14" x2="9" y2="14.01"/><line x1="15" y1="14" x2="15" y2="14.01"/><line x1="9" y1="18" x2="9" y2="18.01"/><line x1="15" y1="18" x2="15" y2="18.01"/>`;
+  } else if (type === 'shop') {
+    svgContent = `<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2V7"/><path d="M18 7v3a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2V7"/><path d="M14 7v3a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2V7"/><path d="M10 7v3a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2V7"/><path d="M6 7v3a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2V7"/>`;
+  } else if (type === 'school') {
+    svgContent = `<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>`;
+  } else if (type === 'medical') {
+    svgContent = `<path d="M4.8 2.3A.3.3 0 0 0 5 2h14a.3.3 0 0 0 .2.3V5h-15V2.3z"/><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5"/><path d="M12 9v6M9 12h6"/>`;
+  } else if (type === 'mosque') {
+    svgContent = `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>`;
+  } else {
+    svgContent = `<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>`;
+  }
+
+  const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${svgContent}</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svgString)}`;
+};
+
+const getCachedIconImage = (type: string, color: string): HTMLImageElement => {
+  const key = `${type}_${color}`;
+  if (iconImageCache.has(key)) {
+    return iconImageCache.get(key)!;
+  }
+  const img = new Image();
+  img.src = getIconSvgUri(type, color);
+  iconImageCache.set(key, img);
+  return img;
+};
 
 const InteractiveMap = ({ 
   elements, 
@@ -51,7 +87,6 @@ const InteractiveMap = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
-  // حالات بطاقة المعاينة السريعة عند التمرير
   const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
@@ -59,8 +94,9 @@ const InteractiveMap = ({
   const hasDragged = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const autoFit = () => {
+  const autoFit = useCallback(() => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const padding = 40;
@@ -76,118 +112,12 @@ const InteractiveMap = ({
 
     setScale(newScale);
     setPosition({ x: newX, y: newY });
-  };
+  }, [mapWidth, mapHeight]);
 
   useEffect(() => {
     const timer = setTimeout(autoFit, 100);
     return () => clearTimeout(timer);
-  }, [mapWidth, mapHeight, isFullScreen]);
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const mapX = (mouseX - position.x) / scale;
-    const mapY = (mouseY - position.y) / scale;
-
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
-
-    if (newScale !== scale) {
-      const newX = mouseX - mapX * newScale;
-      const newY = mouseY - mapY * newScale;
-      setPosition({ x: newX, y: newY });
-      setScale(newScale);
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setHoveredElement(null); // إخفاء أي معاينة أثناء الحركة
-    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-    dragStartCoords.current = { x: e.clientX, y: e.clientY };
-    hasDragged.current = false;
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    const dx = e.clientX - dragStartCoords.current.x;
-    const dy = e.clientY - dragStartCoords.current.y;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-      hasDragged.current = true;
-    }
-    setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      setIsDragging(true);
-      setHoveredElement(null);
-      const touch = e.touches[0];
-      setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
-      dragStartCoords.current = { x: touch.clientX, y: touch.clientY };
-      hasDragged.current = false;
-    } else if (e.touches.length === 2) {
-      setIsDragging(false);
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      setLastTouchDistance(dist);
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 1 && isDragging) {
-      const touch = e.touches[0];
-      const dx = touch.clientX - dragStartCoords.current.x;
-      const dy = touch.clientY - dragStartCoords.current.y;
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        hasDragged.current = true;
-      }
-      setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
-    } else if (e.touches.length === 2 && lastTouchDistance !== null) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      
-      const delta = dist / lastTouchDistance;
-      const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
-      
-      if (newScale !== scale && containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        
-        const mouseX = centerX - rect.left;
-        const mouseY = centerY - rect.top;
-        const mapX = (mouseX - position.x) / scale;
-        const mapY = (mouseY - position.y) / scale;
-        
-        setPosition({ x: mouseX - mapX * newScale, y: mouseY - mapY * newScale });
-        setScale(newScale);
-      }
-      setLastTouchDistance(dist);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-    setLastTouchDistance(null);
-  };
-
-  const handleElementClick = (e: React.MouseEvent, elId: string, isInteractive: boolean) => {
-    e.stopPropagation();
-    if (hasDragged.current) return;
-    if (isInteractive) {
-      onHouseClick(elId);
-    }
-  };
+  }, [autoFit, isFullScreen]);
 
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
@@ -197,84 +127,6 @@ const InteractiveMap = ({
       { x: el.x + el.width, y: el.y + el.height },
       { x: el.x, y: el.y + el.height },
     ];
-  };
-
-  const pointsToPath = (points: Point[], closed = true) => {
-    if (!points || points.length === 0) return "";
-    let path = `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ');
-    return closed ? path + " Z" : path;
-  };
-
-  const getElementStyles = (el: MapElement) => {
-    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : (el.color || '#a855f7'), opacity: el.opacity || 0.2, strokeWidth: el.hasBorder ? 3 : 2 };
-    
-    const data = housesData[el.id];
-    if (el.type === 'road') return { fill: '#475569', stroke: el.hasBorder ? (el.borderColor || '#475569') : '#475569', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
-    if (el.type === 'green') return { fill: 'url(#green-pattern)', stroke: el.hasBorder ? (el.borderColor || '#22c55e') : '#22c55e', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
-    if (el.type === 'pitch') return { fill: '#16a34a', stroke: el.hasBorder ? (el.borderColor || '#ffffff') : '#ffffff', opacity: 1, strokeWidth: 2 };
-    if (el.type === 'tower') return { fill: el.color || '#1e293b', stroke: el.hasBorder ? (el.borderColor || '#0f172a') : '#0f172a', opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
-    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.hasBorder ? (el.borderColor || '#d97706') : (el.color || '#f59e0b'), opacity: 1, strokeWidth: 2 };
-    if (el.type === 'text') return { fill: 'none', stroke: 'none', opacity: 1, strokeWidth: 0 };
-    
-    if (el.type === 'house') {
-      const baseStroke = el.hasBorder ? (el.borderColor || '#94a3b8') : '#94a3b8';
-      const colorMode = permissions?.colorMode || 'default';
-
-      if (colorMode === 'tabo') {
-        const tabo = data?.taboStatus?.trim();
-        if (tabo === 'مستلم') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; 
-        if (tabo === 'مروج') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 }; 
-        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; 
-      }
-
-      if (colorMode === 'handover') {
-        if (data?.handoverDate) return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; 
-        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; 
-      }
-
-      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: baseStroke, opacity: 1, strokeWidth: 2 };
-      if (data?.status === 'investment') return { fill: '#d8b4fe', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : '#a855f7', opacity: 1, strokeWidth: 2 };
-      if (!data || data.status === 'available') return { fill: el.color || '#10b981', stroke: el.hasBorder ? (el.borderColor || '#059669') : '#059669', opacity: 1, strokeWidth: 2 };
-      if (data.status === 'sold') return { fill: '#f43f5e', stroke: el.hasBorder ? (el.borderColor || '#e11d48') : '#e11d48', opacity: 1, strokeWidth: 2 };
-      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: el.hasBorder ? (el.borderColor || '#f59e0b') : '#f59e0b', opacity: 1, strokeWidth: 2 };
-      if (data.status === 'pending') return { fill: '#3b82f6', stroke: el.hasBorder ? (el.borderColor || '#2563eb') : '#2563eb', opacity: 1, strokeWidth: 2 };
-    }
-    
-    return { fill: el.color || '#ffffff', stroke: el.hasBorder ? (el.borderColor || '#cbd5e1') : '#cbd5e1', opacity: 1, strokeWidth: 2 };
-  };
-
-  const getAmenityIcon = (type: string | undefined) => {
-    switch (type) {
-      case 'shop': return Store;
-      case 'school': return GraduationCap;
-      case 'medical': return Stethoscope;
-      case 'nursery': return Baby;
-      case 'mall': return ShoppingBag;
-      case 'gym': return Dumbbell;
-      case 'supermarket': return ShoppingCart;
-      case 'mosque': return MoonStar;
-      default: return MapPin;
-    }
-  };
-
-  const renderPitchLines = (pts: Point[]) => {
-    const minX = Math.min(...pts.map(p => p.x));
-    const maxX = Math.max(...pts.map(p => p.x));
-    const minY = Math.min(...pts.map(p => p.y));
-    const maxY = Math.max(...pts.map(p => p.y));
-    const midX = (minX + maxX) / 2;
-    const midY = (minY + maxY) / 2;
-    const width = maxX - minX;
-    const height = maxY - minY;
-
-    return (
-      <g pointerEvents="none">
-        <line x1={midX} y1={minY} x2={midX} y2={maxY} stroke="white" strokeWidth="2" />
-        <circle cx={midX} cy={midY} r={Math.min(width, height) / 6} fill="none" stroke="white" strokeWidth="2" />
-        <rect x={minX} y={midY - height/4} width={width/6} height={height/2} fill="none" stroke="white" strokeWidth="2" />
-        <rect x={maxX - width/6} y={midY - height/4} width={width/6} height={height/2} fill="none" stroke="white" strokeWidth="2" />
-      </g>
-    );
   };
 
   const getHouseArea = (el: MapElement) => {
@@ -294,7 +146,7 @@ const InteractiveMap = ({
     (filterSize && filterSize !== 'all') || 
     (filterStatus && filterStatus !== 'all');
 
-  const matchesFilter = (el: MapElement): boolean => {
+  const matchesFilter = useCallback((el: MapElement): boolean => {
     if (el.type !== 'house' && el.type !== 'tower') return false;
 
     if (filterZone && filterZone !== 'all') {
@@ -360,40 +212,398 @@ const InteractiveMap = ({
     }
 
     return true;
-  };
+  }, [filterZone, filterClass, filterSize, filterStatus, housesData, houseTypeAreas]);
 
-  const handleMouseEnterElement = (e: React.MouseEvent, el: MapElement) => {
-    if (!showTooltips || isDragging) return;
-    if (el.type !== 'house' && el.type !== 'tower') return;
-    setHoveredElement(el);
-  };
+  const getElementStyles = useCallback((el: MapElement) => {
+    if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : (el.color || '#a855f7'), opacity: el.opacity || 0.2, strokeWidth: el.hasBorder ? 3 : 2 };
+    
+    const data = housesData[el.id];
+    if (el.type === 'road') return { fill: '#475569', stroke: el.hasBorder ? (el.borderColor || '#475569') : '#475569', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
+    if (el.type === 'green') return { fill: '#22c55e', stroke: el.hasBorder ? (el.borderColor || '#22c55e') : '#22c55e', opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
+    if (el.type === 'pitch') return { fill: '#16a34a', stroke: el.hasBorder ? (el.borderColor || '#ffffff') : '#ffffff', opacity: 1, strokeWidth: 2 };
+    if (el.type === 'tower') return { fill: el.color || '#1e293b', stroke: el.hasBorder ? (el.borderColor || '#0f172a') : '#0f172a', opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
+    if (el.type === 'amenity') return { fill: el.color || '#f59e0b', stroke: el.hasBorder ? (el.borderColor || '#d97706') : (el.color || '#f59e0b'), opacity: 1, strokeWidth: 2 };
+    if (el.type === 'text') return { fill: 'none', stroke: 'none', opacity: 1, strokeWidth: 0 };
+    
+    if (el.type === 'house') {
+      const baseStroke = el.hasBorder ? (el.borderColor || '#94a3b8') : '#94a3b8';
+      const colorMode = permissions?.colorMode || 'default';
 
-  const handleMouseMoveElement = (e: React.MouseEvent) => {
-    if (!showTooltips || isDragging) return;
-    if (!containerRef.current) return;
+      if (colorMode === 'tabo') {
+        const tabo = data?.taboStatus?.trim();
+        if (tabo === 'مستلم') return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; 
+        if (tabo === 'مروج') return { fill: '#fbbf24', stroke: '#f59e0b', opacity: 1, strokeWidth: 2 }; 
+        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; 
+      }
+
+      if (colorMode === 'handover') {
+        if (data?.handoverDate) return { fill: '#10b981', stroke: '#059669', opacity: 1, strokeWidth: 2 }; 
+        return { fill: '#f43f5e', stroke: '#e11d48', opacity: 1, strokeWidth: 2 }; 
+      }
+
+      if (data?.status?.startsWith('frozen')) return { fill: '#e2e8f0', stroke: baseStroke, opacity: 1, strokeWidth: 2 };
+      if (data?.status === 'investment') return { fill: '#d8b4fe', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : '#a855f7', opacity: 1, strokeWidth: 2 };
+      if (!data || data.status === 'available') return { fill: el.color || '#10b981', stroke: el.hasBorder ? (el.borderColor || '#059669') : '#059669', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'sold') return { fill: '#f43f5e', stroke: el.hasBorder ? (el.borderColor || '#e11d48') : '#e11d48', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'reserved') return { fill: '#fbbf24', stroke: el.hasBorder ? (el.borderColor || '#f59e0b') : '#f59e0b', opacity: 1, strokeWidth: 2 };
+      if (data.status === 'pending') return { fill: '#3b82f6', stroke: el.hasBorder ? (el.borderColor || '#2563eb') : '#2563eb', opacity: 1, strokeWidth: 2 };
+    }
+    
+    return { fill: el.color || '#ffffff', stroke: el.hasBorder ? (el.borderColor || '#cbd5e1') : '#cbd5e1', opacity: 1, strokeWidth: 2 };
+  }, [housesData, permissions]);
+
+  // ترتيب العناصر
+  const sortedElements = useMemo(() => {
+    return [...elements]
+      .filter(el => el.type !== 'reference_image' || el.showInMain)
+      .sort((a, b) => {
+        const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
+        return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
+      });
+  }, [elements]);
+
+  // دورة الرسم الفائقة على HTML5 Canvas بـ 60 FPS
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !containerRef.current) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
     const rect = containerRef.current.getBoundingClientRect();
-    setTooltipPos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    // خلفية المخطط
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+
+    ctx.save();
+    ctx.translate(position.x, position.y);
+    ctx.scale(scale, scale);
+
+    // رسم الشبكة إذا كانت مفعلة
+    if (showGrid) {
+      ctx.beginPath();
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = 0.5;
+      const gridSize = 50;
+      for (let x = 0; x <= mapWidth; x += gridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, mapHeight);
+      }
+      for (let y = 0; y <= mapHeight; y += gridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(mapWidth, y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+    }
+
+    // رسم كل العناصر السكنية والرسومية
+    sortedElements.forEach((el) => {
+      const styles = getElementStyles(el);
+      const isSelected = selectedHouseId === el.id;
+      const pts = getElementPoints(el);
+      const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+      const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+      
+      const minX = Math.min(...pts.map(p => p.x));
+      const maxX = Math.max(...pts.map(p => p.x));
+      const minY = Math.min(...pts.map(p => p.y));
+      const maxY = Math.max(...pts.map(p => p.y));
+      const elWidth = maxX - minX;
+      const elHeight = maxY - minY;
+      const minDim = Math.min(elWidth, elHeight);
+
+      let isFilteredIn = false;
+      let isDimmed = false;
+
+      if (isAnyFilterActive) {
+        if (el.type === 'house' || el.type === 'tower') {
+          if (matchesFilter(el)) {
+            isFilteredIn = true;
+          } else {
+            isDimmed = true;
+          }
+        }
+      }
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      if (el.rotation) {
+        ctx.rotate((el.rotation * Math.PI) / 180);
+      }
+      ctx.translate(-centerX, -centerY);
+
+      if (isDimmed) {
+        ctx.globalAlpha = 0.25;
+      } else {
+        ctx.globalAlpha = styles.opacity ?? 1.0;
+      }
+
+      // إنشاء مسار الشكل (Polygon)
+      const path2d = new Path2D();
+      path2d.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        path2d.lineTo(pts[i].x, pts[i].y);
+      }
+      path2d.closePath();
+
+      if (el.type !== 'text') {
+        // التعبئة (Fill)
+        ctx.fillStyle = styles.fill;
+        ctx.fill(path2d);
+
+        // الحدود (Stroke)
+        ctx.strokeStyle = isFilteredIn ? '#fbbf24' : (isSelected ? '#000000' : styles.stroke);
+        ctx.lineWidth = isFilteredIn ? 3.5 : (isSelected ? 3.5 : styles.strokeWidth);
+        ctx.stroke(path2d);
+
+        // تأثير التوهج في الفلترة والإنارة
+        if (isFilteredIn) {
+          ctx.shadowColor = '#fbbf24';
+          ctx.shadowBlur = 12;
+          ctx.stroke(path2d);
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      // رسم خطوط الملعب
+      if (el.type === 'pitch') {
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(midX, minY);
+        ctx.lineTo(midX, maxY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(midX, midY, Math.min(elWidth, elHeight) / 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // رسم الأيقونات والنصوص
+      const dynamicIconSize = minDim * 0.55;
+      const iconType = el.type === 'house' ? 'house' : el.type === 'tower' ? 'tower' : el.amenityType || 'amenity';
+      const iconColor = el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b');
+
+      if ((el.type === 'house' || el.type === 'tower' || el.type === 'amenity') && !el.hideIcon) {
+        const img = getCachedIconImage(iconType, iconColor);
+        if (img.complete) {
+          ctx.drawImage(
+            img,
+            centerX - dynamicIconSize / 2,
+            centerY - dynamicIconSize * 0.8,
+            dynamicIconSize,
+            dynamicIconSize
+          );
+        }
+      }
+
+      // رسم النص / الرقم التوضيحي
+      if (el.type === 'text') {
+        ctx.fillStyle = el.textColor || '#000000';
+        ctx.font = `${el.isBold ? 'bold' : 'normal'} ${el.fontSize || 24}px ${el.fontFamily || 'Arial'}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(el.label || '', centerX, centerY);
+      } else if (el.label) {
+        const textLabel = el.label.split('-').pop() || '';
+        const dynamicFontSize = minDim * 0.28;
+        ctx.fillStyle = iconColor;
+        ctx.font = `bold ${dynamicFontSize}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const textY = (el.type === 'house' || el.type === 'tower' || el.type === 'amenity') && !el.hideIcon
+          ? centerY + dynamicIconSize * 0.4
+          : centerY;
+        ctx.fillText(textLabel, centerX, textY);
+      }
+
+      ctx.restore();
     });
+
+    ctx.restore();
+    ctx.restore();
+  }, [
+    position, scale, mapWidth, mapHeight, backgroundColor, showGrid, 
+    sortedElements, selectedHouseId, housesData, isAnyFilterActive, 
+    matchesFilter, getElementStyles
+  ]);
+
+  // فحص النقر المباشر والدقيق Hit Testing
+  const getElementAtCoords = useCallback((screenX: number, screenY: number): MapElement | null => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = screenX - rect.left;
+    const mouseY = screenY - rect.top;
+
+    const worldX = (mouseX - position.x) / scale;
+    const worldY = (mouseY - position.y) / scale;
+
+    for (let i = sortedElements.length - 1; i >= 0; i--) {
+      const el = sortedElements[i];
+      if (el.type !== 'house' && el.type !== 'tower' && !el.linkProjectId) continue;
+
+      const pts = getElementPoints(el);
+      const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+      const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+
+      const rad = -((el.rotation || 0) * Math.PI) / 180;
+      const dx = worldX - centerX;
+      const dy = worldY - centerY;
+      const unrotX = centerX + (dx * Math.cos(rad) - dy * Math.sin(rad));
+      const unrotY = centerY + (dx * Math.sin(rad) + dy * Math.cos(rad));
+
+      // فحص النقطة داخل الـ Polygon
+      let inside = false;
+      for (let j = 0, k = pts.length - 1; j < pts.length; k = j++) {
+        const xi = pts[j].x, yi = pts[j].y;
+        const xj = pts[k].x, yj = pts[k].y;
+        const intersect = ((yi > unrotY) !== (yj > unrotY)) &&
+            (unrotX < (xj - xi) * (unrotY - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+
+      if (inside) return el;
+    }
+    return null;
+  }, [sortedElements, position, scale]);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (!containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const mapX = (mouseX - position.x) / scale;
+    const mapY = (mouseY - position.y) / scale;
+
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
+
+    if (newScale !== scale) {
+      const newX = mouseX - mapX * newScale;
+      const newY = mouseY - mapY * newScale;
+      setPosition({ x: newX, y: newY });
+      setScale(newScale);
+    }
   };
 
-  const handleMouseLeaveElement = () => {
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
     setHoveredElement(null);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    dragStartCoords.current = { x: e.clientX, y: e.clientY };
+    hasDragged.current = false;
   };
 
-  const sortedElements = [...elements]
-    .filter(el => el.type !== 'reference_image' || el.showInMain)
-    .sort((a, b) => {
-      const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
-      return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
-    });
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      const dx = e.clientX - dragStartCoords.current.x;
+      const dy = e.clientY - dragStartCoords.current.y;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        hasDragged.current = true;
+      }
+      setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    } else if (showTooltips) {
+      const targetEl = getElementAtCoords(e.clientX, e.clientY);
+      setHoveredElement(targetEl);
+      if (targetEl && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setTooltipPos({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        });
+      }
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (hasDragged.current) return;
+    const targetEl = getElementAtCoords(e.clientX, e.clientY);
+    if (targetEl) {
+      onHouseClick(targetEl.id);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      setHoveredElement(null);
+      const touch = e.touches[0];
+      setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+      dragStartCoords.current = { x: touch.clientX, y: touch.clientY };
+      hasDragged.current = false;
+    } else if (e.touches.length === 2) {
+      setIsDragging(false);
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setLastTouchDistance(dist);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 1 && isDragging) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - dragStartCoords.current.x;
+      const dy = touch.clientY - dragStartCoords.current.y;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        hasDragged.current = true;
+      }
+      setPosition({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+    } else if (e.touches.length === 2 && lastTouchDistance !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const delta = dist / lastTouchDistance;
+      const newScale = Math.min(Math.max(scale * delta, 0.05), 40);
+      if (newScale !== scale && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const mouseX = centerX - rect.left;
+        const mouseY = centerY - rect.top;
+        const mapX = (mouseX - position.x) / scale;
+        const mapY = (mouseY - position.y) / scale;
+        setPosition({ x: mouseX - mapX * newScale, y: mouseY - mapY * newScale });
+        setScale(newScale);
+      }
+      setLastTouchDistance(dist);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!hasDragged.current && e.changedTouches.length === 1) {
+      const touch = e.changedTouches[0];
+      const targetEl = getElementAtCoords(touch.clientX, touch.clientY);
+      if (targetEl) {
+        onHouseClick(targetEl.id);
+      }
+    }
+    setIsDragging(false);
+    setLastTouchDistance(null);
+  };
 
   return (
     <div 
       ref={containerRef}
       className={cn(
-        "relative w-full border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none",
+        "relative w-full border-4 border-white shadow-2xl overflow-hidden group cursor-grab active:cursor-grabbing transition-all duration-300 touch-none select-none",
         isFullScreen ? "fixed inset-0 z-[40] rounded-none border-0" : "aspect-[4/3] rounded-[2.5rem]"
       )}
       style={{ backgroundColor: backgroundColor }}
@@ -401,214 +611,16 @@ const InteractiveMap = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={() => setIsDragging(false)}
+      onClick={handleClick}
       onMouseLeave={() => { setIsDragging(false); setHoveredElement(null); }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <svg 
-        className="w-full h-full select-none overflow-visible"
-        shapeRendering="geometricPrecision"
-        style={{ backgroundColor: backgroundColor }}
-      >
-        <g 
-          transform={`translate(${position.x}, ${position.y}) scale(${scale})`}
-          className={cn(isDragging && "pointer-events-none")} // [المقترح 1]: تعطيل تتبع الماوس داخل العناصر أثناء السحب
-        >
-          <defs>
-            <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5" opacity="0.4"/></pattern>
-            <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
-            
-            <pattern id="texture-glass" width="20" height="20" patternUnits="userSpaceOnUse">
-              <path d="M0 20 L20 0 M10 30 L30 10 M-10 10 L10 -10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-            </pattern>
-            <pattern id="texture-brick" width="30" height="15" patternUnits="userSpaceOnUse">
-              <rect width="30" height="15" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-              <path d="M15 0 L15 15" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-            </pattern>
-            <pattern id="texture-dots" width="10" height="10" patternUnits="userSpaceOnUse">
-              <circle cx="5" cy="5" r="1" fill="currentColor" opacity="0.2" />
-            </pattern>
-            <pattern id="texture-stripes" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M0 0 L10 10" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-            </pattern>
-            <pattern id="texture-grid" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-            </pattern>
-            <pattern id="texture-zigzag" width="20" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 0 10 L 5 0 L 10 10 L 15 0 L 20 10" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-            </pattern>
-            <pattern id="texture-crosshatch" width="10" height="10" patternUnits="userSpaceOnUse">
-              <path d="M 0 0 L 10 10 M 10 0 L 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
-            </pattern>
-          </defs>
-          
-          {showGrid && (
-            <rect width={mapWidth} height={mapHeight} fill="url(#grid-view)" />
-          )}
-          
-          {sortedElements.map((el) => {
-            const styles = getElementStyles(el);
-            const isSelected = selectedHouseId === el.id;
-            const isInteractive = el.type === 'house' || el.type === 'tower' || !!el.linkProjectId;
-            const pts = getElementPoints(el);
-            const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
-            const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
-            const minY = Math.min(...pts.map(p => p.y));
-            const minX = Math.min(...pts.map(p => p.x));
-            const maxX = Math.max(...pts.map(p => p.x));
-            const maxY = Math.max(...pts.map(p => p.y));
-            
-            const elWidth = maxX - minX;
-            const elHeight = maxY - minY;
-            const minDim = Math.min(elWidth, elHeight);
-
-            if (el.type === 'reference_image') {
-              return (
-                <image 
-                  key={el.id}
-                  href={el.color} 
-                  x={minX} y={minY} 
-                  width={elWidth} height={elHeight} 
-                  opacity={el.opacity}
-                  transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
-                />
-              );
-            }
-
-            const IconComponent = el.type === 'house' ? Home : 
-                            el.type === 'tower' ? Building2 : 
-                            el.type === 'amenity' ? getAmenityIcon(el.amenityType) : null;
-
-            const pathD = pointsToPath(pts, !el.isStroke);
-            
-            const dynamicIconSize = minDim * 0.6; 
-            const dynamicFontSize = minDim * 0.3;
-
-            // [المقترح 3]: تعليق حساب كلاسات التوهج المؤقتة والظلال أثناء الحركة للسلاسة التامة
-            let filterClasses = "";
-            let isDimmed = false;
-            let overrideStyles: any = null;
-            
-            if (isAnyFilterActive && !isDragging) {
-              if (el.type === 'house' || el.type === 'tower') {
-                const matched = matchesFilter(el);
-                if (matched) {
-                  filterClasses = "filter drop-shadow-[0_0_10px_#fbbf24] transition-all duration-300";
-                  overrideStyles = {
-                    stroke: "#fbbf24",
-                    strokeWidth: 3.5
-                  };
-                } else {
-                  filterClasses = "grayscale saturate-50 contrast-75 brightness-110 opacity-100 transition-all duration-500";
-                  isDimmed = true;
-                }
-              }
-            }
-
-            return (
-              <g 
-                key={el.id} 
-                onClick={(e) => handleElementClick(e, el.id, isInteractive && !isDimmed)}
-                onMouseEnter={(e) => handleMouseEnterElement(e, el)}
-                onMouseMove={handleMouseMoveElement}
-                onMouseLeave={handleMouseLeaveElement}
-                className={cn(isInteractive && !isDimmed ? "cursor-pointer" : "pointer-events-none", filterClasses, "transition-all duration-500")} 
-                transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}
-              >
-                <defs>
-                  <clipPath id={`clip-${el.id}`}>
-                    <path d={pathD} />
-                  </clipPath>
-                </defs>
-                
-                {el.type !== 'text' ? (
-                  <>
-                    <path 
-                      d={pathD} 
-                      fill={el.isStroke ? "none" : styles.fill} 
-                      stroke={el.isStroke ? styles.fill : (overrideStyles?.stroke || styles.stroke)} 
-                      fillOpacity={styles.opacity} 
-                      strokeWidth={el.isStroke ? el.strokeWidth : (overrideStyles?.strokeWidth || styles.strokeWidth)} 
-                      strokeLinejoin="round" 
-                      strokeLinecap="round" 
-                      className={cn(
-                        "transition-all duration-300", 
-                        isSelected && !isDragging && "stroke-black stroke-[3px] filter brightness-90", 
-                        !!el.linkProjectId && "hover:filter hover:brightness-110 transition-colors"
-                      )} 
-                    />
-                    {el.hasTexture && (
-                      <g clipPath={`url(#clip-${el.id})`} style={{ color: el.textureColor || 'white' }}>
-                        <rect 
-                          x={minX - 500} y={minY - 500} 
-                          width={(maxX - minX) + 1000} height={(maxY - minY) + 1000} 
-                          fill={`url(#texture-${el.textureType || 'glass'})`} 
-                          pointerEvents="none" 
-                          transform={`scale(${el.textureSize || 1})`}
-                          transform-origin={`${centerX} ${centerY}`}
-                        />
-                      </g>
-                    )}
-                  </>
-                ) : (
-                  <text
-                    x={centerX}
-                    y={centerY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill={el.textColor || '#000000'}
-                    style={{
-                      fontSize: `${el.fontSize || 24}px`,
-                      fontFamily: el.fontFamily || 'Arial',
-                      fontWeight: el.isBold ? 'bold' : 'normal'
-                    }}
-                  >
-                    {el.label}
-                  </text>
-                )}
-                
-                {el.type === 'pitch' && renderPitchLines(pts)}
-                
-                {/* [المقترح 2]: رسم الأيقونات كـ SVG ناتيف مباشر وبنفس الألوان والأنماط بدون foreignObject */}
-                {IconComponent && !el.hideIcon && (
-                  <IconComponent 
-                    x={centerX - (dynamicIconSize / 2)} 
-                    y={centerY - (dynamicIconSize * 0.85)} 
-                    size={dynamicIconSize * 0.9} 
-                    color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
-                    strokeWidth={2.5}
-                    className="pointer-events-none select-none"
-                  />
-                )}
-                
-                {el.type === 'road' && !el.isStroke && (
-                  el.orientation === 'vertical' ? 
-                  <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" /> :
-                  <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke="white" strokeWidth="2" strokeDasharray="10,10" opacity="0.5" />
-                )}
-
-                {el.label && el.type !== 'text' && (
-                  <text 
-                    x={centerX} 
-                    y={IconComponent && !el.hideIcon ? centerY + (dynamicIconSize * 0.45) : centerY} 
-                    textAnchor="middle" 
-                    dominantBaseline="middle" 
-                    fill={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
-                    style={{ 
-                      fontSize: `${dynamicFontSize}px`, 
-                      fontWeight: 'black' 
-                    }} 
-                    className="pointer-events-none select-none"
-                  >
-                    {el.label.split('-').pop()}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </g>
-      </svg>
+      <canvas 
+        ref={canvasRef}
+        className="w-full h-full block"
+      />
       
       {/* بطاقة المعاينة السريعة العائمة عند التمرير */}
       {showTooltips && hoveredElement && !isDragging && (
@@ -680,7 +692,8 @@ const InteractiveMap = ({
       )}
 
       <div className="absolute top-6 left-6 flex flex-col gap-2 z-10">
-        <button onClick={() => {
+        <button onClick={(e) => {
+          e.stopPropagation();
           if (!containerRef.current) return;
           const rect = containerRef.current.getBoundingClientRect();
           const cx = rect.width / 2;
@@ -692,7 +705,8 @@ const InteractiveMap = ({
           setScale(newScale);
         }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomIn size={20} /></button>
         
-        <button onClick={() => {
+        <button onClick={(e) => {
+          e.stopPropagation();
           if (!containerRef.current) return;
           const rect = containerRef.current.getBoundingClientRect();
           const cx = rect.width / 2;
@@ -704,8 +718,8 @@ const InteractiveMap = ({
           setScale(newScale);
         }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><ZoomOut size={20} /></button>
         
-        <button onClick={autoFit} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><RotateCcw size={20} /></button>
-        <button onClick={() => setIsFullScreen(!isFullScreen)} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50">{isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
+        <button onClick={(e) => { e.stopPropagation(); autoFit(); }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50"><RotateCcw size={20} /></button>
+        <button onClick={(e) => { e.stopPropagation(); setIsFullScreen(!isFullScreen); }} className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center hover:bg-slate-50">{isFullScreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
       </div>
     </div>
   );
