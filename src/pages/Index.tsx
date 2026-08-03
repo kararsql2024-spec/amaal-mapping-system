@@ -374,7 +374,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   }, [selectedProjectId]);
 
   // تطبيق ميزة "الجلب على مرحلتين (Two-Phase Fetching)":
-  // المرحلة 1: جلب خفيف وسريع جداً للحالات لتلوين الخريطة وتجهيز كارت المعاينة السريعة (Hover Preview Card) فوراً وبسرعة البرق
+  // المرحلة 1 (الخفيفة الفورية): يجلب فقط الحالات والحقول الصريحة اللازمة للتلوين، جدول الإحصائيات، وكارت المعاينة عند التمرير بدون تحميل الأسماء أو الهواتف أو سجلات الملاحظات الضخمة.
   useEffect(() => {
     if (!selectedProjectId || !isLoggedIn) return;
 
@@ -431,7 +431,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         }).catch(() => []);
         if (notifs) setNotifications(notifs);
 
-        // المرحلة الأولى (Lightweight Phase 1): جلب كامل وحدات المشروع بالدفعات خفيفة الحجم لضمان التلوين وكارت المعاينة الفوري
+        // المرحلة الأولى (Lightweight Phase 1): جلب حقول الحالة فقط وليس عمود data الكلي لتوفير السرعة الفائقة
         let allUnits: any[] = [];
         let from = 0;
         const step = 1000;
@@ -441,7 +441,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           const chunk = await fetchWithRetry(async () => {
             const { data, error } = await supabase
               .from('houses_data')
-              .select('unit_key, project_id, data')
+              .select('unit_key, project_id, status:data->>status, taboStatus:data->>taboStatus, handoverDate:data->>handoverDate, price:data->>price, currency:data->>currency, saleDate:data->>saleDate')
               .eq('project_id', selectedProjectId)
               .range(from, from + step - 1);
             if (error) throw error;
@@ -458,8 +458,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         }
         
         const formattedUnits: Record<string, any> = {};
-        allUnits.forEach(u => {
-          formattedUnits[u.unit_key] = u.data;
+        allUnits.forEach((u: any) => {
+          formattedUnits[u.unit_key] = {
+            status: u.status || 'available',
+            taboStatus: u.taboStatus || 'غير مروج',
+            handoverDate: u.handoverDate || '',
+            price: u.price || '',
+            currency: u.currency || 'IQD',
+            saleDate: u.saleDate || '',
+            _isLightweight: true
+          };
         });
         setHousesData(formattedUnits);
         
@@ -681,8 +689,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const expiredNotifications: any[] = [];
 
     units.forEach(unit => {
-      if (unit.data?.status === 'pending' && unit.data?.saleDate) {
-        const bookingDate = new Date(unit.data.saleDate);
+      const status = unit.status || unit.data?.status;
+      const saleDate = unit.saleDate || unit.data?.saleDate;
+
+      if (status === 'pending' && saleDate) {
+        const bookingDate = new Date(saleDate);
         const diffTime = Math.abs(now.getTime() - bookingDate.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -690,7 +701,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           expiredUnits.push({
             unit_key: unit.unit_key,
             project_id: projectId,
-            data: { ...unit.data, status: 'available', name: '', phone: '', saleDate: '', details: 'انتهى الحجز التلقائي' }
+            data: { ...(unit.data || {}), status: 'available', name: '', phone: '', saleDate: '', details: 'انتهى الحجز التلقائي' }
           });
           
           expiredNotifications.push({
@@ -789,8 +800,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     });
   };
 
-  // المرحلة الثانية (Phase 2 - الجلب على مرحلتين):
-  // عند النقر على منزل أو عمارة، يقوم النظام بطلب البيانات التفصيلية الكاملة من السيرفر قبل فتح النافذة المنبثقة
+  // المرحلة الثانية (Phase 2 - الجلب المفصل الفعلي عند الطلب):
+  // عند النقر على منزل أو عمارة، يقوم النظام بطلب البيانات التفصيلية الكاملة الثقيلة فقط للبيت/العمارة المحددة
   const handleElementClick = async (id: string) => {
     const element = activeElements.find(el => el.id === id);
     if (!element) return;
@@ -813,7 +824,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
     setSelectedElementId(id);
 
-    // جلب التفاصيل الكاملة بالكامل (Phase 2 On-Demand Fetch)
+    // الجلب الموجه للوحدة المحددة فقط عند الطلب (Phase 2 On-Demand Fetch)
     try {
       if (element.type === 'house') {
         const { data: fullUnit } = await supabase
@@ -841,7 +852,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           setHousesData(prev => {
             const next = { ...prev };
             towerUnits.forEach(u => {
-              next[u.unit_key] = u.data;
+              if (u.data) next[u.unit_key] = u.data;
             });
             return next;
           });
