@@ -881,13 +881,41 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
+  // دالة مساعدة سريعة لجلب جميع سجلات جدول الوحدات السكنية عبر التجليد التكراري المضمون بدون حدود
+  const fetchAllHousesForBackup = async () => {
+    let allHouses: any[] = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const chunk = await safeDbCall(() =>
+        supabase
+          .from('houses_data')
+          .select('*')
+          .range(from, from + step - 1)
+      );
+
+      const chunkData = (chunk as any).data;
+      if (!chunkData || chunkData.length === 0) {
+        hasMore = false;
+      } else {
+        allHouses = [...allHouses, ...chunkData];
+        from += step;
+        if (chunkData.length < step) hasMore = false;
+      }
+    }
+    return allHouses;
+  };
+
   const handleDownloadBackup = async () => {
     setIsGeneratingBackup(true);
     try {
       const { data: projects } = await supabase.from('projects').select('*');
-      const { data: houses } = await supabase.from('houses_data').select('*');
+      const houses = await fetchAllHousesForBackup();
       const { data: settings } = await supabase.from('settings').select('*');
       const { data: centers } = await supabase.from('marketing_centers').select('*');
+      
       const backup = { timestamp: new Date().toISOString(), projects, houses, settings, centers };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -895,7 +923,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       a.href = url;
       a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
-      showSuccess("تم إنشاء النسخة الاحتياطية بنجاح");
+      showSuccess(`تم إنشاء النسخة الاحتياطية بنجاح (${houses.length} سجل)`);
     } catch (error) { showError("فشل في إنشاء النسخة الاحتياطية"); } finally { setIsGeneratingBackup(false); }
   };
 
@@ -908,7 +936,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     setIsSendingToTelegram(true);
     try {
       const { data: projectsData } = await supabase.from('projects').select('*');
-      const { data: housesData } = await supabase.from('houses_data').select('*');
+      const housesData = await fetchAllHousesForBackup();
       const { data: settingsData } = await supabase.from('settings').select('*');
       const { data: centersData } = await supabase.from('marketing_centers').select('*');
       
@@ -929,7 +957,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const formData = new FormData();
       formData.append('chat_id', telegramConfig.chatId);
       formData.append('document', file);
-      formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات.\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
+      formData.append('caption', `📦 نسخة احتياطية يدوية جديدة لقاعدة البيانات (${housesData.length} وحدة سكنية).\nتاريخ الإصدار: ${new Date().toLocaleString('ar-EG')}`);
 
       const response = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendDocument`, {
         method: 'POST',
@@ -938,7 +966,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
       const resData = await response.json();
       if (response.ok && resData.ok) {
-        showSuccess("🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام!");
+        showSuccess(`🎉 تم إرسال النسخة الاحتياطية بنجاح إلى تليجرام! (${housesData.length} سجل)`);
       } else {
         const detailedError = resData.description || `رمز الخطأ: ${resData.error_code || 'غير معروف'}`;
         throw new Error(detailedError);
