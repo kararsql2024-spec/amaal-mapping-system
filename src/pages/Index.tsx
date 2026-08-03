@@ -90,7 +90,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-  const [pendingOpen, setPendingOpen] = useState<{ elementId: string; isTower: boolean } | null>(null);
+  const [pendingOpen, setPendingOpen] = useState<{ projectId: string; elementId: string; isTower: boolean; apartmentKey?: string | null } | null>(null);
 
   const [searchProjectFilter, setSearchProjectFilter] = useState<string>('all');
   const [searchLimit, setSearchLimit] = useState<number>(10);
@@ -508,7 +508,22 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     performSearch();
   }, [debouncedSearchQuery, searchProjectFilter, searchLimit]);
 
-  // معالجة النقر على عنصر في نتائج البحث مع مطابقة زكية ومرنة
+  // دالة مساعدة لمطابقة عنصر الخريطة بالرمز المطلوب
+  const isElementMatch = (el: MapElement, targetId: string) => {
+    if (!targetId || !el) return false;
+    const cleanTarget = targetId.trim().toLowerCase();
+    const cleanId = (el.id || '').trim().toLowerCase();
+    const cleanLabel = (el.label || '').trim().toLowerCase();
+
+    if (cleanId === cleanTarget || cleanLabel === cleanTarget) return true;
+
+    // مطابقة بدون مسافات للرمز مثل Z1-B1-D1
+    if (cleanLabel.replace(/\s+/g, '') === cleanTarget.replace(/\s+/g, '')) return true;
+
+    return false;
+  };
+
+  // معالجة النقر على عنصر في نتائج البحث مع مطابقة ذكية وتفريغ العناصر القديمة لتفادي Race Condition
   const parseSearchClick = async (item: any) => {
     const unitKey = item.unit_key;
     const projectId = item.project_id;
@@ -523,13 +538,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       targetApartmentKey = unitKey;
     }
 
-    // إذا كنا بنفس المشروع بالفعل والبيانات محملة
-    if (selectedProjectId === projectId) {
-      const matchedEl = activeElements.find(
-        el => el.id === targetElementId || 
-              (el.label && el.label.trim().toLowerCase() === targetElementId.trim().toLowerCase()) ||
-              (isTower && (el.id === targetElementId || (el.label && el.label.trim().toLowerCase() === targetElementId.trim().toLowerCase())))
-      );
+    // إذا كنا بنفس المشروع بالفعل والعناصر محملة وثابتة
+    if (selectedProjectId === projectId && !isProjectLoading && activeElements.length > 0) {
+      const matchedEl = activeElements.find(el => isElementMatch(el, targetElementId));
       if (matchedEl) {
         if (isTower) setPendingApartmentKey(targetApartmentKey);
         handleElementClick(matchedEl.id);
@@ -540,14 +551,15 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       }
     }
 
-    // إذا كان مشروعاً مختلفاً أو لم نجد العنصر بعد في activeElements
+    // إذا كان مشروعاً مختلفاً: نقوم بتفريغ العناصر القديمة فوراً لتجنب فحصها الخاطئ
+    setActiveElements([]);
     if (isTower) {
       setPendingApartmentKey(targetApartmentKey);
     } else {
       setPendingApartmentKey(null);
     }
 
-    setPendingOpen({ elementId: targetElementId, isTower });
+    setPendingOpen({ projectId, elementId: targetElementId, isTower, apartmentKey: targetApartmentKey });
     setSelectedProjectId(projectId);
     setSearchQuery('');
     setSearchResults([]);
@@ -688,26 +700,24 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   };
 
-  // فتح الوحدة المعلقة تلقائياً ومطابقتها بمرونة بعد اكتمال جلب عناصر المخطط الجديد
+  // فتح الوحدة المعلقة تلقائياً فقط عند الاطمئنان لاكتمال جلب المخطط والتأكد من مطابقة الـ projectId
   useEffect(() => {
-    if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
-      const { elementId, isTower } = pendingOpen;
+    if (!isProjectLoading && pendingOpen && pendingOpen.projectId === selectedProjectId && activeElements.length > 0) {
+      const { elementId, isTower, apartmentKey } = pendingOpen;
       
-      const matchedEl = activeElements.find(el => {
-        if (el.id === elementId) return true;
-        if (el.label && el.label.trim().toLowerCase() === elementId.trim().toLowerCase()) return true;
-        if (isTower && (el.id === elementId || (el.label && el.label.trim().toLowerCase() === elementId.trim().toLowerCase()))) return true;
-        return false;
-      });
+      const matchedEl = activeElements.find(el => isElementMatch(el, elementId));
 
       if (matchedEl) {
+        if (isTower && apartmentKey) {
+          setPendingApartmentKey(apartmentKey);
+        }
         handleElementClick(matchedEl.id);
       } else {
         showError("تعذر عرض الوحدة على المخطط المحدد");
       }
       setPendingOpen(null);
     }
-  }, [isProjectLoading, activeElements, pendingOpen]);
+  }, [isProjectLoading, activeElements, pendingOpen, selectedProjectId]);
 
   const handleSaveData = async (key: string, data: any) => {
     if (!selectedProjectId || selectedProjectId === 'main_map') return;
