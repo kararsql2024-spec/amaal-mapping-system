@@ -369,10 +369,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           
           // التحقق من صحة كلمة المرور المعتمدة للجلسة
           if (center && center.password === savedCenterPass) {
-            setCurrentCenter(center);
-            setIsLoggedIn(true);
-            localStorage.setItem('marketing_center_name', center.name);
-            
             const { data: settings } = await supabase.from('settings').select('*');
             if (settings) {
               const permsSetting = settings.find(s => s.key === 'dept_permissions');
@@ -390,6 +386,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
               const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
               if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
             }
+
+            setCurrentCenter(center);
+            localStorage.setItem('marketing_center_name', center.name);
+            setIsLoggedIn(true);
           } else {
             // في حال تم تغيير كلمة المرور أو حذف الحساب
             handleLogout();
@@ -674,12 +674,38 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
     const center = marketingCenters.find(c => c.id === loginData.centerId);
     if (center && center.password === loginData.password) {
-      setIsLoggedIn(true);
-      setCurrentCenter(center);
-      localStorage.setItem('marketing_center_session', center.id);
-      localStorage.setItem('marketing_center_password', center.password);
-      localStorage.setItem('marketing_center_name', center.name);
-      showSuccess(`مرحباً بك في مركز ${center.name}`);
+      setIsAuthChecking(true);
+      try {
+        const { data: settings } = await supabase.from('settings').select('*');
+        if (settings) {
+          const permsSetting = settings.find(s => s.key === 'dept_permissions');
+          if (permsSetting && permsSetting.value && center.type) {
+            const deptPerms = permsSetting.value[center.type];
+            if (deptPerms) setPermissions(deptPerms);
+          }
+
+          const mainMap = settings.find(s => s.key === 'main_map_config');
+          if (mainMap) setMainMapData(mainMap.value);
+
+          const configs = settings.find(s => s.key === 'project_configs');
+          if (configs) setProjectConfigs(configs.value || {});
+
+          const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
+          if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
+        }
+
+        setCurrentCenter(center);
+        localStorage.setItem('marketing_center_session', center.id);
+        localStorage.setItem('marketing_center_password', center.password);
+        localStorage.setItem('marketing_center_name', center.name);
+        setIsLoggedIn(true);
+        showSuccess(`مرحباً بك في مركز ${center.name}`);
+      } catch (err) {
+        console.error("Error confirming permissions on login:", err);
+        showError("حدث خطأ أثناء تحميل صلاحيات القسم");
+      } finally {
+        setIsAuthChecking(false);
+      }
     } else {
       showError("بيانات الدخول غير صحيحة");
     }
@@ -849,8 +875,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     ? (mainMapData?.showGrid !== false)
     : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
 
-  // مكون اللوحة الفائقة للتشخيص العائمة (تظهر دائماً وبشكل مستقل عند منح الصلاحية)
-  const DiagnosticTerminalFloating = permissions.showDiagnosticTerminal !== false ? (
+  // مكون اللوحة الفائقة للتشخيص العائمة (تظهر فقط بعد تسجيل الدخول وعند منح الصلاحية للقسم)
+  const DiagnosticTerminalFloating = (isLoggedIn && permissions.showDiagnosticTerminal !== false) ? (
     <div className="fixed bottom-4 left-4 z-[99999] max-w-sm w-full font-mono text-xs shadow-2xl rounded-2xl overflow-hidden border-2 border-emerald-500/50 bg-slate-950/95 text-slate-200 backdrop-blur-md animate-in fade-in slide-in-from-bottom-5">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
         <div className="flex items-center gap-2">
@@ -911,10 +937,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   if (isAuthChecking) {
     return (
       <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center font-bold" dir="rtl">
-        {DiagnosticTerminalFloating}
         <div className="text-center space-y-4">
           <RefreshCcw className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
-          <p className="text-slate-600 font-bold">جاري التحقق من الجلسة...</p>
+          <p className="text-slate-600 font-bold">جاري التحقق من الجلسة والصلاحيات...</p>
         </div>
       </div>
     );
@@ -923,7 +948,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center p-4 relative" dir="rtl">
-        {DiagnosticTerminalFloating}
         <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
           <div className="text-center mb-8">
             <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-100 mx-auto mb-6">
