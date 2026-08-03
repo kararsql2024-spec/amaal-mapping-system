@@ -27,8 +27,24 @@ interface InteractiveMapProps {
   showTooltips?: boolean;
 }
 
-// كاش الأيقونات لضمان الرسم الفائق على Canvas
+// كاش الأيقونات والصور المرجعية لضمان الرسم الفائق على Canvas
 const iconImageCache = new Map<string, HTMLImageElement>();
+const referenceImageCache = new Map<string, HTMLImageElement>();
+
+const getCachedReferenceImage = (url: string, onLoaded?: () => void): HTMLImageElement | null => {
+  if (!url) return null;
+  if (referenceImageCache.has(url)) {
+    return referenceImageCache.get(url)!;
+  }
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = url;
+  img.onload = () => {
+    if (onLoaded) onLoaded();
+  };
+  referenceImageCache.set(url, img);
+  return img;
+};
 
 const getIconSvgUri = (type: string, color: string) => {
   let svgContent = '';
@@ -86,6 +102,7 @@ const InteractiveMap = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
+  const [, setImagesLoadedCount] = useState(0);
 
   const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -346,7 +363,21 @@ const InteractiveMap = ({
       if (isDimmed) {
         ctx.globalAlpha = 0.25;
       } else {
-        ctx.globalAlpha = styles.opacity ?? 1.0;
+        ctx.globalAlpha = el.opacity ?? styles.opacity ?? 1.0;
+      }
+
+      // معالجة ورسم الصورة المرجعية بشكل حقيقي
+      if (el.type === 'reference_image') {
+        if (el.color) {
+          const refImg = getCachedReferenceImage(el.color, () => {
+            setImagesLoadedCount(c => c + 1);
+          });
+          if (refImg && refImg.complete && refImg.naturalWidth > 0) {
+            ctx.drawImage(refImg, minX, minY, elWidth, elHeight);
+          }
+        }
+        ctx.restore();
+        return;
       }
 
       // إنشاء مسار الشكل (Polygon)
