@@ -5,9 +5,15 @@ import { cn } from "@/lib/utils";
 import { MapElement, Point } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
-  Home, Building2, Store, GraduationCap, Stethoscope, 
-  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, MapPin
+  Home, Building2, SlidersHorizontal, X
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface InteractiveMapProps {
   elements: MapElement[];
@@ -23,6 +29,10 @@ interface InteractiveMapProps {
   filterClass?: string;
   filterSize?: string;
   filterStatus?: string;
+  onFilterZoneChange?: (val: string) => void;
+  onFilterClassChange?: (val: string) => void;
+  onFilterSizeChange?: (val: string) => void;
+  onFilterStatusChange?: (val: string) => void;
   houseTypeAreas?: Record<string, number>;
   showTooltips?: boolean;
 }
@@ -89,10 +99,14 @@ const InteractiveMap = ({
   permissions,
   backgroundColor = '#f1f5f9',
   showGrid = true,
-  filterZone = 'all',
-  filterClass = 'all',
-  filterSize = 'all',
-  filterStatus = 'all',
+  filterZone,
+  filterClass,
+  filterSize,
+  filterStatus,
+  onFilterZoneChange,
+  onFilterClassChange,
+  onFilterSizeChange,
+  onFilterStatusChange,
   houseTypeAreas = {},
   showTooltips = true
 }: InteractiveMapProps) => {
@@ -103,6 +117,44 @@ const InteractiveMap = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [, setImagesLoadedCount] = useState(0);
+
+  // حالة شريط التصفية المنسدل الجانبي
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+
+  // حالات الفلترة الداخلية في حال عدم تمريرها من الخارج
+  const [internalFilterZone, setInternalFilterZone] = useState('all');
+  const [internalFilterClass, setInternalFilterClass] = useState('all');
+  const [internalFilterSize, setInternalFilterSize] = useState('all');
+  const [internalFilterStatus, setInternalFilterStatus] = useState('all');
+
+  const currentFilterZone = filterZone !== undefined ? filterZone : internalFilterZone;
+  const currentFilterClass = filterClass !== undefined ? filterClass : internalFilterClass;
+  const currentFilterSize = filterSize !== undefined ? filterSize : internalFilterSize;
+  const currentFilterStatus = filterStatus !== undefined ? filterStatus : internalFilterStatus;
+
+  const handleZoneChange = (val: string) => {
+    setInternalFilterZone(val);
+    onFilterZoneChange?.(val);
+  };
+  const handleClassChange = (val: string) => {
+    setInternalFilterClass(val);
+    onFilterClassChange?.(val);
+  };
+  const handleSizeChange = (val: string) => {
+    setInternalFilterSize(val);
+    onFilterSizeChange?.(val);
+  };
+  const handleStatusChange = (val: string) => {
+    setInternalFilterStatus(val);
+    onFilterStatusChange?.(val);
+  };
+
+  const resetFilters = () => {
+    handleZoneChange('all');
+    handleClassChange('all');
+    handleSizeChange('all');
+    handleStatusChange('all');
+  };
 
   const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -136,6 +188,47 @@ const InteractiveMap = ({
     return () => clearTimeout(timer);
   }, [autoFit, isFullScreen]);
 
+  // استخراج القوائم للفلترة
+  const { mapZones, mapClasses, mapSizes } = useMemo(() => {
+    const zones = new Set<string>();
+    const classes = new Set<string>();
+    const sizes = new Set<number>();
+
+    elements.forEach(el => {
+      if (el.type === 'house') {
+        const parts = el.label.split('-');
+        if (parts[0]) zones.add(parts[0]);
+        if (parts.length >= 3) {
+          const typeMatch = parts[2].match(/[a-zA-Z]+/);
+          if (typeMatch) classes.add(typeMatch[0]);
+        }
+      } else if (el.type === 'tower') {
+        const floors = el.floors || 1;
+        const aptsPerFloor = el.apartmentsPerFloor || 1;
+        for (let f = 1; f <= floors; f++) {
+          for (let a = 1; a <= aptsPerFloor; a++) {
+            const key = `${el.id}_F${f}_A${a}`;
+            const data = housesData[key];
+            if (data?.status === 'frozen_hidden') continue;
+
+            const size = f === 1 
+              ? (el.groundFloorSizes?.[a - 1] || 0) 
+              : (el.typicalFloorSizes?.[a - 1] || 0);
+            if (size > 0) {
+              sizes.add(size);
+            }
+          }
+        }
+      }
+    });
+
+    return {
+      mapZones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      mapClasses: Array.from(classes).sort(),
+      mapSizes: Array.from(sizes).sort((a, b) => a - b)
+    };
+  }, [elements, housesData]);
+
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
     return [
@@ -158,25 +251,25 @@ const InteractiveMap = ({
   };
 
   const isAnyFilterActive = 
-    (filterZone && filterZone !== 'all') || 
-    (filterClass && filterClass !== 'all') || 
-    (filterSize && filterSize !== 'all') || 
-    (filterStatus && filterStatus !== 'all');
+    (currentFilterZone && currentFilterZone !== 'all') || 
+    (currentFilterClass && currentFilterClass !== 'all') || 
+    (currentFilterSize && currentFilterSize !== 'all') || 
+    (currentFilterStatus && currentFilterStatus !== 'all');
 
   const matchesFilter = useCallback((el: MapElement): boolean => {
     if (el.type !== 'house' && el.type !== 'tower') return false;
 
-    if (filterZone && filterZone !== 'all') {
+    if (currentFilterZone && currentFilterZone !== 'all') {
       if (el.type === 'house') {
         const parts = el.label.split('-');
         const zone = parts[0] || '';
-        if (zone !== filterZone) return false;
+        if (zone !== currentFilterZone) return false;
       } else {
         return false;
       }
     }
 
-    if (filterClass && filterClass !== 'all') {
+    if (currentFilterClass && currentFilterClass !== 'all') {
       if (el.type === 'house') {
         const parts = el.label.split('-');
         let uClass = '';
@@ -184,14 +277,14 @@ const InteractiveMap = ({
           const typeMatch = parts[2].match(/[a-zA-Z]+/);
           uClass = typeMatch ? typeMatch[0] : '';
         }
-        if (uClass !== filterClass) return false;
+        if (uClass !== currentFilterClass) return false;
       } else {
         return false;
       }
     }
 
-    if (filterSize && filterSize !== 'all') {
-      const targetSize = parseFloat(filterSize);
+    if (currentFilterSize && currentFilterSize !== 'all') {
+      const targetSize = parseFloat(currentFilterSize);
       if (el.type === 'house') {
         if (getHouseArea(el) !== targetSize) return false;
       } else if (el.type === 'tower') {
@@ -203,10 +296,10 @@ const InteractiveMap = ({
       }
     }
 
-    if (filterStatus && filterStatus !== 'all') {
+    if (currentFilterStatus && currentFilterStatus !== 'all') {
       if (el.type === 'house') {
         const data = housesData[el.id] || { status: 'available' };
-        if (data.status !== filterStatus) return false;
+        if (data.status !== currentFilterStatus) return false;
       } else if (el.type === 'tower') {
         const floors = el.floors || 0;
         const aptsPerFloor = el.apartmentsPerFloor || 0;
@@ -215,7 +308,7 @@ const InteractiveMap = ({
           for (let a = 1; a <= aptsPerFloor; a++) {
             const key = `${el.id}_F${f}_A${a}`;
             const data = housesData[key] || { status: 'available' };
-            if (data.status === filterStatus) {
+            if (data.status === currentFilterStatus) {
               hasStatusMatch = true;
               break;
             }
@@ -229,7 +322,7 @@ const InteractiveMap = ({
     }
 
     return true;
-  }, [filterZone, filterClass, filterSize, filterStatus, housesData, houseTypeAreas]);
+  }, [currentFilterZone, currentFilterClass, currentFilterSize, currentFilterStatus, housesData, houseTypeAreas]);
 
   const getElementStyles = useCallback((el: MapElement) => {
     if (el.type === 'label_area') return { fill: el.color || '#a855f7', stroke: el.hasBorder ? (el.borderColor || '#a855f7') : (el.color || '#a855f7'), opacity: el.opacity || 0.2, strokeWidth: el.hasBorder ? 3 : 2 };
@@ -669,7 +762,114 @@ const InteractiveMap = ({
         ref={canvasRef}
         className="w-full h-full block"
       />
-      
+
+      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين */}
+      <div className="absolute top-6 right-6 z-20">
+        {!isFilterPanelOpen ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(true); }}
+            className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-100 flex items-center gap-2 hover:bg-slate-50 transition-all font-black text-xs text-slate-700"
+          >
+            <SlidersHorizontal size={18} className="text-blue-600" />
+            <span>تصفية الخريطة وتوهج الوحدات</span>
+            {isAnyFilterActive && (
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+            )}
+          </button>
+        ) : (
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-72 bg-white/95 backdrop-blur-md p-5 rounded-3xl shadow-2xl border border-slate-100 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
+          >
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2 font-black text-xs text-slate-800">
+                <SlidersHorizontal size={16} className="text-blue-600" />
+                <span>تصفية الخريطة وتوهج الوحدات</span>
+              </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(false); }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold text-slate-400">الزون:</span>
+                <Select value={currentFilterZone} onValueChange={handleZoneChange}>
+                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                    {mapZones.map(z => (
+                      <SelectItem key={z} value={z} className="font-bold text-xs">زون {z}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold text-slate-400">الصنف:</span>
+                <Select value={currentFilterClass} onValueChange={handleClassChange}>
+                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                    {mapClasses.map(c => (
+                      <SelectItem key={c} value={c} className="font-bold text-xs">صنف {c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold text-slate-400">المساحة:</span>
+                <Select value={currentFilterSize} onValueChange={handleSizeChange}>
+                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                    {mapSizes.map(s => (
+                      <SelectItem key={s} value={s.toString()} className="font-bold text-xs">{s} م²</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold text-slate-400">الحالة:</span>
+                <Select value={currentFilterStatus} onValueChange={handleStatusChange}>
+                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-bold text-xs">كل الحالات</SelectItem>
+                    <SelectItem value="available" className="font-bold text-xs text-emerald-600">🟢 متوفر</SelectItem>
+                    <SelectItem value="sold" className="font-bold text-xs text-rose-600">🔴 مباع</SelectItem>
+                    <SelectItem value="investment" className="font-bold text-xs text-purple-600">🟣 استثمار</SelectItem>
+                    <SelectItem value="reserved" className="font-bold text-xs text-amber-600">🟡 محجوز</SelectItem>
+                    <SelectItem value="pending" className="font-bold text-xs text-blue-600">🔵 حجز أولي</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {isAnyFilterActive && (
+                <button
+                  onClick={resetFilters}
+                  className="w-full mt-2 text-xs font-black text-rose-500 hover:bg-rose-50 rounded-xl h-9 transition-colors"
+                >
+                  إعادة ضبط الفلاتر
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* بطاقة المعاينة السريعة العائمة عند التمرير */}
       {showTooltips && hoveredElement && !isDragging && (
         (() => {

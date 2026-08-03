@@ -9,8 +9,8 @@ import { showSuccess, showError } from '@/utils/toast';
 import { 
   Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, 
   Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, 
-  BarChart3, MapPin, Search, RefreshCcw, X, SlidersHorizontal, AlertTriangle, Ruler,
-  Terminal, Activity, Cpu, HardDrive, Zap, Eye, EyeOff
+  BarChart3, MapPin, Search, RefreshCcw, X, AlertTriangle, Ruler,
+  Terminal, Cpu, HardDrive, Eye, EyeOff
 } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
@@ -94,7 +94,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   const [searchProjectFilter, setSearchProjectFilter] = useState<string>('all');
   const [searchLimit, setSearchLimit] = useState<number>(10);
-  const [hasMoreResults, setHasMoreResults] = useState<boolean>(false);
   const [pendingApartmentKey, setPendingApartmentKey] = useState<string | null>(null);
 
   const [permissions, setPermissions] = useState<any>({
@@ -163,46 +162,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   }, [filteredProjects, selectedProjectId]);
 
   const selectedElement = activeElements.find(el => el.id === selectedElementId);
-
-  const { mapZones, mapClasses, mapSizes } = React.useMemo(() => {
-    const zones = new Set<string>();
-    const classes = new Set<string>();
-    const sizes = new Set<number>();
-
-    activeElements.forEach(el => {
-      if (el.type === 'house') {
-        const parts = el.label.split('-');
-        if (parts[0]) zones.add(parts[0]);
-        if (parts.length >= 3) {
-          const typeMatch = parts[2].match(/[a-zA-Z]+/);
-          if (typeMatch) classes.add(typeMatch[0]);
-        }
-      } else if (el.type === 'tower') {
-        const floors = el.floors || 1;
-        const aptsPerFloor = el.apartmentsPerFloor || 1;
-        for (let f = 1; f <= floors; f++) {
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            const key = `${el.id}_F${f}_A${a}`;
-            const data = housesData[key];
-            if (data?.status === 'frozen_hidden') continue;
-
-            const size = f === 1 
-              ? (el.groundFloorSizes?.[a - 1] || 0) 
-              : (el.typicalFloorSizes?.[a - 1] || 0);
-            if (size > 0) {
-              sizes.add(size);
-            }
-          }
-        }
-      }
-    });
-
-    return {
-      mapZones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-      mapClasses: Array.from(classes).sort(),
-      mapSizes: Array.from(sizes).sort((a, b) => a - b)
-    };
-  }, [activeElements, housesData]);
 
   const expiringSoonBookings = React.useMemo(() => {
     if (selectedProjectId === 'main_map' || !activeProject) return [];
@@ -382,7 +341,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         addDiagLog(`تمت تهيئة الجلسة والإعدادات بنجاح خلال ${(endTime - startTime).toFixed(1)} ملي ثانية`, 'success');
       } catch (err) {
         console.error("Error loading centers or permissions:", err);
-      } finally {
+      } font-bold
+      finally {
         setIsAuthChecking(false);
       }
     };
@@ -667,7 +627,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
-      const { elementId, isTower } = pendingOpen;
+      const { elementId } = pendingOpen;
       const exists = activeElements.some(el => el.id === elementId);
       if (exists) {
         handleElementClick(elementId);
@@ -1027,87 +987,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           </div>
         )}
 
-        {selectedProjectId !== 'main_map' && activeProject && (
-          <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex flex-wrap items-center gap-4 animate-in fade-in duration-300">
-            <div className="flex items-center gap-2 text-slate-700 font-black text-xs shrink-0">
-              <SlidersHorizontal size={16} className="text-blue-600 animate-pulse" />
-              <span>تصفية الخريطة وتوهج الوحدات:</span>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-bold text-slate-400">الزون:</span>
-              <Select value={mapFilterZone} onValueChange={setMapFilterZone}>
-                <SelectTrigger className="w-[110px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
-                  {mapZones.map(z => (
-                    <SelectItem key={z} value={z} className="font-bold text-xs">زون {z}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-bold text-slate-400">الصنف:</span>
-              <Select value={mapFilterClass} onValueChange={setMapFilterClass}>
-                <SelectTrigger className="w-[110px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
-                  {mapClasses.map(c => (
-                    <SelectItem key={c} value={c} className="font-bold text-xs">صنف {c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-bold text-slate-400">المساحة:</span>
-              <Select value={mapFilterSize} onValueChange={setMapFilterSize}>
-                <SelectTrigger className="w-[120px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
-                  {mapSizes.map(s => (
-                    <SelectItem key={s} value={s.toString()} className="font-bold text-xs">{s} م²</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-bold text-slate-400">الحالة:</span>
-              <Select value={mapFilterStatus} onValueChange={setMapFilterStatus}>
-                <SelectTrigger className="w-[120px] rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="all" className="font-bold text-xs">كل الحالات</SelectItem>
-                  <SelectItem value="available" className="font-bold text-xs text-emerald-600">🟢 متوفر</SelectItem>
-                  <SelectItem value="sold" className="font-bold text-xs text-rose-600">🔴 مباع</SelectItem>
-                  <SelectItem value="investment" className="font-bold text-xs text-purple-600">🟣 استثمار</SelectItem>
-                  <SelectItem value="reserved" className="font-bold text-xs text-amber-600">🟡 محجوز</SelectItem>
-                  <SelectItem value="pending" className="font-bold text-xs text-blue-600">🔵 حجز أولي</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {(mapFilterZone !== 'all' || mapFilterClass !== 'all' || mapFilterSize !== 'all' || mapFilterStatus !== 'all') && (
-              <Button 
-                variant="ghost" 
-                onClick={() => { setMapFilterZone('all'); setMapFilterClass('all'); setMapFilterSize('all'); setMapFilterStatus('all'); }}
-                className="text-xs font-black text-rose-500 hover:bg-rose-50 rounded-xl h-10 px-3 shrink-0"
-              >
-                إعادة ضبط
-              </Button>
-            )}
-          </div>
-        )}
-
         {permissions.canAccessReports !== false && (
           <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
             <div className="flex items-center gap-3 text-slate-600 text-xs font-bold">
@@ -1159,6 +1038,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
                   filterClass={mapFilterClass}
                   filterSize={mapFilterSize}
                   filterStatus={mapFilterStatus}
+                  onFilterZoneChange={setMapFilterZone}
+                  onFilterClassChange={setMapFilterClass}
+                  onFilterSizeChange={setMapFilterSize}
+                  onFilterStatusChange={setMapFilterStatus}
                   houseTypeAreas={projectConfigs[selectedProjectId || '']?.houseTypeAreas || {}}
                   showTooltips={true}
                 />
