@@ -6,8 +6,7 @@ import { MapElement, Point, ElementType } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
   Home, Building2, Store, GraduationCap, Stethoscope, 
-  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, MapPin,
-  Ruler, Banknote, ShieldCheck, User
+  Baby, ShoppingBag, Dumbbell, ShoppingCart, MoonStar, Trophy, MapPin
 } from "lucide-react";
 
 interface InteractiveMapProps {
@@ -18,14 +17,14 @@ interface InteractiveMapProps {
   mapWidth: number;
   mapHeight: number;
   permissions?: any;
-  backgroundColor?: string; // خلفية انسيابية ممررة ديناميكياً
-  showGrid?: boolean;       // شبكة مربعات قابلة للتحكم
-  filterZone?: string;      // فلتر الزون للمنازل
-  filterClass?: string;     // فلتر الصنف للمنازل
-  filterSize?: string;      // فلتر مساحة الشقق
-  filterStatus?: string;    // فلتر الحالة المباشرة للوحدات
-  houseTypeAreas?: Record<string, number>; // مساحات أصناف المنازل القياسية
-  showTooltips?: boolean;   // خيار للتحكم في ظهور بطاقة المعاينة
+  backgroundColor?: string;
+  showGrid?: boolean;
+  filterZone?: string;
+  filterClass?: string;
+  filterSize?: string;
+  filterStatus?: string;
+  houseTypeAreas?: Record<string, number>;
+  showTooltips?: boolean;
 }
 
 const InteractiveMap = ({ 
@@ -52,11 +51,10 @@ const InteractiveMap = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
 
-  // حالات بطاقة المعاينة السريعة عند التمرير (Feature 2)
+  // حالات بطاقة المعاينة السريعة عند التمرير
   const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  // لمنع تفعيل النقر عن طريق الخطأ أثناء السحب والتحريك
   const dragStartCoords = useRef({ x: 0, y: 0 });
   const hasDragged = useRef(false);
 
@@ -109,6 +107,7 @@ const InteractiveMap = ({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
+    setHoveredElement(null); // إخفاء أي معاينة أثناء الحركة
     setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
     dragStartCoords.current = { x: e.clientX, y: e.clientY };
     hasDragged.current = false;
@@ -118,7 +117,6 @@ const InteractiveMap = ({
     if (!isDragging) return;
     const dx = e.clientX - dragStartCoords.current.x;
     const dy = e.clientY - dragStartCoords.current.y;
-    // إذا تحرك المؤشر أكثر من 5 بكسل، نعتبر العملية سحب (Pan) وليس نقرة سريعة
     if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
       hasDragged.current = true;
     }
@@ -128,6 +126,7 @@ const InteractiveMap = ({
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       setIsDragging(true);
+      setHoveredElement(null);
       const touch = e.touches[0];
       setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
       dragStartCoords.current = { x: touch.clientX, y: touch.clientY };
@@ -184,7 +183,6 @@ const InteractiveMap = ({
 
   const handleElementClick = (e: React.MouseEvent, elId: string, isInteractive: boolean) => {
     e.stopPropagation();
-    // إذا كان المستخدم يقوم بالسحب والتحريك للوصف العام، نتجاهل حدث النقر
     if (hasDragged.current) return;
     if (isInteractive) {
       onHouseClick(elId);
@@ -279,7 +277,6 @@ const InteractiveMap = ({
     );
   };
 
-  // دوال مساعدة لحساب مساحات المنازل والعمارات للفلاتر المباشرة
   const getHouseArea = (el: MapElement) => {
     if (el.customArea !== undefined && el.customArea > 0) {
       return el.customArea;
@@ -291,18 +288,15 @@ const InteractiveMap = ({
     return houseTypeAreas[type] || 0;
   };
 
-  // التحقق من تفعيل أي فلتر مباشر للخريطة
   const isAnyFilterActive = 
     (filterZone && filterZone !== 'all') || 
     (filterClass && filterClass !== 'all') || 
     (filterSize && filterSize !== 'all') || 
     (filterStatus && filterStatus !== 'all');
 
-  // التحقق مما إذا كان العنصر يطابق الفلتر المفتوح
   const matchesFilter = (el: MapElement): boolean => {
     if (el.type !== 'house' && el.type !== 'tower') return false;
 
-    // 1. فلترة الزون (للمنازل فقط)
     if (filterZone && filterZone !== 'all') {
       if (el.type === 'house') {
         const parts = el.label.split('-');
@@ -313,7 +307,6 @@ const InteractiveMap = ({
       }
     }
 
-    // 2. فلترة الصنف (للمنازل فقط)
     if (filterClass && filterClass !== 'all') {
       if (el.type === 'house') {
         const parts = el.label.split('-');
@@ -328,7 +321,6 @@ const InteractiveMap = ({
       }
     }
 
-    // 3. فلترة المساحة (منازل أو عمارات)
     if (filterSize && filterSize !== 'all') {
       const targetSize = parseFloat(filterSize);
       if (el.type === 'house') {
@@ -342,7 +334,6 @@ const InteractiveMap = ({
       }
     }
 
-    // 4. فلترة الحالة
     if (filterStatus && filterStatus !== 'all') {
       if (el.type === 'house') {
         const data = housesData[el.id] || { status: 'available' };
@@ -372,13 +363,13 @@ const InteractiveMap = ({
   };
 
   const handleMouseEnterElement = (e: React.MouseEvent, el: MapElement) => {
-    if (!showTooltips) return; // منع عرض البطاقة إذا كان الخيار معطلاً
+    if (!showTooltips || isDragging) return;
     if (el.type !== 'house' && el.type !== 'tower') return;
     setHoveredElement(el);
   };
 
   const handleMouseMoveElement = (e: React.MouseEvent) => {
-    if (!showTooltips) return;
+    if (!showTooltips || isDragging) return;
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     setTooltipPos({
@@ -420,7 +411,10 @@ const InteractiveMap = ({
         shapeRendering="geometricPrecision"
         style={{ backgroundColor: backgroundColor }}
       >
-        <g transform={`translate(${position.x}, ${position.y}) scale(${scale})`}>
+        <g 
+          transform={`translate(${position.x}, ${position.y}) scale(${scale})`}
+          className={cn(isDragging && "pointer-events-none")} // [المقترح 1]: تعطيل تتبع الماوس داخل العناصر أثناء السحب
+        >
           <defs>
             <pattern id="grid-view" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#cbd5e1" strokeWidth="0.5" opacity="0.4"/></pattern>
             <pattern id="green-pattern" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#22c55e" /><path d="M 2 8 L 5 2 L 8 8" fill="none" stroke="#15803d" strokeWidth="0.5" opacity="0.3" /></pattern>
@@ -491,24 +485,21 @@ const InteractiveMap = ({
             const dynamicIconSize = minDim * 0.6; 
             const dynamicFontSize = minDim * 0.3;
 
-            // حساب كلاسات الفلترة والتوهج المباشر (Feature 6)
+            // [المقترح 3]: تعليق حساب كلاسات التوهج المؤقتة والظلال أثناء الحركة للسلاسة التامة
             let filterClasses = "";
             let isDimmed = false;
             let overrideStyles: any = null;
             
-            if (isAnyFilterActive) {
-              // نطبق التصفية والتوهج والتعتيم فقط على المنازل والعمارات السكنية
+            if (isAnyFilterActive && !isDragging) {
               if (el.type === 'house' || el.type === 'tower') {
                 const matched = matchesFilter(el);
                 if (matched) {
-                  // التوهج للمحيط الخارجي فقط (الحدود) بلون ذهبي ثابت مريح للعين بدون أي إزاحة أو تكبير
                   filterClasses = "filter drop-shadow-[0_0_10px_#fbbf24] transition-all duration-300";
                   overrideStyles = {
                     stroke: "#fbbf24",
                     strokeWidth: 3.5
                   };
                 } else {
-                  // جعل الوحدات السكنية غير المطابقة باهتة اللون (Gray/Washed-out) دون تغيير الشفافية
                   filterClasses = "grayscale saturate-50 contrast-75 brightness-110 opacity-100 transition-all duration-500";
                   isDimmed = true;
                 }
@@ -543,7 +534,7 @@ const InteractiveMap = ({
                       strokeLinecap="round" 
                       className={cn(
                         "transition-all duration-300", 
-                        isSelected && "stroke-black stroke-[3px] filter brightness-90", 
+                        isSelected && !isDragging && "stroke-black stroke-[3px] filter brightness-90", 
                         !!el.linkProjectId && "hover:filter hover:brightness-110 transition-colors"
                       )} 
                     />
@@ -579,22 +570,16 @@ const InteractiveMap = ({
                 
                 {el.type === 'pitch' && renderPitchLines(pts)}
                 
+                {/* [المقترح 2]: رسم الأيقونات كـ SVG ناتيف مباشر وبنفس الألوان والأنماط بدون foreignObject */}
                 {IconComponent && !el.hideIcon && (
-                  <foreignObject 
+                  <IconComponent 
                     x={centerX - (dynamicIconSize / 2)} 
                     y={centerY - (dynamicIconSize * 0.85)} 
-                    width={dynamicIconSize} 
-                    height={dynamicIconSize} 
-                    pointerEvents="none"
-                  >
-                    <div className="flex items-center justify-center w-full h-full">
-                      <IconComponent 
-                        size={dynamicIconSize * 0.9} 
-                        color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
-                        strokeWidth={2.5}
-                      />
-                    </div>
-                  </foreignObject>
+                    size={dynamicIconSize * 0.9} 
+                    color={el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b')} 
+                    strokeWidth={2.5}
+                    className="pointer-events-none select-none"
+                  />
                 )}
                 
                 {el.type === 'road' && !el.isStroke && (
@@ -625,13 +610,12 @@ const InteractiveMap = ({
         </g>
       </svg>
       
-      {/* بطاقة المعاينة السريعة العائمة عند التمرير (Feature 2) */}
-      {showTooltips && hoveredElement && (
+      {/* بطاقة المعاينة السريعة العائمة عند التمرير */}
+      {showTooltips && hoveredElement && !isDragging && (
         (() => {
           const isHouse = hoveredElement.type === 'house';
           const isTower = hoveredElement.type === 'tower';
           const unitData = housesData[hoveredElement.id];
-          const hasData = !!unitData;
 
           const getStatusText = (status: string) => {
             switch (status) {
