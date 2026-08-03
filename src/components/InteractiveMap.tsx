@@ -37,9 +37,10 @@ interface InteractiveMapProps {
   showTooltips?: boolean;
 }
 
-// كاش الأيقونات والصور المرجعية لضمان الرسم الفائق على Canvas
+// كاش الأيقونات والصور المرجعية والـ Patterns للـ Canvas
 const iconImageCache = new Map<string, HTMLImageElement>();
 const referenceImageCache = new Map<string, HTMLImageElement>();
+const texturePatternCache = new Map<string, CanvasPattern>();
 
 const getCachedReferenceImage = (url: string, onLoaded?: () => void): HTMLImageElement | null => {
   if (!url) return null;
@@ -87,6 +88,125 @@ const getCachedIconImage = (type: string, color: string): HTMLImageElement => {
   img.src = getIconSvgUri(type, color);
   iconImageCache.set(key, img);
   return img;
+};
+
+// إنشاء نسيج (Texture Pattern) للـ Canvas مخصص للشكل
+const getCanvasTexturePattern = (
+  ctx: CanvasRenderingContext2D,
+  type: string = 'glass', 
+  color: string = '#ffffff'
+): CanvasPattern | null => {
+  const cacheKey = `${type}_${color}`;
+  if (texturePatternCache.has(cacheKey)) {
+    return texturePatternCache.get(cacheKey)!;
+  }
+
+  const patternCanvas = document.createElement('canvas');
+  patternCanvas.width = 16;
+  patternCanvas.height = 16;
+  const pCtx = patternCanvas.getContext('2d');
+  if (!pCtx) return null;
+
+  pCtx.strokeStyle = color;
+  pCtx.fillStyle = color;
+  pCtx.globalAlpha = 0.3;
+  pCtx.lineWidth = 1;
+
+  if (type === 'dots') {
+    pCtx.beginPath();
+    pCtx.arc(8, 8, 1.5, 0, Math.PI * 2);
+    pCtx.fill();
+  } else if (type === 'stripes') {
+    pCtx.beginPath();
+    pCtx.moveTo(0, 0); pCtx.lineTo(16, 16);
+    pCtx.stroke();
+  } else if (type === 'brick') {
+    pCtx.strokeRect(0, 0, 16, 8);
+    pCtx.strokeRect(8, 8, 16, 8);
+  } else if (type === 'grid') {
+    pCtx.strokeRect(0, 0, 16, 16);
+  } else if (type === 'zigzag') {
+    pCtx.beginPath();
+    pCtx.moveTo(0, 8); pCtx.lineTo(4, 0); pCtx.lineTo(8, 8); pCtx.lineTo(12, 0); pCtx.lineTo(16, 8);
+    pCtx.stroke();
+  } else if (type === 'crosshatch') {
+    pCtx.beginPath();
+    pCtx.moveTo(0, 0); pCtx.lineTo(16, 16);
+    pCtx.moveTo(16, 0); pCtx.lineTo(0, 16);
+    pCtx.stroke();
+  } else {
+    // glass (default)
+    pCtx.beginPath();
+    pCtx.moveTo(0, 16); pCtx.lineTo(16, 0);
+    pCtx.stroke();
+  }
+
+  const pattern = ctx.createPattern(patternCanvas, 'repeat');
+  if (pattern) {
+    texturePatternCache.set(cacheKey, pattern);
+  }
+  return pattern;
+};
+
+// دالة رسم النص الذكي داخل حدود أي عنصر بدون الخروج عن الحواف
+const drawBoundedText = (
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  centerX: number,
+  startY: number,
+  maxWidth: number,
+  maxHeight: number,
+  fontFamily: string = 'Arial',
+  isBold: boolean = true,
+  textColor: string = '#000000',
+  baseFontSize: number = 12
+) => {
+  if (!text) return;
+
+  const words = text.split(/([ -])/).filter(Boolean);
+  let fontSize = Math.min(baseFontSize, Math.max(7, maxHeight * 0.35));
+  
+  ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
+
+  let lines: string[] = [];
+  let currentLine = '';
+
+  for (let i = 0; i < words.length; i++) {
+    const testLine = currentLine + words[i];
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && i > 0 && currentLine.trim().length > 0) {
+      lines.push(currentLine.trim());
+      currentLine = (words[i] === ' ' || words[i] === '-') ? '' : words[i];
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine.trim()) {
+    lines.push(currentLine.trim());
+  }
+
+  // تقليص حجم الخط تلقائياً إذا كان أحد الأسطر أطول من عرض العنصر
+  while (fontSize > 6) {
+    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
+    const overflows = lines.some(l => ctx.measureText(l).width > maxWidth);
+    if (!overflows && lines.length * fontSize * 1.15 <= maxHeight) {
+      break;
+    }
+    fontSize -= 0.5;
+  }
+
+  ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const lineHeight = fontSize * 1.15;
+  const totalHeight = lines.length * lineHeight;
+  const topY = startY - (totalHeight / 2) + (lineHeight / 2);
+
+  lines.forEach((line, index) => {
+    ctx.fillText(line, centerX, topY + (index * lineHeight));
+  });
 };
 
 const InteractiveMap = ({ 
@@ -499,13 +619,28 @@ const InteractiveMap = ({
       path2d.closePath();
 
       if (el.type !== 'text') {
-        // التعبئة (Fill)
+        // التعبئة الأساسية (Fill)
         ctx.fillStyle = styles.fill;
         ctx.fill(path2d);
 
-        // الحدود (Stroke)
-        ctx.strokeStyle = isFilteredIn ? '#fbbf24' : (isSelected ? '#000000' : styles.stroke);
-        ctx.lineWidth = isFilteredIn ? 3.5 : (isSelected ? 3.5 : styles.strokeWidth);
+        // رسم الـ Texture والمظاهر إذا كانت مفعلة للعنصر
+        if (el.hasTexture) {
+          ctx.save();
+          ctx.clip(path2d);
+          const texturePattern = getCanvasTexturePattern(ctx, el.textureType || 'glass', el.textureColor || '#ffffff');
+          if (texturePattern) {
+            ctx.fillStyle = texturePattern;
+            ctx.fill(path2d);
+          }
+          ctx.restore();
+        }
+
+        // رسم الحدود (Stroke/Border)
+        const strokeColor = isFilteredIn ? '#fbbf24' : (isSelected ? '#000000' : (el.hasBorder && el.borderColor ? el.borderColor : styles.stroke));
+        const strokeWidth = isFilteredIn ? 3.5 : (isSelected ? 3.5 : (el.hasBorder ? 3 : styles.strokeWidth));
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
         ctx.stroke(path2d);
 
         // تأثير التوهج في الفلترة والإنارة
@@ -532,42 +667,65 @@ const InteractiveMap = ({
         ctx.stroke();
       }
 
-      // رسم الأيقونات والنصوص
-      const dynamicIconSize = minDim * 0.55;
+      // حساب أبعاد المكان المتاح للأيقونة والنص بفصل تام وبدون أي التصاق
+      const showIcon = (el.type === 'house' || el.type === 'tower' || el.type === 'amenity') && !el.hideIcon;
+      const dynamicIconSize = showIcon ? minDim * 0.42 : 0;
       const iconType = el.type === 'house' ? 'house' : el.type === 'tower' ? 'tower' : el.amenityType || 'amenity';
       const iconColor = el.textColor || (el.type === 'tower' || (el.type === 'house' && housesData[el.id]) ? '#ffffff' : '#1e293b');
 
-      if ((el.type === 'house' || el.type === 'tower' || el.type === 'amenity') && !el.hideIcon) {
+      if (showIcon) {
         const img = getCachedIconImage(iconType, iconColor);
         if (img.complete) {
+          // تمكين وضع الأيقونة أعلى المركز قليلاً لترك مسافة أمان فاصلة للنص أسفلها
+          const iconY = centerY - (dynamicIconSize * 0.45);
           ctx.drawImage(
             img,
             centerX - dynamicIconSize / 2,
-            centerY - dynamicIconSize * 0.8,
+            iconY - dynamicIconSize / 2,
             dynamicIconSize,
             dynamicIconSize
           );
         }
       }
 
-      // رسم النص / الرقم التوضيحي
+      // رسم النص / الرقم التوضيحي بداخل حدود الشكل وبدون خروج إطلاقاً
       if (el.type === 'text') {
-        ctx.fillStyle = el.textColor || '#000000';
-        ctx.font = `${el.isBold ? 'bold' : 'normal'} ${el.fontSize || 24}px ${el.fontFamily || 'Arial'}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(el.label || '', centerX, centerY);
+        const maxTextW = elWidth * 0.9;
+        const maxTextH = elHeight * 0.9;
+        drawBoundedText(
+          ctx,
+          el.label || '',
+          centerX,
+          centerY,
+          maxTextW,
+          maxTextH,
+          el.fontFamily || 'Arial',
+          el.isBold ?? true,
+          el.textColor || '#000000',
+          el.fontSize || 24
+        );
       } else if (el.label) {
         const textLabel = el.label.split('-').pop() || '';
-        const dynamicFontSize = minDim * 0.28;
-        ctx.fillStyle = iconColor;
-        ctx.font = `bold ${dynamicFontSize}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const textY = (el.type === 'house' || el.type === 'tower' || el.type === 'amenity') && !el.hideIcon
-          ? centerY + dynamicIconSize * 0.4
+        const maxTextW = elWidth * 0.82;
+        const maxTextH = showIcon ? (elHeight * 0.45) : (elHeight * 0.8);
+        
+        // حساب مركز النص أسفل الأيقونة بمسافة أمان واضحة لمنع أي التصاق
+        const textStartY = showIcon 
+          ? centerY + (dynamicIconSize * 0.45) 
           : centerY;
-        ctx.fillText(textLabel, centerX, textY);
+
+        drawBoundedText(
+          ctx,
+          textLabel,
+          centerX,
+          textStartY,
+          maxTextW,
+          maxTextH,
+          'Arial',
+          true,
+          iconColor,
+          minDim * 0.28
+        );
       }
 
       ctx.restore();
