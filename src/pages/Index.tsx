@@ -295,7 +295,10 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           if (updatedUnit && updatedUnit.unit_key) {
             setHousesData(prev => ({
               ...prev,
-              [updatedUnit.unit_key]: updatedUnit.data
+              [updatedUnit.unit_key]: {
+                ...prev[updatedUnit.unit_key],
+                ...updatedUnit.data
+              }
             }));
           }
         }
@@ -370,6 +373,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     setMapFilterStatus('all');
   }, [selectedProjectId]);
 
+  // تطبيق ميزة "الجلب على مرحلتين (Two-Phase Fetching)":
+  // المرحلة 1: جلب خفيف وسريع جداً للحالات لتلوين الخريطة وتجهيز كارت المعاينة السريعة (Hover Preview Card) فوراً وبسرعة البرق
   useEffect(() => {
     if (!selectedProjectId || !isLoggedIn) return;
 
@@ -400,7 +405,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       return;
     }
 
-    const fetchProjectData = async () => {
+    const fetchProjectDataPhase1 = async () => {
       setIsProjectLoading(true);
       try {
         const projectDetails = await fetchWithRetry(async () => {
@@ -426,6 +431,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         }).catch(() => []);
         if (notifs) setNotifications(notifs);
 
+        // المرحلة الأولى (Lightweight Phase 1): جلب كامل وحدات المشروع بالدفعات خفيفة الحجم لضمان التلوين وكارت المعاينة الفوري
         let allUnits: any[] = [];
         let from = 0;
         const step = 1000;
@@ -435,7 +441,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           const chunk = await fetchWithRetry(async () => {
             const { data, error } = await supabase
               .from('houses_data')
-              .select('*')
+              .select('unit_key, project_id, data')
               .eq('project_id', selectedProjectId)
               .range(from, from + step - 1);
             if (error) throw error;
@@ -466,27 +472,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         setIsProjectLoading(false);
       }
     };
-    fetchProjectData();
+    fetchProjectDataPhase1();
   }, [selectedProjectId, isLoggedIn, setHousesData]);
-
-  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث
-  useEffect(() => {
-    if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
-      const { elementId, isTower } = pendingOpen;
-      const exists = activeElements.some(el => el.id === elementId);
-      if (exists) {
-        setSelectedElementId(elementId);
-        if (isTower) {
-          setIsTowerModalOpen(true);
-        } else {
-          setIsUnitModalOpen(true);
-        }
-      } else {
-        showError("تعذر عرض الوحدة على المخطط الحالي");
-      }
-      setPendingOpen(null);
-    }
-  }, [isProjectLoading, activeElements, pendingOpen]);
 
   // تأخير الاستعلام (Debounce)
   useEffect(() => {
@@ -669,7 +656,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     setSearchLimit(prev => prev + 10);
   };
 
-  const parseSearchClick = (item: any) => {
+  const parseSearchClick = async (item: any) => {
     const unitKey = item.unit_key;
     const projectId = item.project_id;
     
@@ -802,7 +789,9 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     });
   };
 
-  const handleElementClick = (id: string) => {
+  // المرحلة الثانية (Phase 2 - الجلب على مرحلتين):
+  // عند النقر على منزل أو عمارة، يقوم النظام بطلب البيانات التفصيلية الكاملة من السيرفر قبل فتح النافذة المنبثقة
+  const handleElementClick = async (id: string) => {
     const element = activeElements.find(el => el.id === id);
     if (!element) return;
 
@@ -823,9 +812,62 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
 
     setSelectedElementId(id);
-    if (element.type === 'tower') setIsTowerModalOpen(true);
-    else setIsUnitModalOpen(true);
+
+    // جلب التفاصيل الكاملة بالكامل (Phase 2 On-Demand Fetch)
+    try {
+      if (element.type === 'house') {
+        const { data: fullUnit } = await supabase
+          .from('houses_data')
+          .select('unit_key, project_id, data')
+          .eq('project_id', selectedProjectId)
+          .eq('unit_key', id)
+          .maybeSingle();
+
+        if (fullUnit && fullUnit.data) {
+          setHousesData(prev => ({
+            ...prev,
+            [id]: fullUnit.data
+          }));
+        }
+        setIsUnitModalOpen(true);
+      } else if (element.type === 'tower') {
+        const { data: towerUnits } = await supabase
+          .from('houses_data')
+          .select('unit_key, project_id, data')
+          .eq('project_id', selectedProjectId)
+          .like('unit_key', `${id}_%`);
+
+        if (towerUnits && towerUnits.length > 0) {
+          setHousesData(prev => {
+            const next = { ...prev };
+            towerUnits.forEach(u => {
+              next[u.unit_key] = u.data;
+            });
+            return next;
+          });
+        }
+        setIsTowerModalOpen(true);
+      }
+    } catch (e) {
+      console.error("Error fetching Phase 2 unit details:", e);
+      if (element.type === 'tower') setIsTowerModalOpen(true);
+      else setIsUnitModalOpen(true);
+    }
   };
+
+  // تأثير لفتح نافذة التفاصيل تلقائياً بعد اختيار نتيجة البحث وتطبيق المرحلة الثانية
+  useEffect(() => {
+    if (!isProjectLoading && pendingOpen && activeElements.length > 0) {
+      const { elementId, isTower } = pendingOpen;
+      const exists = activeElements.some(el => el.id === elementId);
+      if (exists) {
+        handleElementClick(elementId);
+      } else {
+        showError("تعذر عرض الوحدة على المخطط الحالي");
+      }
+      setPendingOpen(null);
+    }
+  }, [isProjectLoading, activeElements, pendingOpen]);
 
   const handleSaveData = async (key: string, data: any) => {
     if (!selectedProjectId || selectedProjectId === 'main_map') return;
