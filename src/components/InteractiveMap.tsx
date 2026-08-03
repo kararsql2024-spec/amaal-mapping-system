@@ -910,120 +910,122 @@ const InteractiveMap = ({
         className="w-full h-full block"
       />
 
-      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين مع عزل الأحداث بالكامل عن الخريطة */}
-      <div 
-        className="absolute top-6 right-6 z-20"
-        onMouseDown={(e) => e.stopPropagation()}
-        onMouseUp={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        onWheel={(e) => e.stopPropagation()}
-      >
-        {!isFilterPanelOpen ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(true); }}
-            className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all font-black text-xs text-slate-700 relative"
-            title="تصفية الخريطة وتوهج الوحدات"
-          >
-            <SlidersHorizontal size={20} className="text-blue-600" />
-            {isAnyFilterActive && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-500 animate-pulse border-2 border-white" />
-            )}
-          </button>
-        ) : (
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="w-72 bg-white/95 backdrop-blur-md p-5 rounded-3xl shadow-2xl border border-slate-100 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 text-right"
-          >
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2 font-black text-xs text-slate-800">
-                <SlidersHorizontal size={16} className="text-blue-600" />
-                <span>تصفية الخريطة وتوهج الوحدات</span>
-              </div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(false); }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <span className="text-[11px] font-bold text-slate-400">الزون:</span>
-                <Select value={currentFilterZone} onValueChange={handleZoneChange}>
-                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
-                    {mapZones.map(z => (
-                      <SelectItem key={z} value={z} className="font-bold text-xs">زون {z}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[11px] font-bold text-slate-400">الصنف:</span>
-                <Select value={currentFilterClass} onValueChange={handleClassChange}>
-                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
-                    {mapClasses.map(c => (
-                      <SelectItem key={c} value={c} className="font-bold text-xs">صنف {c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[11px] font-bold text-slate-400">المساحة:</span>
-                <Select value={currentFilterSize} onValueChange={handleSizeChange}>
-                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
-                    {mapSizes.map(s => (
-                      <SelectItem key={s} value={s.toString()} className="font-bold text-xs">{s} م²</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[11px] font-bold text-slate-400">الحالة:</span>
-                <Select value={currentFilterStatus} onValueChange={handleStatusChange}>
-                  <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all" className="font-bold text-xs">كل الحالات</SelectItem>
-                    <SelectItem value="available" className="font-bold text-xs text-emerald-600">🟢 متوفر</SelectItem>
-                    <SelectItem value="sold" className="font-bold text-xs text-rose-600">🔴 مباع</SelectItem>
-                    <SelectItem value="investment" className="font-bold text-xs text-purple-600">🟣 استثمار</SelectItem>
-                    <SelectItem value="reserved" className="font-bold text-xs text-amber-600">🟡 محجوز</SelectItem>
-                    <SelectItem value="pending" className="font-bold text-xs text-blue-600">🔵 حجز أولي</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
+      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين مع العرض وفق الصلاحية فقط */}
+      {permissions?.showSearchBox !== false && (
+        <div 
+          className="absolute top-6 right-6 z-20"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+        >
+          {!isFilterPanelOpen ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(true); }}
+              className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all font-black text-xs text-slate-700 relative"
+              title="تصفية الخريطة وتوهج الوحدات"
+            >
+              <SlidersHorizontal size={20} className="text-blue-600" />
               {isAnyFilterActive && (
-                <button
-                  onClick={resetFilters}
-                  className="w-full mt-2 text-xs font-black text-rose-500 hover:bg-rose-50 rounded-xl h-9 transition-colors"
-                >
-                  إعادة ضبط الفلاتر
-                </button>
+                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-500 animate-pulse border-2 border-white" />
               )}
+            </button>
+          ) : (
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="w-72 bg-white/95 backdrop-blur-md p-5 rounded-3xl shadow-2xl border border-slate-100 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 text-right"
+            >
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center gap-2 font-black text-xs text-slate-800">
+                  <SlidersHorizontal size={16} className="text-blue-600" />
+                  <span>تصفية الخريطة وتوهج الوحدات</span>
+                </div>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(false); }}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">الزون:</span>
+                  <Select value={currentFilterZone} onValueChange={handleZoneChange}>
+                    <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                      {mapZones.map(z => (
+                        <SelectItem key={z} value={z} className="font-bold text-xs">زون {z}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">الصنف:</span>
+                  <Select value={currentFilterClass} onValueChange={handleClassChange}>
+                    <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                      {mapClasses.map(c => (
+                        <SelectItem key={c} value={c} className="font-bold text-xs">صنف {c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">المساحة:</span>
+                  <Select value={currentFilterSize} onValueChange={handleSizeChange}>
+                    <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all" className="font-bold text-xs">الكل</SelectItem>
+                      {mapSizes.map(s => (
+                        <SelectItem key={s} value={s.toString()} className="font-bold text-xs">{s} م²</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">الحالة:</span>
+                  <Select value={currentFilterStatus} onValueChange={handleStatusChange}>
+                    <SelectTrigger className="w-full rounded-xl h-10 border-slate-200 text-xs font-bold bg-slate-50/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all" className="font-bold text-xs">كل الحالات</SelectItem>
+                      <SelectItem value="available" className="font-bold text-xs text-emerald-600">🟢 متوفر</SelectItem>
+                      <SelectItem value="sold" className="font-bold text-xs text-rose-600">🔴 مباع</SelectItem>
+                      <SelectItem value="investment" className="font-bold text-xs text-purple-600">🟣 استثمار</SelectItem>
+                      <SelectItem value="reserved" className="font-bold text-xs text-amber-600">🟡 محجوز</SelectItem>
+                      <SelectItem value="pending" className="font-bold text-xs text-blue-600">🔵 حجز أولي</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {isAnyFilterActive && (
+                  <button
+                    onClick={resetFilters}
+                    className="w-full mt-2 text-xs font-black text-rose-500 hover:bg-rose-50 rounded-xl h-9 transition-colors"
+                  >
+                    إعادة ضبط الفلاتر
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* بطاقة المعاينة السريعة العائمة عند التمرير */}
       {showTooltips && hoveredElement && !isDragging && (
