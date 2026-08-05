@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface InteractiveMapProps {
   elements: MapElement[];
@@ -236,6 +237,9 @@ const InteractiveMap = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [, setImagesLoadedCount] = useState(0);
+
+  // حالة التحكم في المعاينة السريعة (تكون مفعّلة افتراضياً)
+  const [isQuickPreviewEnabled, setIsQuickPreviewEnabled] = useState(true);
 
   // حالة شريط التصفية المنسدل الجانبي
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
@@ -805,7 +809,7 @@ const InteractiveMap = ({
         hasDragged.current = true;
       }
       setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-    } else if (showTooltips) {
+    } else if (showTooltips && isQuickPreviewEnabled) {
       const targetEl = getElementAtCoords(e.clientX, e.clientY);
       setHoveredElement(targetEl);
       if (targetEl && containerRef.current) {
@@ -910,18 +914,18 @@ const InteractiveMap = ({
         className="w-full h-full block"
       />
 
-      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين مع العرض وفق الصلاحية فقط */}
-      {permissions?.showSearchBox !== false && (
-        <div 
-          className="absolute top-6 right-6 z-20"
-          onMouseDown={(e) => e.stopPropagation()}
-          onMouseUp={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          onWheel={(e) => e.stopPropagation()}
-        >
-          {!isFilterPanelOpen ? (
+      {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين ومربع اختيار المعاينة السريعة أسفله */}
+      <div 
+        className="absolute top-6 right-6 z-20 flex flex-col items-end gap-2"
+        onMouseDown={(e) => e.stopPropagation()}
+        onMouseUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+      >
+        {permissions?.showSearchBox !== false && (
+          !isFilterPanelOpen ? (
             <button
               onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(true); }}
               className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-all font-black text-xs text-slate-700 relative"
@@ -1023,12 +1027,29 @@ const InteractiveMap = ({
                 )}
               </div>
             </div>
-          )}
+          )
+        )}
+
+        {/* مربع اختيار المعاينة السريعة اسفل زر/قائمة التصفية مباشرة */}
+        <div className="bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-2xl shadow-xl border border-slate-100 flex items-center gap-2 text-slate-700 select-none">
+          <Checkbox 
+            id="quick-preview-toggle" 
+            checked={isQuickPreviewEnabled} 
+            onCheckedChange={(val) => {
+              const enabled = !!val;
+              setIsQuickPreviewEnabled(enabled);
+              if (!enabled) setHoveredElement(null);
+            }}
+            className="rounded-md data-[state=checked]:bg-blue-600 border-slate-300"
+          />
+          <label htmlFor="quick-preview-toggle" className="text-xs font-bold cursor-pointer text-slate-700">
+            تفعيل المعاينة السريعة
+          </label>
         </div>
-      )}
+      </div>
 
       {/* بطاقة المعاينة السريعة العائمة عند التمرير */}
-      {showTooltips && hoveredElement && !isDragging && (
+      {showTooltips && isQuickPreviewEnabled && hoveredElement && !isDragging && (
         (() => {
           const isHouse = hoveredElement.type === 'house';
           const isTower = hoveredElement.type === 'tower';
