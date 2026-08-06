@@ -403,7 +403,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         addDiagLog(`تمت تهيئة الجلسة والإعدادات بنجاح خلال ${(endTime - startTime).toFixed(1)} ملي ثانية`, 'success');
       } catch (err) {
         console.error("Error loading centers or permissions:", err);
-      } font-bold {
+      } finally {
         setIsAuthChecking(false);
       }
     };
