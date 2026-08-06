@@ -444,6 +444,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showOtherDeptsNotes: true,
       canDeleteNotes: false,
       showSearchBox: true,
+      showQuickPreview: true,
       canAccessReports: true,
       showDiagnosticTerminal: true
     };
@@ -1121,6 +1122,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'showStatsTable', label: 'عرض جدول الإحصائيات المفصلة السفلي بالكامل' },
         { key: 'showGeneralStats', label: 'عرض كارت الإحصائيات العام الجانبي بالكامل' },
         { key: 'showSearchBox', label: 'رؤية واستخدام مربع البحث في الواجهة الرئيسية' },
+        { key: 'showQuickPreview', label: 'رؤية وتفعيل كارت المعاينة السريعة للوحدات' },
         { key: 'canAccessReports', label: 'صلاحية الوصول إلى نافذة التقارير والتحليلات' },
         { key: 'showDiagnosticTerminal', label: 'رؤية لوحة تحليل الأداء الفورية (Realtime)' },
       ]
