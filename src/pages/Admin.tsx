@@ -5,6 +5,7 @@ import { Project, MapElement } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { 
   Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
   FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
@@ -12,7 +13,8 @@ import {
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
   Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
-  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage, CreditCard, Calendar
+  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage, CreditCard, Calendar,
+  Image as ImageIcon
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -63,6 +65,8 @@ interface BrochureConfig {
     rooms?: string; 
     roomsSizes?: string; 
     unitImage?: string; 
+    unitImage2?: string;
+    unitDescription?: string;
     housePlan?: string;
     totalPrice?: string;
     contractAmount?: string;
@@ -161,7 +165,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [selectedProjectElements, setSelectedProjectElements] = useState<MapElement[]>([]);
   const [activeBrochureConfig, setActiveBrochureConfig] = useState<BrochureConfig>({
     primaryColor: '#16a34a', // أخضر هندسي حديث
-    secondaryColor: '#f0fdf4', 
+    secondaryColor: '#ffffff', 
     slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
     phone: '',
     phone2: '',
@@ -178,6 +182,210 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [activeDetailRooms, setActiveDetailRooms] = useState<string>('');
   const [activeDetailSizes, setActiveDetailSizes] = useState<string>('');
   const [activeDetailUnitImage, setActiveDetailUnitImage] = useState<string>('');
+  const [activeDetailUnitImage2, setActiveDetailUnitImage2] = useState<string>('');
+  const<dyad-write path="src/pages/Admin.tsx" description="إعادة بناء وتكملة محرك البروشورات بالكامل ليوفر قوالب تخطيطية هيكلية حقيقية وجذابة (Layouts)، مع إزالة الإطارات العميقة وبناء تصميم عصري، وإضافة خيار صورة ثانية ووصف للوحدة، وحساب المساحة الكلية بدقة من المدخلات">
+"use client";
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Project, MapElement } from '@/types/project';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { 
+  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
+  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
+  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
+  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
+  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
+  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
+  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, File<dyad-write path="src/pages/Admin.tsx" description="إعادة تصميم محرك البروشورات وتعديل النصوص وحذف المدفوعات غير المطلوبة وإضافة صورة ووصف إضافي مع بناء layouts تخطيطية حقيقية بالكامل">
+"use client";
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Project, MapElement } from '@/types/project';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { 
+  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
+  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
+  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
+  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
+  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
+  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
+  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage, CreditCard, Calendar,
+  Image as ImageIcon
+} from 'lucide-react';
+import MapEditor from '@/components/MapEditor';
+import { showSuccess, showError } from '@/utils/toast';
+import { Link } from 'react-router-dom';
+import { supabase } from "@/integrations/supabase/client";
+import * as XLSX from 'xlsx';
+import { cn } from '@/lib/utils';
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+interface AdminProps {
+  projects: Project[];
+  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  housesData: Record<string, any>;
+}
+
+interface BrochureConfig {
+  primaryColor?: string;
+  secondaryColor?: string;
+  slogan?: string;
+  phone?: string;
+  phone2?: string;
+  marketingLogo?: string;
+  projectLogo?: string;
+  selectedTemplate?: string;
+  advantages?: Record<string, string[]>;
+  unitDetails?: Record<string, { 
+    rooms?: string; 
+    roomsSizes?: string; 
+    unitImage?: string; 
+    unitImage2?: string;
+    unitDescription?: string;
+    housePlan?: string;
+    totalPrice?: string;
+    contractAmount?: string;
+    paymentDuration?: string;
+    firstInstallment?: string;
+    paymentPlanDetails?: string;
+  }>;
+}
+
+const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
+  <div className="flex items-center justify-between gap-4">
+    <Label className="text-xs font-bold text-slate-600">{label}</Label>
+    <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
+  </div>
+);
+
+const normalizeArabicName = (name: string): string => {
+  if (!name) return "";
+  return name
+    .trim()
+    .replace(/[\u064B-\u065F]/g, "") // إزالة الحركات
+    .replace(/[أإآ]/g, "ا")          // توحيد الألفات
+    .replace(/ة/g, "ه")              // توحيد التاء المربوطة
+    .replace(/[ىي]/g, "ي")           // توحيد الياء والألف المقصورة
+    .replace(/\s+/g, "");            // إزالة المسافات
+};
+
+const safeDbCall = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 1) throw error;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return safeDbCall(fn, retries - 1, delay * 1.5);
+  }
+};
+
+const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminProps) => {
+  const [session, setSession] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
+  const [isEditingMainMap, setIsEditingMainMap] = useState(false);
+  const [mainMapData, setMainMapData] = useState<any>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
+  const [showSalesUpdate, setShowSalesUpdate] = useState(false);
+  const [showMarketingCenters, setShowMarketingCenters] = useState(false);
+  const [showDatabaseInspector, setShowDatabaseInspector] = useState(false);
+  const [showBrochureDesigner, setShowBrochureDesigner] = useState(false);
+  const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
+  const [isSavingMap, setIsSavingMap] = useState(false);
+  
+  const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
+  const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '', allowed_projects: [] as string[] });
+  const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
+  
+  // أنواع الأقسام وتعديلها
+  const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
+  const [newDeptType, setNewDeptType] = useState('');
+  const [editingDeptTypeOldName, setEditingDeptTypeOldName] = useState<string | null>(null);
+  const [editingDeptTypeName, setEditingDeptTypeName] = useState('');
+
+  const [deptPermissions, setDeptPermissions] = useState<Record<string, any>>({});
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [processLogs, setProcessLogs] = useState<string[]>([]);
+
+  // خيار المزامنة الكاملة الذكية (السيناريو الثاني)
+  const [isSmartFullSync, setIsSmartFullSync] = useState(true);
+
+  const [excelMapping, setExcelMapping] = useState({
+    cityCol: 'A',
+    unitCol: 'I',
+    nameCol: 'C',
+    phoneCol: 'D',
+    dateCol: 'E',
+    priceCol: 'F',
+    currencyCol: 'G',
+    taboNumCol: 'J',
+    taboStatusCol: 'K',
+    handoverDateCol: 'L'
+  });
+  const [investmentNames, setInvestmentNames] = useState<string[]>([]);
+  const [newInvestmentName, setNewInvestmentName] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
+
+  // إعدادات مصمم البروشورات
+  const [brochureConfigs, setBrochureConfigs] = useState<Record<string, BrochureConfig>>({});
+  const [selectedBrochureProject, setSelectedBrochureProject] = useState<string>('');
+  const [selectedProjectElements, setSelectedProjectElements] = useState<MapElement[]>([]);
+  const [activeBrochureConfig, setActiveBrochureConfig] = useState<BrochureConfig>({
+    primaryColor: '#16a34a', // أخضر هندسي حديث
+    secondaryColor: '#ffffff', 
+    slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
+    phone: '',
+    phone2: '',
+    marketingLogo: '',
+    projectLogo: '',
+    selectedTemplate: 'classic_gold',
+    advantages: {},
+    unitDetails: {}
+  });
+  
+  // المعاينة والتعديل التلقائي المكتشف
+  const [selectedSpecKey, setSelectedSpecKey] = useState<string>('');
+  const [newAdvantageText, setNewAdvantageText] = useState<string>('');
+  const [activeDetailRooms, setActiveDetailRooms] = useState<string>('');
+  const [activeDetailSizes, setActiveDetailSizes] = useState<string>('');
+  const [activeDetailUnitImage, setActiveDetailUnitImage] = useState<string>('');
+  const [activeDetailUnitImage2, setActiveDetailUnitImage2] = useState<string>('');
+  const [activeDetailUnitDescription, setActiveDetailUnitDescription] = useState<string>('');
   const [activeDetailHousePlan, setActiveDetailHousePlan] = useState<string>('');
   
   // تفاصيل مالية وعقود تظهر على المخطط
@@ -313,7 +521,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     fetchElements();
   }, [selectedBrochureProject]);
 
-  // لإصلاح مشكلة التحديث الطارئ الذي يصفر خيار تعديل الصنف، نقوم بحفظ مرجع للمشروع الحالي لتفادي تصفير الصنف عند التعديل
   const prevProjectRef = useRef<string>('');
 
   // إدارة مزامنة إعدادات البروشور للمشروع المحدد دون تصفير الصنف المختار عشوائياً
@@ -386,6 +593,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       setActiveDetailRooms(details.rooms || '');
       setActiveDetailSizes(details.roomsSizes || '');
       setActiveDetailUnitImage(details.unitImage || '');
+      setActiveDetailUnitImage2(details.unitImage2 || '');
+      setActiveDetailUnitDescription(details.unitDescription || '');
       setActiveDetailHousePlan(details.housePlan || '');
       setActiveDetailTotalPrice(details.totalPrice || '');
       setActiveDetailContractAmount(details.contractAmount || '');
@@ -396,6 +605,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       setActiveDetailRooms('');
       setActiveDetailSizes('');
       setActiveDetailUnitImage('');
+      setActiveDetailUnitImage2('');
+      setActiveDetailUnitDescription('');
       setActiveDetailHousePlan('');
       setActiveDetailTotalPrice('');
       setActiveDetailContractAmount('');
@@ -837,7 +1048,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  // حفظ تفاصيل غرف ومساحات ومعاملات مالية للصنف المختار ومزامنتها تلقائياً بالخادم
+  // حفظ تفاصيل غرف ومساحات ومعاملات مالية وصورة ووصف إضافي
   const handleSaveUnitDetail = async () => {
     if (!selectedBrochureProject || !selectedSpecKey) {
       showError("يرجى اختيار المشروع والصنف أو المساحة المكتشفة أولاً");
@@ -849,6 +1060,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       rooms: activeDetailRooms.trim(),
       roomsSizes: activeDetailSizes.trim(),
       unitImage: activeDetailUnitImage.trim(),
+      unitImage2: activeDetailUnitImage2.trim(),
+      unitDescription: activeDetailUnitDescription.trim(),
       housePlan: activeDetailHousePlan.trim(),
       totalPrice: activeDetailTotalPrice.trim(),
       contractAmount: activeDetailContractAmount.trim(),
@@ -862,17 +1075,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       unitDetails: currentDetails
     };
 
-    // 1. تحديث الحالة المحلية للتصميم الفردي النشط
     setActiveBrochureConfig(updatedConfig);
 
-    // 2. تحديث الخارطة الكلية للبروشورات محلياً
     const updatedConfigs = {
       ...brochureConfigs,
       [selectedBrochureProject]: updatedConfig
     };
     setBrochureConfigs(updatedConfigs);
 
-    // 3. كتابة ومزامنة وحفظ التحديثات مباشرة وحالاً في جدول الإعدادات بالخادم لتفادي فقدان البيانات عند التحديث
     try {
       const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
       if (error) throw error;
@@ -899,6 +1109,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       setActiveDetailRooms('');
       setActiveDetailSizes('');
       setActiveDetailUnitImage('');
+      setActiveDetailUnitImage2('');
+      setActiveDetailUnitDescription('');
       setActiveDetailHousePlan('');
       setActiveDetailTotalPrice('');
       setActiveDetailContractAmount('');
@@ -943,7 +1155,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تم قراءة ${data.length} صف من ملف الإكسل.`);
         setProcessLogs([...logs]);
 
-        // 1. جلب كافة المشاريع المتوفرة وتوحيد أسمائها للمطابقة
         logs.push("جاري جلب قائمة المشاريع لإجراء المطابقة الذكية للأسماء...");
         setProcessLogs([...logs]);
         
@@ -964,7 +1175,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         const matchedProjectsMap = new Map<string, any>();
         const skippedCities = new Set<string>();
 
-        // مطابقة ذكية لكل صف
         data.forEach((row: any, index) => {
           if (index === 0) return;
           const cityName = row[excelMapping.cityCol]?.toString().trim();
@@ -993,18 +1203,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تمت مطابقة ${matchedProjects.length} مشروع بنجاح: ${matchedProjects.map(p => p.name).join('، ')}`);
         setProcessLogs([...logs]);
 
-        // جلب تفاصيل المخططات للمشاريع المطابقة
         const projectsList: any[] = [];
         for (const proj of matchedProjects) {
           logs.push(`جاري تحميل عناصر المخطط للمشروع "${proj.name}"...`);
           setProcessLogs([...logs]);
           try {
-            // استخدام الفيتش المباشر والمحسن مع مهلة زمنية طويلة لتفادي مشاكل الشبكة والبيانات الضخمة
             const fullProj = await safeDbCall(async () => {
               const url = `https://byvzmxrvetgcxstlsszd.supabase.co/rest/v1/projects?select=id,name,elements&id=eq.${proj.id}`;
               const supabaseKey = (supabase as any).supabaseKey;
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 60000); // مهلة 60 ثانية كاملة
+              const timeoutId = setTimeout(() => controller.abort(), 60000);
               
               const response = await fetch(url, {
                 headers: {
@@ -1072,10 +1280,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           return val.toString().trim();
         };
 
-        // تجميع مفاتيح الوحدات المحدثة من الإكسل
         const excelKeys = new Set<string>();
 
-        // معالجة صفوف الإكسل
         data.forEach((row: any, index) => {
           if (index === 0) return;
 
@@ -1156,7 +1362,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
         });
 
-        // 5. تطبيق خيار المزامنة الكاملة الذكية (السيناريو الثاني)
         if (isSmartFullSync && existingHouses && existingHouses.length > 0) {
           logs.push("⚙️ جاري تشغيل المزامنة الكاملة الذكية (السيناريو الثاني): فحص وتصفير الوحدات المباعة والمستثمرة الغائبة عن الإكسل...");
           setProcessLogs([...logs]);
@@ -1166,8 +1371,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           existingHouses.forEach(h => {
             const isMissingFromExcel = !excelKeys.has(h.unit_key);
             const isSoldOrInvestmentInDb = h.data?.status === 'sold' || h.data?.status === 'investment';
-            
-            // السيناريو الثاني: لا نلمس الوحدات التي حالتها 'pending' (حجز أولي) أو 'reserved' (محجوز)
             const isReservedOrPendingInDb = h.data?.status === 'reserved' || h.data?.status === 'pending';
 
             if (isMissingFromExcel && isSoldOrInvestmentInDb && !isReservedOrPendingInDb) {
@@ -1181,7 +1384,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 taboNum: '',
                 taboStatus: 'غير مروج',
                 handoverDate: ''
-                // نُبقي على حقل h.data.notes لحفظ تاريخ الملاحظات للأمان
               };
               updates.push({ unit_key: h.unit_key, project_id: h.project_id, data: resetData });
               resetCounter++;
@@ -1204,7 +1406,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         logs.push(`تجهيز السجلات النهائية للرفع. إجمالي السجلات للرفع: ${sortedFinalUpdates.length} سجل.`);
         setProcessLogs([...logs]);
 
-        // رفع البيانات على دفعات آمنة مع آلية إعادة المحاولة تلقائياً
         for (let i = 0; i < sortedFinalUpdates.length; i += 100) {
           const chunk = sortedFinalUpdates.slice(i, i + 100);
           
@@ -1854,11 +2055,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   </div>
 
                                   <div className="space-y-1">
-                                    <Label className="text-[10px] font-black text-slate-400">رابط صورة الواجهة الخارجية للوحدة السكنية</Label>
+                                    <Label className="text-[10px] font-black text-slate-400">رابط صورة الواجهة الخارجية للوحدة السكنية (الأولى)</Label>
                                     <Input value={activeDetailUnitImage} onChange={(e) => setActiveDetailUnitImage(e.target.value)} placeholder="أدخل رابط صورة خارجية للوحدة..." className="rounded-xl h-11 font-bold text-xs" />
                                   </div>
 
                                   <div className="space-y-1">
+                                    <Label className="text-[10px] font-black text-slate-400">رابط صورة الواجهة الخارجية الثانية (اختياري)</Label>
+                                    <Input value={activeDetailUnitImage2} onChange={(e) => setActiveDetailUnitImage2(e.target.value)} placeholder="أدخل رابط صورة خارجية ثانية..." className="rounded-xl h-11 font-bold text-xs" />
+                                  </div>
+
+                                  <div className="space-y-1 md:col-span-2">
+                                    <Label className="text-[10px] font-black text-slate-400">وصف تسويقي وتفصيلي للوحدة السكنية</Label>
+                                    <Textarea value={activeDetailUnitDescription} onChange={(e) => setActiveDetailUnitDescription(e.target.value)} placeholder="اكتب هنا سرداً ترويجياً جذاباً ومفصلاً يظهر بالصفحة الأولى..." className="rounded-xl font-bold text-xs min-h-[80px]" />
+                                  </div>
+
+                                  <div className="space-y-1 md:col-span-2">
                                     <Label className="text-[10px] font-black text-slate-400">رابط صورة مخطط الطابق الداخلي (House Plan)</Label>
                                     <Input value={activeDetailHousePlan} onChange={(e) => setActiveDetailHousePlan(e.target.value)} placeholder="أدخل رابط صورة المخطط الداخلي..." className="rounded-xl h-11 font-bold text-xs" />
                                   </div>
@@ -1916,30 +2127,49 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                       <div className="flex flex-col items-center gap-8 bg-slate-900 p-8 rounded-[2rem] overflow-x-auto">
                         
-                        {/* الصفحة الأولى: الصفحة التسويقية الرئيسية للعلامة التجارية - مستوحاة من التصميم الجذاب للبروشور */}
+                        {/* الصفحة الأولى: الصفحة التسويقية الرئيسية للعلامة التجارية */}
                         <div 
-                          className="bg-white text-right relative shadow-2xl flex flex-col justify-between p-16 overflow-hidden shrink-0 border"
+                          className="bg-white text-right relative shadow-2xl flex flex-col justify-between p-16 overflow-hidden shrink-0"
                           style={{ 
                             width: '210mm', 
                             height: '297mm', 
                             fontFamily: 'Cairo, sans-serif' 
                           }}
                         >
-                          {/* الخلفية والأشكال الهندسية المائلة (Geometric Clip-paths) مثل البروشور المرفق */}
-                          <div className="absolute top-0 left-0 right-0 h-44 bg-slate-100/50 -z-10 transform -skew-y-3 origin-top-left" />
-                          
-                          {/* الهياكل الهندسية الجذابة باللون الأخضر/الذهبي والرمادي الداكن في الزاوية العلوية واليسرى */}
-                          <div className="absolute top-0 left-0 w-48 h-48 bg-slate-800 -translate-y-16 -translate-x-16 rotate-45 -z-10" />
-                          <div className="absolute top-0 right-0 w-full h-8" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
+                          {/* الهيكل التخطيطي الحقيقي (Layout) المختار من لوحة التحكم */}
+                          {activeBrochureConfig.selectedTemplate === 'modern_dark' ? (
+                            // الهيكل الثاني (Modern Dark): تخطيط الألوان الملوكي واللوحات الفلات غير المتداخلة
+                            <div className="absolute inset-0 bg-slate-50 -z-20">
+                              <div className="absolute top-0 right-0 w-1/3 h-full -z-10" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
+                              <div className="absolute bottom-10 left-12 w-32 h-1 bg-slate-900/10" />
+                            </div>
+                          ) : activeBrochureConfig.selectedTemplate === 'prestige_blue' ? (
+                            // الهيكل الثالث (Prestige Blue): انقسام غير متماثل في الخلفية
+                            <div className="absolute inset-0 bg-white -z-20">
+                              <div className="absolute top-0 left-0 right-0 h-[320px] -z-10" style={{ backgroundColor: activeBrochureConfig.secondaryColor }} />
+                              <div className="absolute top-[320px] left-0 right-0 h-2" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
+                            </div>
+                          ) : activeBrochureConfig.selectedTemplate === 'emerald_garden' ? (
+                            // الهيكل الرابع (Emerald Garden): إطار داخلي فلات أنيق ومعاصر
+                            <div className="absolute inset-0 bg-stone-50 p-6 -z-20">
+                              <div className="w-full h-full border -z-10" style={{ borderColor: `${activeBrochureConfig.primaryColor}20` }} />
+                            </div>
+                          ) : (
+                            // الهيكل الأول الافتراضي (Classic Gold): تخطيط هندسي حديث ومساحات مائلة
+                            <div className="absolute inset-0 bg-white -z-20">
+                              <div className="absolute top-0 left-0 right-0 h-44 bg-slate-100/50 -z-10 transform -skew-y-3 origin-top-left" />
+                              <div className="absolute top-0 right-0 w-full h-8" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
+                            </div>
+                          )}
 
-                          {/* الهيدر والعلامات التجارية */}
+                          {/* الهيدر والعلامات التجارية بدون إطارات عميقة */}
                           <div className="flex justify-between items-center z-10">
                             {activeBrochureConfig.marketingLogo ? (
                               <img src={activeBrochureConfig.marketingLogo} alt="المركز التسويقي" className="h-16 object-contain" />
                             ) : (
                               <div className="flex items-center gap-2">
                                 <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black">M</div>
-                                <span className="font-black text-xs text-slate-800">{session?.user?.email || 'المركز التسويقي المعتمد'}</span>
+                                <span className="font-black text-xs text-slate-800">المركز التسويقي المعتمد</span>
                               </div>
                             )}
 
@@ -1953,8 +2183,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             )}
                           </div>
 
-                          {/* منتصف الصفحة الأولى: شعار وصورة ترويجية فخمة مع الأشكال المائلة من الصورة المرفقة */}
-                          <div className="my-auto space-y-10 relative">
+                          {/* منتصف الصفحة الأولى: شعار وصورة ترويجية فخمة ومساحة وصف وصور إضافية */}
+                          <div className="my-auto space-y-8 relative z-10">
                             <div className="space-y-4">
                               <div className="inline-block px-4 py-1.5 rounded-full text-xs font-black tracking-widest text-white" style={{ backgroundColor: activeBrochureConfig.primaryColor }}>
                                 بروشور مبيعات رسمي
@@ -1971,32 +2201,53 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </p>
                             </div>
 
-                            {/* صورة الواجهة الخارجية الكبرى للوحدة مع التصميم الهندسي المشطوف */}
-                            <div className="relative rounded-[2rem] overflow-hidden border-[10px] shadow-2xl border-white group" style={{ height: '380px' }}>
-                              {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.unitImage ? (
-                                <img src={activeBrochureConfig.unitDetails[selectedSpecKey].unitImage} alt="الواجهة الخارجية" className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-400 gap-2">
-                                  <FileImage size={48} className="text-slate-300 animate-pulse" />
-                                  <span className="text-xs font-black">يرجى إضافة رابط صورة الواجهة الخارجية للصنف لعرضها هنا</span>
+                            {/* الوصف التسويقي الإضافي المكتوب */}
+                            {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.unitDescription && (
+                              <p className="text-sm font-semibold text-slate-600 leading-relaxed bg-slate-50/80 p-4 rounded-xl border border-slate-100 max-w-3xl">
+                                {activeBrochureConfig.unitDetails[selectedSpecKey].unitDescription}
+                              </p>
+                            )}
+
+                            {/* صور الواجهة الخارجية الفلات والعصرية بدون تظليل أو إطارات Legos عميقة */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+                              {/* الصورة الأولى الأساسية */}
+                              <div className={cn(
+                                "relative overflow-hidden rounded-2xl bg-slate-100", 
+                                activeBrochureConfig.unitDetails?.[selectedSpecKey]?.unitImage2 ? "md:col-span-8 h-[280px]" : "md:col-span-12 h-[340px]"
+                              )}>
+                                {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.unitImage ? (
+                                  <img src={activeBrochureConfig.unitDetails[selectedSpecKey].unitImage} alt="الواجهة الخارجية" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                                    <FileImage size={40} className="text-slate-300" />
+                                    <span className="text-xs font-bold">يرجى إضافة رابط صورة الواجهة الخارجية</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* الصورة الثانية الاختيارية */}
+                              {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.unitImage2 && (
+                                <div className="md:col-span-4 h-[280px] relative overflow-hidden rounded-2xl bg-slate-100">
+                                  <img src={activeBrochureConfig.unitDetails[selectedSpecKey].unitImage2} alt="الواجهة الخارجية الثانية" className="w-full h-full object-cover" />
                                 </div>
                               )}
-                              
-                              {/* شريط معلومات شطف أخضر في الأسفل يحاكي تصميم البروشور */}
-                              <div className="absolute bottom-0 right-0 left-0 bg-slate-900/90 text-white p-6 backdrop-blur-sm flex justify-between items-center">
-                                <div>
-                                  <span className="text-xs font-bold text-slate-400">التصميم المعماري الفاخر</span>
-                                  <h4 className="text-lg font-black" style={{ color: activeBrochureConfig.primaryColor }}>فئة الوحدة السكنية: {selectedSpecKey || 'غير محدد'}</h4>
-                                </div>
-                                <div className="text-left">
-                                  <span className="text-xs font-bold text-slate-400">المساحة الكلية</span>
-                                  <h4 className="text-lg font-black text-white">{selectedSpecKey ? `${selectedSpecKey} م²` : '---'}</h4>
-                                </div>
+                            </div>
+
+                            {/* شريط معلومات المساحة الكلية والفئة بتصميم فلات حديث مدمج */}
+                            <div className="bg-slate-900 text-white p-6 rounded-2xl flex justify-between items-center shadow-lg">
+                              <div>
+                                <h4 className="text-lg font-black" style={{ color: activeBrochureConfig.primaryColor }}>فئة الوحدة السكنية: {selectedSpecKey || 'غير محدد'}</h4>
+                              </div>
+                              <div className="text-left">
+                                <span className="text-xs font-bold text-slate-400">المساحة الكلية</span>
+                                <h4 className="text-xl font-black text-white">
+                                  {selectedSpecKey ? `${selectedSpecKey} م²` : '---'}
+                                </h4>
                               </div>
                             </div>
                           </div>
 
-                          {/* الفوتر ووسائل المبيعات الفخمة كالموجود بالبروشور */}
+                          {/* الفوتر مع البريد الإلكتروني للمسؤول الحالي قيد تسجيل الدخول */}
                           <div className="border-t pt-8 flex items-center justify-between text-xs font-bold text-slate-400 z-10 relative">
                             <div>{session?.user?.email || 'المركز التسويقي المعتمد'}</div>
                             <div className="flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-xl">
@@ -2030,7 +2281,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           </div>
 
                           {/* منتصف الصفحة الثانية: تفاصيل مالية + جدول الدفعات ومخطط الطابق */}
-                          <div className="my-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+                          <div className="my-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch z-10">
                             
                             {/* الجانب الأيمن: جدول المواصفات وتوزيع الغرف بالكامل + المزايا */}
                             <div className="space-y-6 flex flex-col justify-between">
@@ -2040,7 +2291,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   توزيع الغرف والمرافق الداخلية
                                 </h3>
                                 
-                                <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-md">
+                                <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
                                   <div className="p-3.5 flex items-center justify-between border-b bg-slate-900 text-white font-black text-xs">
                                     <span>المرفق السكني</span>
                                     <span>التفاصيل والمساحات</span>
@@ -2085,7 +2336,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   خطة وجدول الدفعات المالية المرنة
                                 </h3>
                                 
-                                <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-lg">
+                                <div className="rounded-2xl border border-slate-100 overflow-hidden shadow-md">
                                   <div className="p-3 flex items-center justify-between border-b bg-emerald-50/80 text-emerald-950 font-black text-xs">
                                     <span>الدفعة المستحقة</span>
                                     <span>القيمة والمبلغ المالي</span>
@@ -2125,7 +2376,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   <Maximize size={18} style={{ color: activeBrochureConfig.primaryColor }} />
                                   مخطط الطابق الهندسي (House Plan)
                                 </h3>
-                                <div className="border-4 border-double border-slate-200 rounded-[2rem] p-4 bg-slate-50/50 flex items-center justify-center overflow-hidden" style={{ height: '360px' }}>
+                                <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 flex items-center justify-center overflow-hidden" style={{ height: '360px' }}>
                                   {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.housePlan ? (
                                     <img src={activeBrochureConfig.unitDetails[selectedSpecKey].housePlan} alt="House Plan" className="w-full h-full object-contain rounded-xl" />
                                   ) : (
@@ -2137,7 +2388,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                 </div>
                               </div>
 
-                              <div className="p-6 bg-slate-900 rounded-[2rem] text-white space-y-3 shadow-xl">
+                              <div className="p-6 bg-slate-900 rounded-2xl text-white space-y-3">
                                 <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
                                   <Calendar className="text-amber-500" size={16} />
                                   <h4 className="font-black text-xs">احجز موعداً للمعاينة مع قسم المبيعات</h4>
@@ -2154,8 +2405,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                           </div>
 
-                          {/* الفوتر ووسائل المبيعات */}
-                          <div className="border-t pt-8 flex items-center justify-between text-xs font-bold text-slate-400">
+                          {/* الفوتر ووسائل المبيعات مع البريد الإلكتروني للمسؤول الحالي قيد تسجيل الدخول */}
+                          <div className="border-t pt-8 flex items-center justify-between text-xs font-bold text-slate-400 z-10 relative">
                             <div>{session?.user?.email || 'المركز التسويقي المعتمد'}</div>
                             <div>الصفحة 2</div>
                           </div>
