@@ -183,208 +183,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [activeDetailSizes, setActiveDetailSizes] = useState<string>('');
   const [activeDetailUnitImage, setActiveDetailUnitImage] = useState<string>('');
   const [activeDetailUnitImage2, setActiveDetailUnitImage2] = useState<string>('');
-  const<dyad-write path="src/pages/Admin.tsx" description="إعادة بناء وتكملة محرك البروشورات بالكامل ليوفر قوالب تخطيطية هيكلية حقيقية وجذابة (Layouts)، مع إزالة الإطارات العميقة وبناء تصميم عصري، وإضافة خيار صورة ثانية ووصف للوحدة، وحساب المساحة الكلية بدقة من المدخلات">
-"use client";
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Project, MapElement } from '@/types/project';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { 
-  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
-  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
-  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
-  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
-  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
-  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, File<dyad-write path="src/pages/Admin.tsx" description="إعادة تصميم محرك البروشورات وتعديل النصوص وحذف المدفوعات غير المطلوبة وإضافة صورة ووصف إضافي مع بناء layouts تخطيطية حقيقية بالكامل">
-"use client";
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Project, MapElement } from '@/types/project';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { 
-  Plus, Layout, ArrowRight, Settings2, Map as MapIcon, Trash2, Edit2, 
-  FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Save, LogOut, 
-  Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
-  User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
-  Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
-  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage, CreditCard, Calendar,
-  Image as ImageIcon
-} from 'lucide-react';
-import MapEditor from '@/components/MapEditor';
-import { showSuccess, showError } from '@/utils/toast';
-import { Link } from 'react-router-dom';
-import { supabase } from "@/integrations/supabase/client";
-import * as XLSX from 'xlsx';
-import { cn } from '@/lib/utils';
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-
-interface AdminProps {
-  projects: Project[];
-  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
-  setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
-  housesData: Record<string, any>;
-}
-
-interface BrochureConfig {
-  primaryColor?: string;
-  secondaryColor?: string;
-  slogan?: string;
-  phone?: string;
-  phone2?: string;
-  marketingLogo?: string;
-  projectLogo?: string;
-  selectedTemplate?: string;
-  advantages?: Record<string, string[]>;
-  unitDetails?: Record<string, { 
-    rooms?: string; 
-    roomsSizes?: string; 
-    unitImage?: string; 
-    unitImage2?: string;
-    unitDescription?: string;
-    housePlan?: string;
-    totalPrice?: string;
-    contractAmount?: string;
-    paymentDuration?: string;
-    firstInstallment?: string;
-    paymentPlanDetails?: string;
-  }>;
-}
-
-const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
-  <div className="flex items-center justify-between gap-4">
-    <Label className="text-xs font-bold text-slate-600">{label}</Label>
-    <Input value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} className="w-16 h-10 text-center font-black rounded-lg border-slate-200" maxLength={2} />
-  </div>
-);
-
-const normalizeArabicName = (name: string): string => {
-  if (!name) return "";
-  return name
-    .trim()
-    .replace(/[\u064B-\u065F]/g, "") // إزالة الحركات
-    .replace(/[أإآ]/g, "ا")          // توحيد الألفات
-    .replace(/ة/g, "ه")              // توحيد التاء المربوطة
-    .replace(/[ىي]/g, "ي")           // توحيد الياء والألف المقصورة
-    .replace(/\s+/g, "");            // إزالة المسافات
-};
-
-const safeDbCall = async <T,>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
-  try {
-    return await fn();
-  } catch (error) {
-    if (retries <= 1) throw error;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    return safeDbCall(fn, retries - 1, delay * 1.5);
-  }
-};
-
-const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminProps) => {
-  const [session, setSession] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
-  const [isEditingMainMap, setIsEditingMainMap] = useState(false);
-  const [mainMapData, setMainMapData] = useState<any>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
-  const [showSalesUpdate, setShowSalesUpdate] = useState(false);
-  const [showMarketingCenters, setShowMarketingCenters] = useState(false);
-  const [showDatabaseInspector, setShowDatabaseInspector] = useState(false);
-  const [showBrochureDesigner, setShowBrochureDesigner] = useState(false);
-  const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
-  const [isSavingMap, setIsSavingMap] = useState(false);
-  
-  const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
-  const [newCenter, setNewCenter] = useState({ name: '', password: '', type: '', allowed_projects: [] as string[] });
-  const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
-  
-  // أنواع الأقسام وتعديلها
-  const [departmentTypes, setDepartmentTypes] = useState<string[]>([]);
-  const [newDeptType, setNewDeptType] = useState('');
-  const [editingDeptTypeOldName, setEditingDeptTypeOldName] = useState<string | null>(null);
-  const [editingDeptTypeName, setEditingDeptTypeName] = useState('');
-
-  const [deptPermissions, setDeptPermissions] = useState<Record<string, any>>({});
-  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-  const [processLogs, setProcessLogs] = useState<string[]>([]);
-
-  // خيار المزامنة الكاملة الذكية (السيناريو الثاني)
-  const [isSmartFullSync, setIsSmartFullSync] = useState(true);
-
-  const [excelMapping, setExcelMapping] = useState({
-    cityCol: 'A',
-    unitCol: 'I',
-    nameCol: 'C',
-    phoneCol: 'D',
-    dateCol: 'E',
-    priceCol: 'F',
-    currencyCol: 'G',
-    taboNumCol: 'J',
-    taboStatusCol: 'K',
-    handoverDateCol: 'L'
-  });
-  const [investmentNames, setInvestmentNames] = useState<string[]>([]);
-  const [newInvestmentName, setNewInvestmentName] = useState('');
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
-
-  // إعدادات مصمم البروشورات
-  const [brochureConfigs, setBrochureConfigs] = useState<Record<string, BrochureConfig>>({});
-  const [selectedBrochureProject, setSelectedBrochureProject] = useState<string>('');
-  const [selectedProjectElements, setSelectedProjectElements] = useState<MapElement[]>([]);
-  const [activeBrochureConfig, setActiveBrochureConfig] = useState<BrochureConfig>({
-    primaryColor: '#16a34a', // أخضر هندسي حديث
-    secondaryColor: '#ffffff', 
-    slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
-    phone: '',
-    phone2: '',
-    marketingLogo: '',
-    projectLogo: '',
-    selectedTemplate: 'classic_gold',
-    advantages: {},
-    unitDetails: {}
-  });
-  
-  // المعاينة والتعديل التلقائي المكتشف
-  const [selectedSpecKey, setSelectedSpecKey] = useState<string>('');
-  const [newAdvantageText, setNewAdvantageText] = useState<string>('');
-  const [activeDetailRooms, setActiveDetailRooms] = useState<string>('');
-  const [activeDetailSizes, setActiveDetailSizes] = useState<string>('');
-  const [activeDetailUnitImage, setActiveDetailUnitImage] = useState<string>('');
-  const [activeDetailUnitImage2, setActiveDetailUnitImage2] = useState<string>('');
   const [activeDetailUnitDescription, setActiveDetailUnitDescription] = useState<string>('');
   const [activeDetailHousePlan, setActiveDetailHousePlan] = useState<string>('');
   
@@ -1755,6 +1553,18 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   ];
 
+  // حساب المساحة الفعلية للصنف بناءً على ما تم تسجيله كصنف قياسي بالخلفية
+  const resolvedSpecArea = useMemo(() => {
+    if (!selectedSpecKey || !selectedBrochureProject) return '';
+    const config = projectConfigs[selectedBrochureProject];
+    if (config && config.houseTypeAreas) {
+      const area = config.houseTypeAreas[selectedSpecKey.toUpperCase()];
+      if (area) return `${area} م²`;
+    }
+    // في حال عدم العثور عليها أو كانت شقة معتمدة بالمخطط، نستخدم نفس قيمة المفتاح
+    return `${selectedSpecKey} م²`;
+  }, [selectedSpecKey, selectedBrochureProject, projectConfigs]);
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center font-bold" dir="rtl">
@@ -2241,7 +2051,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               <div className="text-left">
                                 <span className="text-xs font-bold text-slate-400">المساحة الكلية</span>
                                 <h4 className="text-xl font-black text-white">
-                                  {selectedSpecKey ? `${selectedSpecKey} م²` : '---'}
+                                  {resolvedSpecArea}
                                 </h4>
                               </div>
                             </div>
