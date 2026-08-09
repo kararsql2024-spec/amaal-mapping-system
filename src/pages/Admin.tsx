@@ -723,10 +723,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  // إضافة ميزة ترويجية للصنف المختار تلقائياً
-  const handleAddAdvantage = () => {
-    if (!selectedSpecKey) {
-      showError("يرجى اختيار الصنف أو المساحة المكتشفة أولاً من القائمة");
+  // إضافة ميزة ترويجية للصنف المختار وحفظها تلقائياً بالخادم
+  const handleAddAdvantage = async () => {
+    if (!selectedBrochureProject || !selectedSpecKey) {
+      showError("يرجى اختيار المشروع والصنف أو المساحة أولاً");
       return;
     }
     if (!newAdvantageText.trim()) {
@@ -750,10 +750,24 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     
     setActiveBrochureConfig(updatedConfig);
     setNewAdvantageText('');
-    showSuccess(`تم إضافة الميزة بنجاح لصنف ${selectedSpecKey}`);
+
+    const updatedConfigs = {
+      ...brochureConfigs,
+      [selectedBrochureProject]: updatedConfig
+    };
+    setBrochureConfigs(updatedConfigs);
+
+    try {
+      const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
+      if (error) throw error;
+      showSuccess(`تم إضافة الميزة بنجاح وحفظها لصنف ${selectedSpecKey}`);
+    } catch (e) {
+      showError("فشل الحفظ المباشر لقاعدة البيانات");
+    }
   };
 
-  const handleDeleteAdvantage = (key: string, idx: number) => {
+  const handleDeleteAdvantage = async (key: string, idx: number) => {
+    if (!selectedBrochureProject) return;
     const currentAdvantages = { ...(activeBrochureConfig.advantages || {}) };
     const list = currentAdvantages[key] || [];
     const updatedList = list.filter((_, i) => i !== idx);
@@ -764,17 +778,32 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       currentAdvantages[key] = updatedList;
     }
 
-    setActiveBrochureConfig({
+    const updatedConfig = {
       ...activeBrochureConfig,
       advantages: currentAdvantages
-    });
-    showSuccess(`تم حذف الميزة`);
+    };
+
+    setActiveBrochureConfig(updatedConfig);
+
+    const updatedConfigs = {
+      ...brochureConfigs,
+      [selectedBrochureProject]: updatedConfig
+    };
+    setBrochureConfigs(updatedConfigs);
+
+    try {
+      const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
+      if (error) throw error;
+      showSuccess(`تم حذف الميزة وتحديث قاعدة البيانات بنجاح`);
+    } catch (e) {
+      showError("فشل في تحديث قاعدة البيانات");
+    }
   };
 
-  // حفظ تفاصيل غرف ومساحات خاصة للصنف المختار تلقائياً
-  const handleSaveUnitDetail = () => {
-    if (!selectedSpecKey) {
-      showError("يرجى اختيار الصنف أو المساحة المكتشفة أولاً من القائمة");
+  // حفظ تفاصيل غرف ومساحات خاصة للصنف المختار ومزامنتها تلقائياً وفورياً بقاعدة البيانات
+  const handleSaveUnitDetail = async () => {
+    if (!selectedBrochureProject || !selectedSpecKey) {
+      showError("يرجى اختيار المشروع والصنف أو المساحة المكتشفة أولاً");
       return;
     }
     const currentDetails = { ...(activeBrochureConfig.unitDetails || {}) };
@@ -786,22 +815,43 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       housePlan: activeDetailHousePlan.trim()
     };
 
-    setActiveBrochureConfig({
+    const updatedConfig = {
       ...activeBrochureConfig,
       unitDetails: currentDetails
-    });
+    };
 
-    showSuccess(`تم حفظ تفاصيل ومساحات الصنف ${selectedSpecKey} بنجاح!`);
+    // 1. تحديث الحالة المحلية للتصميم الفردي النشط
+    setActiveBrochureConfig(updatedConfig);
+
+    // 2. تحديث الخارطة الكلية للبروشورات محلياً
+    const updatedConfigs = {
+      ...brochureConfigs,
+      [selectedBrochureProject]: updatedConfig
+    };
+    setBrochureConfigs(updatedConfigs);
+
+    // 3. كتابة ومزامنة وحفظ التحديثات مباشرة وحالاً في جدول الإعدادات بالخادم لتفادي فقدان البيانات عند التحديث
+    try {
+      const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
+      if (error) throw error;
+      showSuccess(`🎉 تم حفظ وتزامن تفاصيل ومخطط صنف ${selectedSpecKey} بقاعدة البيانات بأمان!`);
+    } catch (e) {
+      console.error(e);
+      showError("خطأ: فشل حفظ وتأكيد تفاصيل الوحدة بقاعدة البيانات");
+    }
   };
 
-  const handleDeleteUnitDetail = (key: string) => {
+  const handleDeleteUnitDetail = async (key: string) => {
+    if (!selectedBrochureProject) return;
     const currentDetails = { ...(activeBrochureConfig.unitDetails || {}) };
     delete currentDetails[key];
 
-    setActiveBrochureConfig({
+    const updatedConfig = {
       ...activeBrochureConfig,
       unitDetails: currentDetails
-    });
+    };
+
+    setActiveBrochureConfig(updatedConfig);
     
     if (selectedSpecKey === key) {
       setActiveDetailRooms('');
@@ -809,7 +859,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       setActiveDetailUnitImage('');
       setActiveDetailHousePlan('');
     }
-    showSuccess(`تم حذف تفاصيل الصنف ${key}`);
+
+    const updatedConfigs = {
+      ...brochureConfigs,
+      [selectedBrochureProject]: updatedConfig
+    };
+    setBrochureConfigs(updatedConfigs);
+
+    try {
+      const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
+      if (error) throw error;
+      showSuccess(`تم حذف تفاصيل الصنف ${key} ومزامنة الحذف بالخادم`);
+    } catch (e) {
+      showError("فشل مزامنة الحذف بالخادم");
+    }
   };
 
   // معالجة رفع وتحديث المبيعات من ملف Excel مع خيار المزامنة الكاملة الذكية (السيناريو الثاني)
