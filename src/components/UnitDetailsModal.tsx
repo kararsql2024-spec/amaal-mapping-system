@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Ruler, AlertTriangle } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, MessageSquare, Clock, ShieldCheck, Home as HomeIcon, Store, Ruler, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Note {
@@ -38,9 +38,10 @@ interface UnitDetailsModalProps {
   initialData?: any;
   permissions: any;
   unitSize?: number; // حقل المساحة الممرر ديناميكياً من العمارة أو المنزل
+  projectId?: string; // معرف المشروع الممرر ديناميكياً لتشغيل البروشور
 }
 
-const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, permissions, unitSize }: UnitDetailsModalProps) => {
+const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialData, permissions, unitSize, projectId }: UnitDetailsModalProps) => {
   const [formData, setFormData] = useState({
     status: 'available',
     name: '',
@@ -233,14 +234,31 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
   // لا يمكن التعديل إذا كانت الوحدة مباعة/استثمار، أو إذا لم يكن المستخدم الحالي هو منشئ الحجز
   const canEdit = permissions.canEditUnitData && !isSoldOrInvestment && isBookingOwner;
 
+  // فتح صفحة بروشور مستقلة للوحدة السكنية
+  const handleOpenBrochure = () => {
+    if (projectId && unitId) {
+      window.open(`/brochure/${projectId}/${unitId}`, '_blank');
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl" dir="rtl">
-        <DialogHeader className="bg-blue-600 p-6 text-white">
+        <DialogHeader className="bg-blue-600 p-6 text-white flex flex-row items-center justify-between">
           <DialogTitle className="text-2xl font-black flex items-center gap-3">
             <HomeIcon size={24} />
             تفاصيل الوحدة: {unitLabel || unitId}
           </DialogTitle>
+          
+          {/* زر عرض بروشور الوحدة السكنية في نافذة مستقلة */}
+          {projectId && unitId && (
+            <Button 
+              onClick={handleOpenBrochure}
+              className="bg-white/10 hover:bg-white/20 text-white font-black text-xs gap-1.5 h-10 px-4 rounded-xl border border-white/20 shrink-0 ml-6"
+            >
+              <FileSpreadsheet size={14} /> عرض بروشور الوحدة السكنية
+            </Button>
+          )}
         </DialogHeader>
 
         <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">

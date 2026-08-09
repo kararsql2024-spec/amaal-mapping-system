@@ -7,6 +7,7 @@ import React, { useState, useEffect } from "react";
 import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import Reports from "./pages/Reports";
+import Brochure from "./pages/Brochure";
 import NotFound from "./pages/NotFound";
 import { Project } from "./types/project";
 import { supabase } from "@/integrations/supabase/client";
@@ -91,6 +92,10 @@ const App = () => {
                   housesData={housesData} 
                 />
               } 
+            />
+            <Route 
+              path="/brochure/:projectId/:unitId" 
+              element={<Brochure />} 
             />
             <Route path="*" element={<NotFound />} />
           </Routes>

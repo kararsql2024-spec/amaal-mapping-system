@@ -1323,6 +1323,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           initialData={selectedElementId ? housesData[selectedElementId] : undefined}
           permissions={permissions}
           unitSize={selectedElement && selectedElement.type === 'house' ? getHouseArea(selectedElement) : undefined}
+          projectId={selectedProjectId || undefined}
         />
         <TowerDetailsModal 
           isOpen={isTowerModalOpen} 

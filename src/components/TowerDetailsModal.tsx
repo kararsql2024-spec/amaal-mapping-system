@@ -19,6 +19,7 @@ interface TowerDetailsModalProps {
   onSaveApartment: (apartmentKey: string, data: any) => void;
   permissions?: any;
   initialSelectedApartmentKey?: string | null; // حقل جديد لتحديد الشقة المفتوحة تلقائياً عند البحث
+  projectId?: string; // معرف المشروع الممرر ديناميكياً لتشغيل البروشور
 }
 
 const TowerDetailsModal = ({ 
@@ -28,7 +29,8 @@ const TowerDetailsModal = ({
   housesData, 
   onSaveApartment, 
   permissions,
-  initialSelectedApartmentKey 
+  initialSelectedApartmentKey,
+  projectId
 }: TowerDetailsModalProps) => {
   const [selectedFloor, setSelectedFloor] = useState(1);
   const [selectedAptKey, setSelectedAptKey] = useState<string | null>(null);
@@ -235,6 +237,7 @@ const TowerDetailsModal = ({
         initialData={selectedAptKey ? housesData[selectedAptKey] : undefined}
         permissions={permissions}
         unitSize={selectedAptKey ? getAptSize(parseInt(selectedAptKey.split('_F')[1].split('_')[0]), parseInt(selectedAptKey.split('_A')[1])) : undefined}
+        projectId={projectId}
       />
     </>
   );
