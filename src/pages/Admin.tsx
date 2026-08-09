@@ -1878,12 +1878,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                     <Input value={activeDetailContractAmount} onChange={(e) => setActiveDetailContractAmount(e.target.value)} placeholder="مثال: 25,000,000 د.ع" className="rounded-xl h-11 font-bold text-xs" />
                                   </div>
 
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-black text-slate-400">الدفعة الأولى المستحقة</Label>
-                                    <Input value={activeDetailFirstInstallment} onChange={(e) => setActiveDetailFirstInstallment(e.target.value)} placeholder="مثال: 15,000,000 د.ع" className="rounded-xl h-11 font-bold text-xs" />
-                                  </div>
-
-                                  <div className="space-y-1">
+                                  <div className="space-y-1 md:col-span-2">
                                     <Label className="text-[10px] font-black text-slate-400">مدة التسديد وجدولة الدفعات</Label>
                                     <Input value={activeDetailPaymentDuration} onChange={(e) => setActiveDetailPaymentDuration(e.target.value)} placeholder="مثال: أقساط شهرية ميسرة على 5 سنوات" className="rounded-xl h-11 font-bold text-xs" />
                                   </div>
@@ -1944,7 +1939,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             ) : (
                               <div className="flex items-center gap-2">
                                 <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black">M</div>
-                                <span className="font-black text-xs text-slate-800">الشركة العقارية للتطوير</span>
+                                <span className="font-black text-xs text-slate-800">{session?.user?.email || 'المركز التسويقي المعتمد'}</span>
                               </div>
                             )}
 
@@ -1965,7 +1960,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                 بروشور مبيعات رسمي
                               </div>
                               <h1 className="text-5xl font-black text-slate-900 leading-tight">
-                                اكتشف فيلا أحلامك <br />
+                                اكتشف وحدتك السكنية <br />
                                 <span style={{ color: activeBrochureConfig.primaryColor }}>
                                   {projects.find(p => p.id === selectedBrochureProject)?.name || 'اسم المشروع السكني'}
                                 </span>
@@ -1994,7 +1989,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   <h4 className="text-lg font-black" style={{ color: activeBrochureConfig.primaryColor }}>فئة الوحدة السكنية: {selectedSpecKey || 'غير محدد'}</h4>
                                 </div>
                                 <div className="text-left">
-                                  <span className="text-xs font-bold text-slate-400">المساحة التقريبية</span>
+                                  <span className="text-xs font-bold text-slate-400">المساحة الكلية</span>
                                   <h4 className="text-lg font-black text-white">{selectedSpecKey ? `${selectedSpecKey} م²` : '---'}</h4>
                                 </div>
                               </div>
@@ -2003,7 +1998,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                           {/* الفوتر ووسائل المبيعات الفخمة كالموجود بالبروشور */}
                           <div className="border-t pt-8 flex items-center justify-between text-xs font-bold text-slate-400 z-10 relative">
-                            <div>بروشور رسمي مرخص للتسويق العقاري</div>
+                            <div>{session?.user?.email || 'المركز التسويقي المعتمد'}</div>
                             <div className="flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-xl">
                               <span className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
                               <span className="text-slate-800 font-black">تاريخ الإصدار: {new Date().toLocaleDateString('ar-EG')}</span>
@@ -2065,27 +2060,25 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                 </div>
                               </div>
 
-                              {/* المزايا الإضافية الفاخرة */}
-                              <div className="space-y-3">
-                                <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
-                                  <Sparkle size={18} style={{ color: activeBrochureConfig.primaryColor }} />
-                                  مزايا ومواصفات تسويقية خاصة
-                                </h3>
-                                <div className="grid grid-cols-1 gap-2 bg-slate-50 p-4 rounded-2xl border">
-                                  {(activeBrochureConfig.advantages?.[selectedSpecKey] || [
-                                    "تشطيب ديلوكس نخب أول بمواد عازلة للحرارة والرطوبة",
-                                    "حدائق داخلية مصممة بنظام ري ذكي وتجهيزات ترفيهية",
-                                    "أنظمة حماية وكاميرات مراقبة ذكية متطورة"
-                                  ]).map((adv, idx) => (
-                                    <div key={idx} className="flex items-start gap-2 text-xs font-bold text-slate-700 leading-relaxed">
-                                      <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
-                                      <span>{adv}</span>
-                                    </div>
-                                  ))}
+                              {/* المزايا الخاصة - تظهر فقط في حال كان هناك ميزة مكتوبة */}
+                              {activeBrochureConfig.advantages?.[selectedSpecKey] && activeBrochureConfig.advantages[selectedSpecKey].length > 0 && (
+                                <div className="space-y-3">
+                                  <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                                    <Sparkle size={18} style={{ color: activeBrochureConfig.primaryColor }} />
+                                    المزايا الخاصة
+                                  </h3>
+                                  <div className="grid grid-cols-1 gap-2 bg-slate-50 p-4 rounded-2xl border">
+                                    {activeBrochureConfig.advantages[selectedSpecKey].map((adv, idx) => (
+                                      <div key={idx} className="flex items-start gap-2 text-xs font-bold text-slate-700 leading-relaxed">
+                                        <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: activeBrochureConfig.primaryColor }} />
+                                        <span>{adv}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
-                              {/* جدول الدفعات والأسعار والمبالغ كما طلب العميل بالتمام والكمال */}
+                              {/* جدول الدفعات والأسعار والمبالغ */}
                               <div className="space-y-3">
                                 <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
                                   <CreditCard size={18} style={{ color: activeBrochureConfig.primaryColor }} />
@@ -2109,13 +2102,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                       {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.contractAmount || 'لم يحدد بعد'}
                                     </span>
                                   </div>
-                                  <div className="p-3 flex items-center justify-between border-b text-xs font-bold">
-                                    <span className="text-slate-600">الدفعة الأولى المطلوبة:</span>
-                                    <span className="font-black text-slate-900">
-                                      {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.firstInstallment || 'لم تحدد بعد'}
-                                    </span>
-                                  </div>
-                                  <div className="p-3 flex items-center justify-between text-xs font-bold bg-slate-50/50">
+                                  <div className="p-3 flex items-center justify-between text-xs font-bold">
                                     <span className="text-slate-600">مدة وتسهيلات التسديد:</span>
                                     <span className="font-black text-slate-800 text-right">
                                       {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.paymentDuration || 'لم تحدد خطة السداد بعد'}
@@ -2125,7 +2112,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                                 {activeBrochureConfig.unitDetails?.[selectedSpecKey]?.paymentPlanDetails && (
                                   <p className="text-[10px] font-bold text-slate-500 leading-relaxed bg-amber-50/50 p-2.5 rounded-xl border border-amber-100">
-                                    ⚠️ <strong>ملاحظات التقسيط:</strong> {activeBrochureConfig.unitDetails[selectedSpecKey].paymentPlanDetails}
+                                    ⚠️ <strong>ملاحظات:</strong> {activeBrochureConfig.unitDetails[selectedSpecKey].paymentPlanDetails}
                                   </p>
                                 )}
                               </div>
@@ -2156,7 +2143,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   <h4 className="font-black text-xs">احجز موعداً للمعاينة مع قسم المبيعات</h4>
                                 </div>
                                 <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
-                                  أنتم على بعد خطوة واحدة من حيازة فيلا المستقبل. تواصلوا مع مندوبينا لحفظ مواعيد الزيارات الميدانية.
+                                  أنتم على بعد خطوة واحدة من حيازة وحدتكم السكنية. تواصلوا مع مندوبينا لحفظ مواعيد الزيارات الميدانية.
                                 </p>
                                 <div className="flex flex-wrap gap-3 pt-1">
                                   {activeBrochureConfig.phone && <span className="text-xs font-black bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">📞 {activeBrochureConfig.phone}</span>}
@@ -2169,7 +2156,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                           {/* الفوتر ووسائل المبيعات */}
                           <div className="border-t pt-8 flex items-center justify-between text-xs font-bold text-slate-400">
-                            <div>شركة التطوير العقاري للمشاريع الحديثة</div>
+                            <div>{session?.user?.email || 'المركز التسويقي المعتمد'}</div>
                             <div>الصفحة 2</div>
                           </div>
                         </div>
