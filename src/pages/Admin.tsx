@@ -11,7 +11,8 @@ import {
   Store, Lock, Clock, Eraser, Terminal, RefreshCcw, Database, Search, 
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
-  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail
+  Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
+  FileText, Sparkle, Globe, Layers, Laptop
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -46,6 +47,15 @@ interface AdminProps {
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   setHousesData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   housesData: Record<string, any>;
+}
+
+interface BrochureConfig {
+  primaryColor?: string;
+  secondaryColor?: string;
+  slogan?: string;
+  phone?: string;
+  email?: string;
+  advantages?: Record<string, string[]>;
 }
 
 const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
@@ -91,6 +101,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [showSalesUpdate, setShowSalesUpdate] = useState(false);
   const [showMarketingCenters, setShowMarketingCenters] = useState(false);
   const [showDatabaseInspector, setShowDatabaseInspector] = useState(false);
+  const [showBrochureDesigner, setShowBrochureDesigner] = useState(false);
   const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
   const [isSavingMap, setIsSavingMap] = useState(false);
   
@@ -129,6 +140,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
+
+  // إعدادات مصمم البروشورات
+  const [brochureConfigs, setBrochureConfigs] = useState<Record<string, BrochureConfig>>({});
+  const [selectedBrochureProject, setSelectedBrochureProject] = useState<string>('');
+  const [activeBrochureConfig, setActiveBrochureConfig] = useState<BrochureConfig>({
+    primaryColor: '#b45309', // ذهبي فخم
+    secondaryColor: '#fef3c7', // بيج ناعم
+    slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
+    phone: '',
+    email: '',
+    advantages: {}
+  });
+  const [newAdvantageKey, setNewAdvantageKey] = useState<string>('');
+  const [newAdvantageText, setNewAdvantageText] = useState<string>('');
 
   // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
@@ -193,6 +218,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const configs = settingsData.find(s => s.key === 'project_configs');
           if (configs) setProjectConfigs(configs.value || {});
 
+          // تحميل إعدادات البروشورات
+          const brochure = settingsData.find(s => s.key === 'brochure_configs');
+          if (brochure) {
+            setBrochureConfigs(brochure.value || {});
+          }
+
           const teleConfig = settingsData.find(s => s.key === 'telegram_config');
           if (teleConfig) setTelegramConfig(prev => ({ ...prev, ...teleConfig.value }));
 
@@ -214,6 +245,21 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     fetchData();
   }, [session]);
+
+  // إدارة مزامنة إعدادات البروشور للمشروع المحدد
+  useEffect(() => {
+    if (selectedBrochureProject) {
+      const cfg = brochureConfigs[selectedBrochureProject] || {
+        primaryColor: '#b45309',
+        secondaryColor: '#fef3c7',
+        slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
+        phone: '',
+        email: '',
+        advantages: {}
+      };
+      setActiveBrochureConfig(cfg);
+    }
+  }, [selectedBrochureProject, brochureConfigs]);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -534,6 +580,68 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) {
       showError("فشل في تحديث القائمة");
     }
+  };
+
+  // حفظ إعدادات البروشور
+  const handleSaveBrochureConfig = async () => {
+    if (!selectedBrochureProject) return;
+    setIsSavingSettings(true);
+    try {
+      const updatedConfigs = {
+        ...brochureConfigs,
+        [selectedBrochureProject]: activeBrochureConfig
+      };
+      const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
+      if (error) throw error;
+      setBrochureConfigs(updatedConfigs);
+      showSuccess("تم حفظ تصميم البروشور للمشروع بنجاح!");
+    } catch (e) {
+      showError("فشل حفظ تصميم البروشور");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleAddAdvantage = () => {
+    if (!newAdvantageKey.trim() || !newAdvantageText.trim()) {
+      showError("يرجى ملء نوع الوحدة والميزة المطلوبة");
+      return;
+    }
+    const key = newAdvantageKey.trim().toUpperCase();
+    const txt = newAdvantageText.trim();
+    
+    const currentAdvantages = { ...(activeBrochureConfig.advantages || {}) };
+    const list = currentAdvantages[key] || [];
+    if (list.includes(txt)) {
+      showError("هذه الميزة مضافة بالفعل لهذا الصنف");
+      return;
+    }
+    currentAdvantages[key] = [...list, txt];
+    
+    setActiveBrochureConfig({
+      ...activeBrochureConfig,
+      advantages: currentAdvantages
+    });
+    setNewAdvantageText('');
+    showSuccess(`تم إضافة الميزة الترويجية لصنف ${key}`);
+  };
+
+  const handleDeleteAdvantage = (key: string, idx: number) => {
+    const currentAdvantages = { ...(activeBrochureConfig.advantages || {}) };
+    const list = currentAdvantages[key] || [];
+    const updatedList = list.filter((_, i) => i !== idx);
+    
+    if (updatedList.length === 0) {
+      delete currentAdvantages[key];
+    } else {
+      currentAdvantages[key] = updatedList;
+    }
+
+    setActiveBrochureConfig({
+      ...activeBrochureConfig,
+      advantages: currentAdvantages
+    });
+    showSuccess(`تم حذف الميزة من صنف ${key}`);
   };
 
   // معالجة رفع وتحديث المبيعات من ملف Excel مع خيار المزامنة الكاملة الذكية (السيناريو الثاني)
@@ -928,6 +1036,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     setShowSalesUpdate(false);
     setShowMarketingCenters(false);
     setShowDatabaseInspector(false);
+    setShowBrochureDesigner(false);
   };
 
   const startEditingMap = async (project: Project) => {
@@ -947,7 +1056,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
-  // دالة مساعدة سريعة لجلب جميع سجلات جدول الوحدات السكنية عبر التجليد التكراري المضمون بدون حدود
   const fetchAllHousesForBackup = async () => {
     let allHouses: any[] = [];
     let from = 0;
@@ -1121,7 +1229,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'showNotifications', label: 'عرض شريط الإشعارات الجانبي بالكامل' },
         { key: 'showStatsTable', label: 'عرض جدول الإحصائيات المفصلة السفلي بالكامل' },
         { key: 'showGeneralStats', label: 'عرض كارت الإحصائيات العام الجانبي بالكامل' },
-        { key: 'showSearchBox', label: 'رؤية واستخدام مربع البحث في الواجهة الرئيسية' },
+        { key: 'showSearchBox', label: 'رؤية واستخدم مربع البحث في الواجهة الرئيسية' },
         { key: 'showQuickPreview', label: 'رؤية وتفعيل كارت المعاينة السريعة للوحدات' },
         { key: 'canAccessReports', label: 'صلاحية الوصول إلى نافذة التقارير والتحليلات' },
         { key: 'showDiagnosticTerminal', label: 'رؤية لوحة تحليل الأداء الفورية (Realtime)' },
@@ -1253,16 +1361,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-8">
-        <header className="flex items-center justify-between bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+        <header className="flex flex-col lg:flex-row items-center justify-between gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100"><Settings2 className="text-white" /></div>
             <div><h1 className="text-2xl font-black text-slate-800">لوحة الإدارة</h1><p className="text-slate-500 font-medium">إدارة المشاريع والمخططات</p></div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setIsEditingMainMap(true)} className="rounded-xl gap-2 border-blue-200 text-blue-600 hover:bg-blue-50"><MapIcon size={18} /> تعديل المخطط العام</Button>
-            <Button variant={showDatabaseInspector ? "default" : "outline"} onClick={() => { setShowDatabaseInspector(!showDatabaseInspector); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showDatabaseInspector && "bg-blue-600 hover:bg-blue-700")}><Database size={18} /> النسخ الاحتياطي</Button>
-            <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowDatabaseInspector(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> الأقسام</Button>
-            <Button variant={showSalesUpdate ? "default" : "outline"} onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowDatabaseInspector(false); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}><FileSpreadsheet size={18} /> تحديث المبيعات</Button>
+            <Button variant={showBrochureDesigner ? "default" : "outline"} onClick={() => { setShowBrochureDesigner(!showBrochureDesigner); setShowDatabaseInspector(false); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showBrochureDesigner && "bg-amber-600 hover:bg-amber-700")}><Palette size={18} /> مصمم البروشورات</Button>
+            <Button variant={showDatabaseInspector ? "default" : "outline"} onClick={() => { setShowDatabaseInspector(!showDatabaseInspector); setShowBrochureDesigner(false); setShowMarketingCenters(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showDatabaseInspector && "bg-blue-600 hover:bg-blue-700")}><Database size={18} /> النسخ الاحتياطي</Button>
+            <Button variant={showMarketingCenters ? "default" : "outline"} onClick={() => { setShowMarketingCenters(!showMarketingCenters); setShowBrochureDesigner(false); setShowDatabaseInspector(false); setShowSalesUpdate(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showMarketingCenters && "bg-indigo-600 hover:bg-indigo-700")}><Store size={18} /> الأقسام</Button>
+            <Button variant={showSalesUpdate ? "default" : "outline"} onClick={() => { setShowSalesUpdate(!showSalesUpdate); setShowBrochureDesigner(false); setShowDatabaseInspector(false); setShowMarketingCenters(false); setIsCreating(false); setEditingProjectInfo(null); }} className={cn("rounded-xl gap-2", showSalesUpdate && "bg-emerald-600 hover:bg-emerald-700")}><FileSpreadsheet size={18} /> تحديث المبيعات</Button>
             <Link to="/"><Button variant="outline" className="rounded-xl gap-2"><Layout size={18} />عرض الموقع</Button></Link>
             <Button variant="ghost" onClick={handleLogout} className="rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 gap-2"><LogOut size={18} /> خروج</Button>
           </div>
@@ -1270,6 +1379,152 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-3 space-y-6">
+            
+            {showBrochureDesigner && (
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-8 animate-in fade-in slide-in-from-top-4">
+                <div className="flex items-center justify-between border-b pb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-amber-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-100"><Palette className="text-white" /></div>
+                    <div>
+                      <h2 className="text-2xl font-black text-slate-800">محرك تصميم البروشورات التسويقية</h2>
+                      <p className="text-xs font-bold text-slate-400 mt-0.5">تخصيص الهويات البصرية والمزايا الترويجية لبروشورات المبيعات لكل مشروع</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-wider">المشروع المستهدف للتصميم:</span>
+                    <Select value={selectedBrochureProject} onValueChange={setSelectedBrochureProject}>
+                      <SelectTrigger className="w-[220px] rounded-xl h-12 font-black border-slate-200 bg-slate-50/50">
+                        <SelectValue placeholder="اختر مشروع..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {projects.map(p => (
+                          <SelectItem key={p.id} value={p.id} className="font-bold">{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {selectedBrochureProject ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-1 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                      <h3 className="font-black text-lg text-slate-800 flex items-center gap-2">
+                        <Palette className="text-amber-600" size={18} /> الهوية البصرية والألوان
+                      </h3>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400 uppercase">اللون الأساسي للبروشور (العناوين والـ CTA)</Label>
+                          <div className="flex gap-2">
+                            <Input type="color" value={activeBrochureConfig.primaryColor || '#b45309'} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, primaryColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl cursor-pointer border-slate-200" />
+                            <Input value={activeBrochureConfig.primaryColor || '#b45309'} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, primaryColor: e.target.value })} className="flex-1 rounded-xl h-12 font-bold text-xs" />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400">اللون الثانوي للبروشور (خلفيات البطاقات والبطانات)</Label>
+                          <div className="flex gap-2">
+                            <Input type="color" value={activeBrochureConfig.secondaryColor || '#fef3c7'} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, secondaryColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl cursor-pointer border-slate-200" />
+                            <Input value={activeBrochureConfig.secondaryColor || '#fef3c7'} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, secondaryColor: e.target.value })} className="flex-1 rounded-xl h-12 font-bold text-xs" />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400">شعار / عبارة تسويقية فخمة للترويسة (Slogan)</Label>
+                          <Input value={activeBrochureConfig.slogan || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, slogan: e.target.value })} className="rounded-xl h-11 text-xs font-bold" placeholder="مثال: حيث ترتقي الرفاهية المعمارية..." />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400">رقم هاتف المبيعات المطبوع</Label>
+                          <div className="relative">
+                            <Phone className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                            <Input value={activeBrochureConfig.phone || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, phone: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="07XXXXXXXXX" />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-black text-slate-400">البريد الإلكتروني المطبوع</Label>
+                          <div className="relative">
+                            <Mail className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                            <Input value={activeBrochureConfig.email || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, email: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="sales@project.com" />
+                          </div>
+                        </div>
+
+                        <Button onClick={handleSaveBrochureConfig} disabled={isSavingSettings} className="w-full bg-slate-900 hover:bg-black rounded-xl h-11 font-black gap-2 mt-4 text-xs">
+                          <Save size={16} /> حفظ تصميم وتناسق المشروع
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-2 space-y-6">
+                      <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Sparkle className="text-amber-600 animate-spin-slow" size={20} />
+                          <h3 className="font-black text-lg text-slate-800">المزايا والمواصفات الترويجية المخصصة لكل صنف</h3>
+                        </div>
+                        <p className="text-xs font-bold text-slate-500 leading-relaxed">
+                          أضف نقاط قوة ومميزات إعلانية تظهر تلقائياً في البروشور بمجرد مطابقة صنف العقار للزبون (مثل: صنف المنازل G, D أو الشقق بمساحة 150 م²).
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2">
+                          <div className="md:col-span-4 space-y-1">
+                            <Label className="text-[10px] font-black text-slate-400">رمز الصنف أو المساحة (مثال: G, D, 150)</Label>
+                            <Input value={newAdvantageKey} onChange={(e) => setNewAdvantageKey(e.target.value)} placeholder="مثال: G" className="rounded-xl h-11 font-black text-center text-xs" />
+                          </div>
+                          <div className="md:col-span-6 space-y-1">
+                            <Label className="text-[10px] font-black text-slate-400">الميزة الترويجية الفخمة</Label>
+                            <Input value={newAdvantageText} onChange={(e) => setNewAdvantageText(e.target.value)} placeholder="مثال: حديقة ملكية أمامية واسعة مع مسبح مجهز" className="rounded-xl h-11 font-bold text-xs" onKeyDown={(e) => { if (e.key === 'Enter') handleAddAdvantage(); }} />
+                          </div>
+                          <div className="md:col-span-2 flex items-end">
+                            <Button onClick={handleAddAdvantage} className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-xl h-11 font-black text-xs gap-1">
+                              <Plus size={14} /> إضافة
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+                          {Object.entries(activeBrochureConfig.advantages || {}).map(([key, list]) => (
+                            <div key={key} className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2 shadow-sm">
+                              <div className="flex items-center justify-between border-b pb-2 mb-2">
+                                <span className="bg-indigo-50 text-indigo-700 px-3 py-0.5 rounded-full text-xs font-black">
+                                  صنف / مساحة: {key}
+                                </span>
+                              </div>
+                              
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {list.map((txt, i) => (
+                                  <div key={i} className="flex items-start justify-between gap-2 text-xs font-semibold text-slate-600 bg-slate-50/50 p-2 rounded-lg border">
+                                    <span className="flex items-start gap-1">
+                                      <span className="text-amber-500 mt-0.5 shrink-0">•</span>
+                                      <span className="leading-relaxed">{txt}</span>
+                                    </span>
+                                    <button onClick={() => handleDeleteAdvantage(key, i)} className="text-rose-500 hover:text-rose-700 p-1 rounded-md hover:bg-rose-50 shrink-0">
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          
+                          {Object.keys(activeBrochureConfig.advantages || {}).length === 0 && (
+                            <div className="col-span-2 py-12 text-center text-slate-400 font-bold text-xs border border-dashed rounded-2xl bg-white">
+                              لا توجد مميزات مسجلة بعد. أضف مواصفات الأصناف لكي يظهر البروشور بشكل تسويقي جذاب ومكتمل.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-slate-400 font-bold border rounded-3xl bg-slate-50/50">
+                    يرجى تحديد المشروع السكني المستهدف من الأعلى لتخصيص البروشور الخاص به.
+                  </div>
+                )}
+              </div>
+            )}
+
             {showDatabaseInspector && (
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-8 animate-in fade-in slide-in-from-top-4">
                 <div className="flex items-center justify-between border-b pb-6">
@@ -1567,7 +1822,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-6">
-                    {/* مفتاح تفعيل المزامنة الكاملة الذكية (السيناريو الثاني) مع شرح تفصيلي وواضح للتحكم بها من الإدارة */}
                     <div className="p-6 bg-blue-50/50 border border-blue-100 rounded-3xl flex items-start gap-4 shadow-sm animate-in fade-in">
                       <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-100 mt-1">
                         <Sparkles className="text-white w-5 h-5" />
@@ -1658,7 +1912,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               </div>
             )}
 
-            {!showDatabaseInspector && !showMarketingCenters && !showSalesUpdate && (
+            {!showBrochureDesigner && !showDatabaseInspector && !showMarketingCenters && !showSalesUpdate && (
               <>
                 <div className="flex items-center justify-between"><h2 className="text-xl font-bold">المشاريع الحالية</h2><Button onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800 }); }} className="bg-blue-600 hover:bg-blue-700 rounded-xl gap-2"><Plus size={18} />مشروع جديد</Button></div>
                 {(isCreating || editingProjectInfo) && (
