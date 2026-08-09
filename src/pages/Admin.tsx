@@ -12,7 +12,7 @@ import {
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
   Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
-  FileText, Sparkle, Globe, Layers, Laptop
+  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -54,8 +54,11 @@ interface BrochureConfig {
   secondaryColor?: string;
   slogan?: string;
   phone?: string;
-  email?: string;
+  phone2?: string;
+  marketingLogo?: string;
+  projectLogo?: string;
   advantages?: Record<string, string[]>;
+  unitDetails?: Record<string, { rooms?: string; roomsSizes?: string }>;
 }
 
 const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
@@ -149,11 +152,19 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     secondaryColor: '#fef3c7', // بيج ناعم
     slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
     phone: '',
-    email: '',
-    advantages: {}
+    phone2: '',
+    marketingLogo: '',
+    projectLogo: '',
+    advantages: {},
+    unitDetails: {}
   });
   const [newAdvantageKey, setNewAdvantageKey] = useState<string>('');
   const [newAdvantageText, setNewAdvantageText] = useState<string>('');
+  
+  // حقول تفاصيل الوحدة الخاصة
+  const [activeDetailKey, setActiveDetailKey] = useState<string>('');
+  const [activeDetailRooms, setActiveDetailRooms] = useState<string>('');
+  const [activeDetailSizes, setActiveDetailSizes] = useState<string>('');
 
   // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
@@ -254,8 +265,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         secondaryColor: '#fef3c7',
         slogan: 'حيث ترتقي الرفاهية المعمارية وتلتقي مع الهدوء والاستثمار المضمون',
         phone: '',
-        email: '',
-        advantages: {}
+        phone2: '',
+        marketingLogo: '',
+        projectLogo: '',
+        advantages: {},
+        unitDetails: {}
       };
       setActiveBrochureConfig(cfg);
     }
@@ -594,7 +608,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const { error } = await supabase.from('settings').upsert({ key: 'brochure_configs', value: updatedConfigs });
       if (error) throw error;
       setBrochureConfigs(updatedConfigs);
-      showSuccess("تم حفظ تصميم البروشور للمشروع بنجاح!");
+      showSuccess("تم حفظ وتعميم تصميم البروشور للمشروع بالكامل بنجاح!");
     } catch (e) {
       showError("فشل حفظ تصميم البروشور");
     } finally {
@@ -618,10 +632,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
     currentAdvantages[key] = [...list, txt];
     
-    setActiveBrochureConfig({
+    const updatedConfig = {
       ...activeBrochureConfig,
       advantages: currentAdvantages
-    });
+    };
+    
+    setActiveBrochureConfig(updatedConfig);
     setNewAdvantageText('');
     showSuccess(`تم إضافة الميزة الترويجية لصنف ${key}`);
   };
@@ -642,6 +658,42 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       advantages: currentAdvantages
     });
     showSuccess(`تم حذف الميزة من صنف ${key}`);
+  };
+
+  // إضافة تفاصيل غرف ومساحات خاصة لكل صنف
+  const handleAddUnitDetail = () => {
+    if (!activeDetailKey.trim()) {
+      showError("يرجى إدخال رمز الصنف أو المساحة");
+      return;
+    }
+    const key = activeDetailKey.trim().toUpperCase();
+    const currentDetails = { ...(activeBrochureConfig.unitDetails || {}) };
+    
+    currentDetails[key] = {
+      rooms: activeDetailRooms.trim(),
+      roomsSizes: activeDetailSizes.trim()
+    };
+
+    setActiveBrochureConfig({
+      ...activeBrochureConfig,
+      unitDetails: currentDetails
+    });
+
+    setActiveDetailKey('');
+    setActiveDetailRooms('');
+    setActiveDetailSizes('');
+    showSuccess(`تم حفظ التفاصيل والمساحات الخاصة بالصنف ${key}`);
+  };
+
+  const handleDeleteUnitDetail = (key: string) => {
+    const currentDetails = { ...(activeBrochureConfig.unitDetails || {}) };
+    delete currentDetails[key];
+
+    setActiveBrochureConfig({
+      ...activeBrochureConfig,
+      unitDetails: currentDetails
+    });
+    showSuccess(`تم حذف تفاصيل الصنف ${key}`);
   };
 
   // معالجة رفع وتحديث المبيعات من ملف Excel مع خيار المزامنة الكاملة الذكية (السيناريو الثاني)
@@ -1386,8 +1438,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-amber-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-100"><Palette className="text-white" /></div>
                     <div>
-                      <h2 className="text-2xl font-black text-slate-800">محرك تصميم البروشورات التسويقية</h2>
-                      <p className="text-xs font-bold text-slate-400 mt-0.5">تخصيص الهويات البصرية والمزايا الترويجية لبروشورات المبيعات لكل مشروع</p>
+                      <h2 className="text-2xl font-black text-slate-800">محرك تصميم البروشورات التسويقية الفاخرة</h2>
+                      <p className="text-xs font-bold text-slate-400 mt-0.5">تخصيص الهويات البصرية، أرقام المبيعات، ومواصفات وتفاصيل الوحدات السكنية لكل مشروع</p>
                     </div>
                   </div>
 
@@ -1407,13 +1459,30 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
 
                 {selectedBrochureProject ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-1 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    {/* عمود الخيارات (4 أشرطة) */}
+                    <div className="lg:col-span-4 p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-6 max-h-[850px] overflow-y-auto">
                       <h3 className="font-black text-lg text-slate-800 flex items-center gap-2">
-                        <Palette className="text-amber-600" size={18} /> الهوية البصرية والألوان
+                        <Palette className="text-amber-600" size={18} /> الهوية والأرقام
                       </h3>
 
                       <div className="space-y-4">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-black text-slate-400 uppercase">لوغو المركز التسويقي (رابط صورة)</Label>
+                          <div className="relative">
+                            <FileImage className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                            <Input value={activeBrochureConfig.marketingLogo || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, marketingLogo: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="أدخل رابط صورة اللوغو..." />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-black text-slate-400 uppercase">لوغو المشروع (رابط صورة)</Label>
+                          <div className="relative">
+                            <FileImage className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                            <Input value={activeBrochureConfig.projectLogo || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, projectLogo: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="أدخل رابط صورة لوغو المشروع..." />
+                          </div>
+                        </div>
+
                         <div className="space-y-2">
                           <Label className="text-xs font-black text-slate-400 uppercase">اللون الأساسي للبروشور (العناوين والـ CTA)</Label>
                           <div className="flex gap-2">
@@ -1423,83 +1492,81 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         </div>
 
                         <div className="space-y-2">
-                          <Label className="text-xs font-black text-slate-400">اللون الثانوي للبروشور (خلفيات البطاقات والبطانات)</Label>
+                          <Label className="text-xs font-black text-slate-400">اللون الثانوي للبروشور (الخلفيات والبطانات)</Label>
                           <div className="flex gap-2">
                             <Input type="color" value={activeBrochureConfig.secondaryColor || '#fef3c7'} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, secondaryColor: e.target.value })} className="w-12 h-12 p-1 rounded-xl cursor-pointer border-slate-200" />
                             <Input value={activeBrochureConfig.secondaryColor || '#fef3c7'} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, secondaryColor: e.target.value })} className="flex-1 rounded-xl h-12 font-bold text-xs" />
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <Label className="text-xs font-black text-slate-400">شعار / عبارة تسويقية فخمة للترويسة (Slogan)</Label>
+                        <div className="space-y-1">
+                          <Label className="text-xs font-black text-slate-400">عبارة تسويقية فخمة للترويسة (Slogan)</Label>
                           <Input value={activeBrochureConfig.slogan || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, slogan: e.target.value })} className="rounded-xl h-11 text-xs font-bold" placeholder="مثال: حيث ترتقي الرفاهية المعمارية..." />
                         </div>
 
-                        <div className="space-y-2">
-                          <Label className="text-xs font-black text-slate-400">رقم هاتف المبيعات المطبوع</Label>
-                          <div className="relative">
-                            <Phone className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
-                            <Input value={activeBrochureConfig.phone || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, phone: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="07XXXXXXXXX" />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-black text-slate-400">هاتف مبيعات 1</Label>
+                            <div className="relative">
+                              <Phone className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                              <Input value={activeBrochureConfig.phone || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, phone: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="07XXXXXXXXX" />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs font-black text-slate-400">هاتف مبيعات 2</Label>
+                            <div className="relative">
+                              <Phone className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                              <Input value={activeBrochureConfig.phone2 || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, phone2: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="07XXXXXXXXX" />
+                            </div>
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <Label className="text-xs font-black text-slate-400">البريد الإلكتروني المطبوع</Label>
-                          <div className="relative">
-                            <Mail className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
-                            <Input value={activeBrochureConfig.email || ''} onChange={(e) => setActiveBrochureConfig({ ...activeBrochureConfig, email: e.target.value })} className="pr-10 rounded-xl h-11 text-xs font-bold" placeholder="sales@project.com" />
-                          </div>
-                        </div>
-
-                        <Button onClick={handleSaveBrochureConfig} disabled={isSavingSettings} className="w-full bg-slate-900 hover:bg-black rounded-xl h-11 font-black gap-2 mt-4 text-xs">
-                          <Save size={16} /> حفظ تصميم وتناسق المشروع
+                        <Button onClick={handleSaveBrochureConfig} disabled={isSavingSettings} className="w-full bg-slate-950 hover:bg-black rounded-xl h-12 font-black gap-2 mt-4 text-xs transition-transform transform active:scale-95 shadow-lg shadow-slate-200">
+                          <Save size={16} /> حفظ وتعميم التصميم
                         </Button>
                       </div>
                     </div>
 
-                    <div className="lg:col-span-2 space-y-6">
+                    {/* عمود المزايا والتفاصيل الخاصة (5 أشرطة) */}
+                    <div className="lg:col-span-5 space-y-6 max-h-[850px] overflow-y-auto">
+                      {/* المزايا التسويقية للأصناف */}
                       <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
                         <div className="flex items-center gap-2">
                           <Sparkle className="text-amber-600 animate-spin-slow" size={20} />
-                          <h3 className="font-black text-lg text-slate-800">المزايا والمواصفات الترويجية المخصصة لكل صنف</h3>
+                          <h3 className="font-black text-lg text-slate-800">المزايا والمواصفات الترويجية</h3>
                         </div>
                         <p className="text-xs font-bold text-slate-500 leading-relaxed">
-                          أضف نقاط قوة ومميزات إعلانية تظهر تلقائياً في البروشور بمجرد مطابقة صنف العقار للزبون (مثل: صنف المنازل G, D أو الشقق بمساحة 150 م²).
+                          أضف نقاط قوة ومميزات إعلانية تظهر تلقائياً في البروشور بمجرد مطابقة صنف العقار للزبون (مثال الأصناف: G, D أو الشقق بمساحة 150 م²).
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2">
                           <div className="md:col-span-4 space-y-1">
-                            <Label className="text-[10px] font-black text-slate-400">رمز الصنف أو المساحة (مثال: G, D, 150)</Label>
-                            <Input value={newAdvantageKey} onChange={(e) => setNewAdvantageKey(e.target.value)} placeholder="مثال: G" className="rounded-xl h-11 font-black text-center text-xs" />
+                            <Label className="text-[10px] font-black text-slate-400">رمز الصنف (مثال: G, D, 150)</Label>
+                            <Input value={newAdvantageKey} onChange={(e) => setNewAdvantageKey(e.target.value)} placeholder="مثال: G" className="rounded-xl h-11 font-black text-center text-xs border-slate-200" />
                           </div>
                           <div className="md:col-span-6 space-y-1">
                             <Label className="text-[10px] font-black text-slate-400">الميزة الترويجية الفخمة</Label>
-                            <Input value={newAdvantageText} onChange={(e) => setNewAdvantageText(e.target.value)} placeholder="مثال: حديقة ملكية أمامية واسعة مع مسبح مجهز" className="rounded-xl h-11 font-bold text-xs" onKeyDown={(e) => { if (e.key === 'Enter') handleAddAdvantage(); }} />
+                            <Input value={newAdvantageText} onChange={(e) => setNewAdvantageText(e.target.value)} placeholder="مثال: حديقة ملكية أمامية واسعة..." className="rounded-xl h-11 font-bold text-xs border-slate-200" onKeyDown={(e) => { if (e.key === 'Enter') handleAddAdvantage(); }} />
                           </div>
                           <div className="md:col-span-2 flex items-end">
                             <Button onClick={handleAddAdvantage} className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-xl h-11 font-black text-xs gap-1">
-                              <Plus size={14} /> إضافة
+                              إضافة
                             </Button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+                        <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-200">
                           {Object.entries(activeBrochureConfig.advantages || {}).map(([key, list]) => (
                             <div key={key} className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2 shadow-sm">
-                              <div className="flex items-center justify-between border-b pb-2 mb-2">
-                                <span className="bg-indigo-50 text-indigo-700 px-3 py-0.5 rounded-full text-xs font-black">
-                                  صنف / مساحة: {key}
-                                </span>
-                              </div>
-                              
-                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                              <span className="bg-indigo-50 text-indigo-700 px-3 py-0.5 rounded-full text-xs font-black">
+                                صنف / مساحة: {key}
+                              </span>
+                              <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
                                 {list.map((txt, i) => (
                                   <div key={i} className="flex items-start justify-between gap-2 text-xs font-semibold text-slate-600 bg-slate-50/50 p-2 rounded-lg border">
-                                    <span className="flex items-start gap-1">
-                                      <span className="text-amber-500 mt-0.5 shrink-0">•</span>
-                                      <span className="leading-relaxed">{txt}</span>
-                                    </span>
-                                    <button onClick={() => handleDeleteAdvantage(key, i)} className="text-rose-500 hover:text-rose-700 p-1 rounded-md hover:bg-rose-50 shrink-0">
+                                    <span>{txt}</span>
+                                    <button onClick={() => handleDeleteAdvantage(key, i)} className="text-rose-500 hover:text-rose-700 p-1 rounded-md hover:bg-rose-50">
                                       <X size={12} />
                                     </button>
                                   </div>
@@ -1507,13 +1574,141 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </div>
                             </div>
                           ))}
-                          
-                          {Object.keys(activeBrochureConfig.advantages || {}).length === 0 && (
-                            <div className="col-span-2 py-12 text-center text-slate-400 font-bold text-xs border border-dashed rounded-2xl bg-white">
-                              لا توجد مميزات مسجلة بعد. أضف مواصفات الأصناف لكي يظهر البروشور بشكل تسويقي جذاب ومكتمل.
+                        </div>
+                      </div>
+
+                      {/* التفاصيل الخاصة (الغرف ومساحاتها) */}
+                      <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Bed className="text-emerald-600" size={20} />
+                          <h3 className="font-black text-base text-slate-800">تفاصيل الوحدات السكنية وغرفها</h3>
+                        </div>
+                        <p className="text-xs font-bold text-slate-500 leading-relaxed">
+                          أضف هيكلة الغرف والمساحات المحددة لتظهر بداخل الجدول الفني للبروشور.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                          <div className="md:col-span-4 space-y-1">
+                            <Label className="text-[10px] font-black text-slate-400">الصنف (G, D, 150)</Label>
+                            <Input value={activeDetailKey} onChange={(e) => setActiveDetailKey(e.target.value)} placeholder="مثال: Z1" className="rounded-xl h-11 font-black text-center text-xs" />
+                          </div>
+                          <div className="md:col-span-4 space-y-1">
+                            <Label className="text-[10px] font-black text-slate-400">عدد الغرف والمرافق</Label>
+                            <Input value={activeDetailRooms} onChange={(e) => setActiveDetailRooms(e.target.value)} placeholder="مثال: 4 غرف نوم + 3 حمامات" className="rounded-xl h-11 font-bold text-xs" />
+                          </div>
+                          <div className="md:col-span-4 space-y-1">
+                            <Label className="text-[10px] font-black text-slate-400">مساحات الغرف المفصلة</Label>
+                            <Input value={activeDetailSizes} onChange={(e) => setActiveDetailSizes(e.target.value)} placeholder="مثال: صالة 6x4، مطبخ 4x4..." className="rounded-xl h-11 font-bold text-xs" />
+                          </div>
+                        </div>
+
+                        <Button onClick={handleAddUnitDetail} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-11 font-black text-xs gap-1">
+                          حفظ تفاصيل الصنف
+                        </Button>
+
+                        {/* قائمة التفاصيل المضافة */}
+                        <div className="space-y-2 pt-2 border-t">
+                          {Object.entries(activeBrochureConfig.unitDetails || {}).map(([key, info]) => (
+                            <div key={key} className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center justify-between shadow-sm">
+                              <div className="space-y-1">
+                                <span className="bg-emerald-50 text-emerald-700 px-3 py-0.5 rounded-full text-xs font-black">الصنف: {key}</span>
+                                <div className="text-xs font-bold text-slate-700 pt-1">المرافق: {info.rooms || 'غير محدد'}</div>
+                                <div className="text-[11px] font-semibold text-slate-500">المساحات: {info.roomsSizes || 'غير محدد'}</div>
+                              </div>
+                              <button onClick={() => handleDeleteUnitDetail(key)} className="text-rose-500 hover:text-rose-700 p-2 rounded-lg hover:bg-rose-50">
+                                <Trash2 size={14} />
+                              </button>
                             </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* عمود الـ Live Preview التفاعلي (3 أشرطة) */}
+                    <div className="lg:col-span-3 space-y-4">
+                      <div className="flex items-center gap-2 mb-2 border-b pb-2">
+                        <Eye className="text-blue-600 animate-pulse" size={18} />
+                        <h3 className="font-black text-base text-slate-800">معاينة حية وتفاعلية</h3>
+                      </div>
+
+                      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xl p-6 space-y-6 text-right" style={{ fontFamily: 'Cairo, sans-serif' }}>
+                        
+                        {/* الهيدر والمؤسسة */}
+                        <div className="flex justify-between items-center border-b pb-4">
+                          {activeBrochureConfig.marketingLogo ? (
+                            <img src={activeBrochureConfig.marketingLogo} alt="المركز التسويقي" className="h-10 object-contain" />
+                          ) : (
+                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-[10px] font-black text-slate-400">لوغو المركز</div>
+                          )}
+
+                          {activeBrochureConfig.projectLogo ? (
+                            <img src={activeBrochureConfig.projectLogo} alt="المشروع" className="h-10 object-contain" />
+                          ) : (
+                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-[10px] font-black text-slate-400">لوغو المشروع</div>
                           )}
                         </div>
+
+                        {/* الـ Slogan */}
+                        <div className="text-center py-2 px-3 rounded-xl" style={{ backgroundColor: activeBrochureConfig.secondaryColor || '#fef3c7' }}>
+                          <p className="text-[10px] font-black leading-relaxed" style={{ color: activeBrochureConfig.primaryColor || '#b45309' }}>
+                            {activeBrochureConfig.slogan || 'شعار المشروع الدعائي المكتوب يظهر هنا'}
+                          </p>
+                        </div>
+
+                        {/* بطاقة معاينة الوحدة */}
+                        <div className="border border-dashed border-slate-200 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-xs text-white px-2.5 py-1 rounded-full" style={{ backgroundColor: activeBrochureConfig.primaryColor || '#b45309' }}>
+                              معاينة الوحدة السكنية
+                            </span>
+                            <span className="text-xs font-black text-slate-400">صنف افتراضي: G</span>
+                          </div>
+
+                          <div className="space-y-1 border-t pt-2">
+                            <div className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
+                              <Bed size={12} className="text-slate-400" />
+                              الغرف: {activeBrochureConfig.unitDetails?.['G']?.rooms || 'مثال: 4 غرف نوم، حمامات، مطبخ مجهز'}
+                            </div>
+                            <div className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
+                              <Maximize size={12} className="text-slate-400" />
+                              مساحات المرافق: {activeBrochureConfig.unitDetails?.['G']?.roomsSizes || 'مثال: صالة 6x4، استقبال 5x4، غرف 4x4'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* المزايا التسويقية */}
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] font-black uppercase text-slate-400">مميزات هذا الصنف</div>
+                          {(activeBrochureConfig.advantages?.['G'] || [
+                            "حديقة ملكية أمامية واسعة مع مسبح مجهز",
+                            "كراج داخلي مستقل يتسع لسيارتين"
+                          ]).slice(0, 3).map((adv, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeBrochureConfig.primaryColor || '#b45309' }} />
+                              {adv}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* الفوتر وأرقام الاتصال */}
+                        <div className="border-t pt-4 space-y-2">
+                          <div className="text-[9px] font-black text-slate-400 text-center">بادر بحجز وحدتك السكنية الآن وتواصل مع قسم المبيعات</div>
+                          <div className="flex justify-center gap-3">
+                            {activeBrochureConfig.phone && (
+                              <span className="text-[10px] font-black bg-slate-50 border px-2 py-1 rounded-lg flex items-center gap-1 text-slate-700">
+                                <Phone size={10} style={{ color: activeBrochureConfig.primaryColor }} />
+                                {activeBrochureConfig.phone}
+                              </span>
+                            )}
+                            {activeBrochureConfig.phone2 && (
+                              <span className="text-[10px] font-black bg-slate-50 border px-2 py-1 rounded-lg flex items-center gap-1 text-slate-700">
+                                <Phone size={10} style={{ color: activeBrochureConfig.primaryColor }} />
+                                {activeBrochureConfig.phone2}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
                       </div>
                     </div>
                   </div>
@@ -1598,7 +1793,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       <Database className="text-blue-600 w-8 h-8" />
                     </div>
                     <div className="max-w-md mx-auto space-y-2">
-                      <h4 className="font-black text-slate-800">هل ترغب في حفظ نسخة احتياطية دورية؟</h4>
+                      <h4 className="font-black text-slate-800">هل ترغب في حفظ نسخة احتياطية دورية?</h4>
                       <p className="text-xs text-slate-500 leading-relaxed font-medium">
                         احرص دوماً على استخدام زر الإرسال إلى تيليجرام أو زر التحميل لحفظ بيانات الحجوزات وملاحظاتها وتحديثات الإكسل اليومية ضد أي فقدان طارئ.
                       </p>
