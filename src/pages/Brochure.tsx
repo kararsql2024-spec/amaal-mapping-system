@@ -5,7 +5,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Printer, ArrowRight, Bed, Banknote, Calendar, Maximize, Sparkle, 
-  Phone, FileImage, CreditCard, Sparkles, ShieldCheck, Mail, Ruler, Home as HomeIcon
+  Phone, FileImage, CreditCard, Sparkles, ShieldCheck, Mail, Ruler, Home as HomeIcon,
+  RefreshCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
