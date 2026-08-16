@@ -338,18 +338,19 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         if (savedCenterId && centers) {
           const center = centers.find(c => c.id === savedCenterId);
           
-          // التحقق من صحة كلمة المرور المعتمدة للجلسة
+          // التحقق من صحة كلمة المرور المعتمدة للجلسة وبث الطلبات الخفيفة فقط
           if (center && center.password === savedCenterPass) {
-            const { data: settings } = await supabase.from('settings').select('*');
+            const { data: settings } = await supabase
+              .from('settings')
+              .select('key, value')
+              .in('key', ['dept_permissions', 'project_configs', 'last_excel_update']);
+
             if (settings) {
               const permsSetting = settings.find(s => s.key === 'dept_permissions');
               if (permsSetting && permsSetting.value && center.type) {
                 const deptPerms = permsSetting.value[center.type];
                 if (deptPerms) setPermissions(deptPerms);
               }
-
-              const mainMap = settings.find(s => s.key === 'main_map_config');
-              if (mainMap) setMainMapData(mainMap.value);
 
               const configs = settings.find(s => s.key === 'project_configs');
               if (configs) setProjectConfigs(configs.value || {});
@@ -645,16 +646,17 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     if (center && center.password === loginData.password) {
       setIsAuthChecking(true);
       try {
-        const { data: settings } = await supabase.from('settings').select('*');
+        const { data: settings } = await supabase
+          .from('settings')
+          .select('key, value')
+          .in('key', ['dept_permissions', 'project_configs', 'last_excel_update']);
+
         if (settings) {
           const permsSetting = settings.find(s => s.key === 'dept_permissions');
           if (permsSetting && permsSetting.value && center.type) {
             const deptPerms = permsSetting.value[center.type];
             if (deptPerms) setPermissions(deptPerms);
           }
-
-          const mainMap = settings.find(s => s.key === 'main_map_config');
-          if (mainMap) setMainMapData(mainMap.value);
 
           const configs = settings.find(s => s.key === 'project_configs');
           if (configs) setProjectConfigs(configs.value || {});

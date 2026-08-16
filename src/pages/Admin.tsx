@@ -233,9 +233,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     
     const fetchData = async () => {
       try {
+        // جلب الإعدادات الخفيفة فقط واستثناء المخطط العام والبروشورات تماماً من الـ Initial Fetch لتجنب Failed to fetch
         const { data: settingsData } = await supabase
           .from('settings')
-          .select('*');
+          .select('key, value')
+          .not('key', 'in', '("main_map_config","brochure_configs")');
 
         if (settingsData) {
           const mapping = settingsData.find(s => s.key === 'excel_mapping');
@@ -258,17 +260,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           const permissions = settingsData.find(s => s.key === 'dept_permissions');
           if (permissions) setDeptPermissions(permissions.value || {});
 
-          const mainMap = settingsData.find(s => s.key === 'main_map_config');
-          if (mainMap) setMainMapData(mainMap.value);
-
           const configs = settingsData.find(s => s.key === 'project_configs');
           if (configs) setProjectConfigs(configs.value || {});
-
-          // تحميل إعدادات البروشورات
-          const brochure = settingsData.find(s => s.key === 'brochure_configs');
-          if (brochure) {
-            setBrochureConfigs(brochure.value || {});
-          }
 
           const teleConfig = settingsData.find(s => s.key === 'telegram_config');
           if (teleConfig) setTelegramConfig(prev => ({ ...prev, ...teleConfig.value }));
@@ -291,6 +284,50 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
     fetchData();
   }, [session]);
+
+  // جلب إعدادات البروشورات المخصصة ديناميكياً وفقط عند فتح شاشتها
+  useEffect(() => {
+    if (showBrochureDesigner) {
+      const fetchBrochures = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'brochure_configs')
+            .maybeSingle();
+          if (error) throw error;
+          if (data && data.value) {
+            setBrochureConfigs(data.value);
+          }
+        } catch (err) {
+          console.error("Error fetching brochure configs:", err);
+        }
+      };
+      fetchBrochures();
+    }
+  }, [showBrochureDesigner]);
+
+  // جلب المخطط العام الهندسي فقط وفقط عند تفعيله للرسم والتعديل
+  useEffect(() => {
+    if (isEditingMainMap) {
+      const fetchMainMap = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'main_map_config')
+            .maybeSingle();
+          if (error) throw error;
+          if (data && data.value) {
+            setMainMapData(data.value);
+          }
+        } catch (err) {
+          console.error("Error fetching main map:", err);
+        }
+      };
+      fetchMainMap();
+    }
+  }, [isEditingMainMap]);
 
   // جلب دقيق ومؤكد لعناصر ومخططات المشروع المحدد فور اختياره من خادم قاعدة البيانات
   useEffect(() => {
