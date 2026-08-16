@@ -50,6 +50,23 @@ const fetchWithRetry = async <T,>(fn: () => Promise<T>, retries = 3, delay = 100
   }
 };
 
+// جالب أصلي ومباشر خفيف لتجنب مشاكل مكتبة Supabase JS مع البيانات الضخمة
+const fetchNativeSupabase = async (path: string) => {
+  const supabaseUrl = "https://byvzmxrvetgcxstlsszd.supabase.co";
+  const supabaseKey = (supabase as any).supabaseKey || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dnpteHJ2ZXRnY3hzdGxzc3pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0MjU0OTUsImV4cCI6MjA5MDAwMTQ5NX0.Fv3e4bLYBPO94GmU_dT2TG5Ata41eaTgVOcI2iQFl3s";
+  const url = `${supabaseUrl}/rest/v1/${path}`;
+  
+  const response = await fetch(url, {
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Accept': 'application/json'
+    }
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
 const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeElements, setActiveElements] = useState<MapElement[]>([]);
@@ -431,14 +448,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
         const startTime = performance.now();
         try {
+          // استبدال Supabase wrapper بطلب متصفح أصلي (Native Fetch) خفيف ومباشر لتلافي أخطاء الشبكة تماماً
           const data = await fetchWithRetry(async () => {
-            const { data, error } = await supabase
-              .from('settings')
-              .select('value')
-              .eq('key', 'main_map_config')
-              .single();
-            if (error) throw error;
-            return data;
+            const res = await fetchNativeSupabase('settings?select=value&key=eq.main_map_config');
+            if (!res || res.length === 0) throw new Error("No data found");
+            return res[0];
           });
           
           if (data && data.value) {
@@ -447,7 +461,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             // حفظ المخطط وتوقيت التحميل للتخزين المؤقت الذكي
             localStorage.setItem('cached_main_map_config', JSON.stringify(data.value));
             localStorage.setItem('cached_main_map_time', Date.now().toString());
-            addDiagLog(`تم تحديث الكاش ومزامنة المخطط العام مع السيرفر: ${(performance.now() - startTime).toFixed(1)} ملي ثانية`, 'success');
+            addDiagLog(`تم تحديث الكاش ومزامنة المخطط العام عبر Native Fetch: ${(performance.now() - startTime).toFixed(1)} ملي ثانية`, 'success');
           }
         } catch (e: any) {
           console.error("Background error loading main map:", e);
@@ -470,14 +484,11 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       setIsProjectLoading(true);
       const startTime = performance.now();
       try {
+        // استبدال Supabase wrapper بطلب متصفح أصلي (Native Fetch) خفيف ومباشر للمشاريع ذات العناصر الضخمة
         const projectDetails = await fetchWithRetry(async () => {
-          const { data, error } = await supabase
-            .from('projects')
-            .select('elements')
-            .eq('id', selectedProjectId)
-            .single();
-          if (error) throw error;
-          return data;
+          const res = await fetchNativeSupabase(`projects?select=elements&id=eq.${selectedProjectId}`);
+          if (!res || res.length === 0) throw new Error("No data found");
+          return res[0];
         });
         setActiveElements(projectDetails?.elements || []);
 
