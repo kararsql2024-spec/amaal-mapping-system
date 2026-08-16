@@ -659,7 +659,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showSearchBox: true,
       showQuickPreview: true,
       canAccessReports: true,
-      showDiagnosticTerminal: true
+      showDiagnosticTerminal: true,
+      showBrochureButton: true
     };
     
     const currentValue = current[permission];
@@ -1510,6 +1511,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'showQuickPreview', label: 'رؤية وتفعيل كارت المعاينة السريعة للوحدات' },
         { key: 'canAccessReports', label: 'صلاحية الوصول إلى نافذة التقارير والتحليلات' },
         { key: 'showDiagnosticTerminal', label: 'رؤية لوحة تحليل الأداء الفورية (Realtime)' },
+        { key: 'showBrochureButton', label: 'عرض زر بروشور الوحدة السكنية الفاخرة' },
       ]
     },
     {
@@ -1617,7 +1619,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             <Button 
               type="submit" 
               disabled={isLoggingIn}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-2xl h-14 text-lg font-black shadow-lg shadow-indigo-100"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-2xl h-14 text-base font-black shadow-lg shadow-indigo-100"
             >
               {isLoggingIn ? <RefreshCcw className="animate-spin w-5 h-5" /> : "تسجيل الدخول"}
             </Button>
