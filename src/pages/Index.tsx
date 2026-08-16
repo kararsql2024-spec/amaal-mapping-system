@@ -5,12 +5,12 @@ import InteractiveMap from '@/components/InteractiveMap';
 import UnitDetailsModal from '@/components/UnitDetailsModal';
 import TowerDetailsModal from '@/components/TowerDetailsModal';
 import DetailedStatsTable from '@/components/DetailedStatsTable';
+import DiagnosticTerminal from '@/components/DiagnosticTerminal';
 import { showSuccess, showError } from '@/utils/toast';
 import { 
   Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, 
   Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, 
-  BarChart3, MapPin, Search, RefreshCcw, X, AlertTriangle, Ruler,
-  Terminal, Cpu, HardDrive, Eye, EyeOff
+  BarChart3, MapPin, Search, RefreshCcw, X, AlertTriangle, Ruler
 } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
@@ -60,13 +60,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
 
-  // حالات لوحة الفحص والتشخيص اللحظية (Performance Terminal State)
-  const [showTerminal, setShowTerminal] = useState(true);
-  const [fps, setFps] = useState(60);
-  const [memoryUsage, setMemoryUsage] = useState<string>('N/A');
+  // سجل التشخيصات فقط دون وجود لوب FPS ثقيل يعيد رندرة الصفحة الرئيسية
   const [diagLogs, setDiagLogs] = useState<Array<{ time: string; message: string; type: 'info' | 'warn' | 'success' | 'danger' }>>([]);
-  const frameCount = useRef(0);
-  const lastFpsCheck = useRef(performance.now());
 
   // حالات تسجيل الدخول والأقسام
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -128,32 +123,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     const time = new Date().toLocaleTimeString('ar-EG', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setDiagLogs(prev => [{ time, message, type }, ...prev.slice(0, 49)]);
   };
-
-  // قياس عدد الإطارات FPS والذاكرة بالـ Realtime
-  useEffect(() => {
-    let animId: number;
-    const updateMetrics = () => {
-      frameCount.current += 1;
-      const now = performance.now();
-      const delta = now - lastFpsCheck.current;
-
-      if (delta >= 1000) {
-        const calculatedFps = Math.round((frameCount.current * 1000) / delta);
-        setFps(calculatedFps);
-        frameCount.current = 0;
-        lastFpsCheck.current = now;
-
-        if ((performance as any).memory) {
-          const usedMB = Math.round((performance as any).memory.usedJSHeapSize / 1048576);
-          setMemoryUsage(`${usedMB} MB`);
-        }
-      }
-      animId = requestAnimationFrame(updateMetrics);
-    };
-
-    animId = requestAnimationFrame(updateMetrics);
-    return () => cancelAnimationFrame(animId);
-  }, []);
 
   const filteredProjects = React.useMemo(() => {
     if (!currentCenter || !currentCenter.allowed_projects || currentCenter.allowed_projects.length === 0) return projects;
@@ -393,7 +362,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             localStorage.setItem('marketing_center_name', center.name);
             setIsLoggedIn(true);
           } else {
-            // في حال تم تغيير كلمة المرور أو حذف الحساب
             handleLogout();
             if (center && center.password !== savedCenterPass) {
               showError("تم تغيير كلمة المرور لهذا القسم من قِبل الإدارة. يرجى إعادة تسجيل الدخول.");
@@ -613,7 +581,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
       }
     }
 
-    // إذا كان مشروعاً مختلفاً: نقوم بتفريغ العناصر القديمة فوراً لتجنب فحصها الخاطئ
     setActiveElements([]);
     if (isTower) {
       setPendingApartmentKey(targetApartmentKey);
@@ -781,7 +748,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     }
   };
 
-  // فتح الوحدة المعلقة تلقائياً فقط عند الاطمئنان لاكتمال جلب المخطط والتأكد من مطابقة الـ projectId
   useEffect(() => {
     if (!isProjectLoading && pendingOpen && pendingOpen.projectId === selectedProjectId && activeElements.length > 0) {
       const { elementId, isTower, apartmentKey } = pendingOpen;
@@ -877,65 +843,6 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     ? (mainMapData?.showGrid !== false)
     : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
 
-  // مكون اللوحة الفائقة للتشخيص العائمة (تظهر فقط بعد تسجيل الدخول وعند منح الصلاحية للقسم)
-  const DiagnosticTerminalFloating = (isLoggedIn && permissions.showDiagnosticTerminal !== false) ? (
-    <div className="fixed bottom-4 left-4 z-[99999] max-w-sm w-full font-mono text-xs shadow-2xl rounded-2xl overflow-hidden border-2 border-emerald-500/50 bg-slate-950/95 text-slate-200 backdrop-blur-md animate-in fade-in slide-in-from-bottom-5">
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
-        <div className="flex items-center gap-2">
-          <Terminal size={16} className="text-emerald-400 animate-pulse" />
-          <span className="font-bold text-slate-200 text-xs">لوحة تحليل الأداء الفورية (Realtime)</span>
-        </div>
-        <button 
-          onClick={() => setShowTerminal(!showTerminal)}
-          className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors bg-slate-800"
-        >
-          {showTerminal ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-      </div>
-
-      {showTerminal && (
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-2 text-[11px] font-bold">
-            <div className="bg-slate-900 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-slate-400"><Cpu size={14} className="text-amber-400" /> FPS:</span>
-              <span className={cn("font-black text-xs", fps < 30 ? "text-rose-400" : "text-emerald-400")}>{fps} FPS</span>
-            </div>
-            <div className="bg-slate-900 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-slate-400"><HardDrive size={14} className="text-blue-400" /> RAM:</span>
-              <span className="font-black text-xs text-blue-400">{memoryUsage}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold border-b border-slate-800 pb-1">
-              <span>سجل الاستجابة بالملي ثانية (ms):</span>
-              <button onClick={() => setDiagLogs([])} className="hover:text-rose-400 underline text-[9px]">تفريغ</button>
-            </div>
-            <div className="max-h-36 overflow-y-auto space-y-1.5 text-[10px] pr-1 no-scrollbar">
-              {diagLogs.length > 0 ? (
-                diagLogs.map((log, idx) => (
-                  <div key={idx} className="flex items-start gap-2 border-b border-slate-900/50 pb-1">
-                    <span className="text-slate-500 shrink-0">[{log.time}]</span>
-                    <span className={cn(
-                      "break-all font-semibold",
-                      log.type === 'success' ? "text-emerald-400" :
-                      log.type === 'warn' ? "text-amber-400" :
-                      log.type === 'danger' ? "text-rose-400" : "text-slate-300"
-                    )}>
-                      {log.message}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-600 text-center py-2 text-[10px]">في انتظار تنفيذ أي عملية...</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  ) : null;
-
   if (isAuthChecking) {
     return (
       <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center font-bold" dir="rtl">
@@ -1001,7 +908,14 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   return (
     <div className="min-h-screen bg-[#f0f4f8] p-4 md:p-8 relative" dir="rtl">
-      {DiagnosticTerminalFloating}
+      {/* لوحة الفحص والتشخيص المعزولة والجديدة كلياً لحماية الأداء ومنع الـ Re-renders */}
+      {isLoggedIn && permissions.showDiagnosticTerminal !== false && (
+        <DiagnosticTerminal 
+          logs={diagLogs} 
+          onClearLogs={() => setDiagLogs([])} 
+        />
+      )}
+      
       <div className="max-w-6xl mx-auto space-y-8">
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
           <div className="flex items-center gap-4 shrink-0">

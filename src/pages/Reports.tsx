@@ -132,7 +132,7 @@ const Reports = ({ projects }: ReportsProps) => {
         }
         setFetchedElements(elementsList);
 
-        // 2. جلب بيانات المبيعات (houses_data)
+        // 2. جلب حقول محددة من جدول المبيعات وتجنب جلب كائن الـ data بالكامل لاستبعاد الملاحظات المتراكمة تماماً
         let allUnits: any[] = [];
         let from = 0;
         const step = 1000;
@@ -141,7 +141,7 @@ const Reports = ({ projects }: ReportsProps) => {
         while (hasMore) {
           let query = supabase
             .from('houses_data')
-            .select('unit_key, project_id, data')
+            .select('unit_key, project_id, status:data->>status, taboStatus:data->>taboStatus, handoverDate:data->>handoverDate, price:data->>price, currency:data->>currency, saleDate:data->>saleDate')
             .range(from, from + step - 1);
           
           if (selectedProjectId !== 'all') {
@@ -161,11 +161,18 @@ const Reports = ({ projects }: ReportsProps) => {
         }
 
         const formatted: Record<string, any> = {};
-        allUnits.forEach(u => {
-          formatted[u.unit_key] = u.data;
+        allUnits.forEach((u: any) => {
+          formatted[u.unit_key] = {
+            status: u.status || 'available',
+            taboStatus: u.taboStatus || 'غير مروج',
+            handoverDate: u.handoverDate || '',
+            price: u.price || '',
+            currency: u.currency || 'IQD',
+            saleDate: u.saleDate || ''
+          };
         });
         setHousesData(formatted);
-        showSuccess("تم تحديث بيانات التقارير بنجاح");
+        showSuccess("تم تحديث بيانات التقارير بنجاح وبأعلى أداء");
       } catch (err) {
         console.error("Error fetching reports data:", err);
         showError("فشل الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت وإعادة المحاولة.");
