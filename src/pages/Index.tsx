@@ -10,7 +10,7 @@ import { showSuccess, showError } from '@/utils/toast';
 import { 
   Map as MapIcon, ChevronDown, ChevronUp, Store, Lock, LogOut, Bell, 
   Clock, Info, FileCheck, FileX, CheckCircle, Home as HomeIcon, XCircle, 
-  BarChart3, MapPin, Search, RefreshCcw, X, AlertTriangle, Ruler
+  BarChart3, MapPin, Search, RefreshCcw, X, AlertTriangle, Ruler, Trash2
 } from 'lucide-react';
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Button } from '@/components/ui/button';
@@ -902,6 +902,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     ? (mainMapData?.showGrid !== false)
     : (projectConfigs[selectedProjectId || '']?.showGrid !== false);
 
+  const handleClearCache = () => {
+    localStorage.removeItem('cached_main_map_config');
+    localStorage.removeItem('cached_main_map_time');
+    addDiagLog("تم تفريغ كاش المخطط العام بنجاح! جاري إعادة التحميل...", "success");
+    showSuccess("تم تفريغ الكاش بنجاح!");
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  };
+
   if (isAuthChecking) {
     return (
       <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center font-bold" dir="rtl">
@@ -1311,7 +1321,19 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           permissions={permissions}
           initialSelectedApartmentKey={pendingApartmentKey}
         />
-        <MadeWithDyad />
+
+        {/* كود الفوتر المدمج والجديد لإضافة زر تفريغ الكاش المباشر للمطورين والمختبرين */}
+        <div className="flex flex-col items-center justify-center gap-4 mt-8 pt-8 border-t border-slate-200">
+          <Button 
+            variant="outline" 
+            onClick={handleClearCache}
+            className="rounded-xl gap-2 border-rose-200 text-rose-600 hover:bg-rose-50 h-11 px-5 text-xs font-black shadow-sm transition-all transform active:scale-95"
+          >
+            <Trash2 size={14} />
+            تفريغ كاش المخططات وإعادة التحميل التمهيدي الفوري
+          </Button>
+          <MadeWithDyad />
+        </div>
       </div>
     </div>
   );
