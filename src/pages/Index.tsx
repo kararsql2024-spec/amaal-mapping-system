@@ -265,11 +265,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
     };
   }, [selectedProjectId, setHousesData]);
 
+  // التوجيه الافتراضي والذكي للمستخدمين فور الدخول لتجنب جلب المخطط العام بشكل مكرر
   useEffect(() => {
     if (!selectedProjectId) {
-      setSelectedProjectId('main_map');
+      if (isLoggedIn && currentCenter && currentCenter.allowed_projects && currentCenter.allowed_projects.length > 0) {
+        setSelectedProjectId(currentCenter.allowed_projects[0]);
+      } else {
+        setSelectedProjectId('main_map');
+      }
     }
-  }, [selectedProjectId]);
+  }, [selectedProjectId, isLoggedIn, currentCenter]);
 
   const handleLogout = () => {
     setIsLoggedIn(false);
@@ -392,11 +397,29 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
     if (selectedProjectId === 'main_map') {
       const fetchMainMap = async () => {
-        setIsProjectLoading(true);
+        // استراتيجية الـ Cache-First للتحميل الفوري وتجنب الاختناق المالي
+        const cachedMap = localStorage.getItem('cached_main_map_config');
+        if (cachedMap) {
+          try {
+            const parsed = JSON.parse(cachedMap);
+            setMainMapData(parsed);
+            setActiveElements(parsed.elements || []);
+            addDiagLog("تحميل المخطط العام من الكاش المحلي فورياً (0ms)", "success");
+          } catch (e) {
+            console.error("Cache error", e);
+          }
+        } else {
+          setIsProjectLoading(true);
+        }
+
         const startTime = performance.now();
         try {
           const data = await fetchWithRetry(async () => {
-            const { data, error } = await supabase.from('settings').select('*').eq('key', 'main_map_config').single();
+            const { data, error } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'main_map_config')
+              .single();
             if (error) throw error;
             return data;
           });
@@ -404,14 +427,18 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           if (data && data.value) {
             setMainMapData(data.value);
             setActiveElements(data.value.elements || []);
-          } else {
-            setActiveElements([]);
+            localStorage.setItem('cached_main_map_config', JSON.stringify(data.value));
           }
           const endTime = performance.now();
-          addDiagLog(`تحميل المخطط العام: ${(endTime - startTime).toFixed(1)} ملي ثانية (العناصر: ${data?.value?.elements?.length || 0})`, 'success');
-        } catch (e) {
+          addDiagLog(`مزامنة المخطط العام مع السيرفر: ${(endTime - startTime).toFixed(1)} ملي ثانية`, 'success');
+        } catch (e: any) {
           console.error("Error loading main map:", e);
-          showError("تعذر تحميل المخطط العام حالياً, يرجى المحاولة مرة أخرى.");
+          if (cachedMap) {
+            addDiagLog("فشل تحديث المخطط العام، جاري تشغيل نسخة الكاش بأمان كامل.", "warn");
+          } else {
+            addDiagLog(`تعذر تحميل المخطط العام: ${e.message || e}`, "danger");
+            showError("تعذر تحميل المخطط العام حالياً، يرجى إعادة المحاولة.");
+          }
         } finally {
           setIsProjectLoading(false);
         }
