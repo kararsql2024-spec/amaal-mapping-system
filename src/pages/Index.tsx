@@ -399,8 +399,14 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
     if (selectedProjectId === 'main_map') {
       const fetchMainMap = async () => {
-        // استراتيجية الـ Cache-First للتحميل الفوري وتجنب الاختناق المالي
+        // فحص الكاش المبني على الوقت (Time-Based Cache-First) لتجنب طلبات السيرفر
         const cachedMap = localStorage.getItem('cached_main_map_config');
+        const cachedTimeStr = localStorage.getItem('cached_main_map_time');
+        const cachedTime = cachedTimeStr ? parseInt(cachedTimeStr, 10) : 0;
+        
+        // المخطط يعتبر طازجاً وصالحاً لمدة 15 دقيقة كاملة دون الحاجة لأي تواصل بالشبكة
+        const isCacheFresh = cachedMap && (Date.now() - cachedTime < 15 * 60 * 1000);
+
         if (cachedMap) {
           try {
             const parsed = JSON.parse(cachedMap);
@@ -408,9 +414,18 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
             setActiveElements(parsed.elements || []);
             addDiagLog("تحميل المخطط العام من الكاش المحلي فورياً (0ms)", "success");
           } catch (e) {
-            console.error("Cache error", e);
+            console.error("Cache parsing error", e);
           }
-        } else {
+        }
+
+        // إذا كان الكاش حديثاً، ننهي الدالة فوراً ولا نشغل الشبكة بأي طلبات
+        if (isCacheFresh) {
+          addDiagLog("المخطط العام طازج محلياً، تم تخطي طلب الشبكة لضمان أداء مستقر وموفر للبيانات.", "success");
+          return;
+        }
+
+        // إذا لم يتوفر كاش أبداً، نعرض شاشة التحميل التمهيدية
+        if (!cachedMap) {
           setIsProjectLoading(true);
         }
 
@@ -429,14 +444,16 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
           if (data && data.value) {
             setMainMapData(data.value);
             setActiveElements(data.value.elements || []);
+            // حفظ المخطط وتوقيت التحميل للتخزين المؤقت الذكي
             localStorage.setItem('cached_main_map_config', JSON.stringify(data.value));
+            localStorage.setItem('cached_main_map_time', Date.now().toString());
+            addDiagLog(`تم تحديث الكاش ومزامنة المخطط العام مع السيرفر: ${(performance.now() - startTime).toFixed(1)} ملي ثانية`, 'success');
           }
-          const endTime = performance.now();
-          addDiagLog(`مزامنة المخطط العام مع السيرفر: ${(endTime - startTime).toFixed(1)} ملي ثانية`, 'success');
         } catch (e: any) {
-          console.error("Error loading main map:", e);
+          console.error("Background error loading main map:", e);
           if (cachedMap) {
-            addDiagLog("فشل تحديث المخطط العام، جاري تشغيل نسخة الكاش بأمان كامل.", "warn");
+            // في حال وجود كاش، نفشل بصمت تام دون توتر الموظف برسائل خطأ عشوائية
+            addDiagLog("فشل تحديث المخطط العام من السيرفر (صامت)، تم الاعتماد على نسخة الكاش بأمان.", "warn");
           } else {
             addDiagLog(`تعذر تحميل المخطط العام: ${e.message || e}`, "danger");
             showError("تعذر تحميل المخطط العام حالياً، يرجى إعادة المحاولة.");

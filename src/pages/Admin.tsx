@@ -1313,7 +1313,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         await supabase.from('settings').upsert({ key: 'main_map_config', value: config });
         setMainMapData(config);
         setIsEditingMainMap(false);
-        showSuccess('تم حفظ المخطط العام بنجاح');
+        // تفريغ الكاش القديم فوراً عند الحفظ لضمان مزامنة هندسية فورية
+        localStorage.removeItem('cached_main_map_config');
+        localStorage.removeItem('cached_main_map_time');
+        showSuccess('تم حفظ المخطط العام بنجاح وتحديث الكاش لجميع المستخدمين');
       } catch (error) { showError("فشل في حفظ المخطط العام"); } finally { setIsSavingMap(false); }
       return;
     }
@@ -2096,7 +2099,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                             </div>
                           </div>
 
-                          {/* الفوتر مع البريد الإلكتروني للمسؤول الحالي قيد تسجيل الدخول */}
+                          {/* الفوتر ووسائل المبيعات مع البريد الإلكتروني للمسؤول الحالي قيد تسجيل الدخول */}
                           <div className="border-t pt-8 flex items-center justify-between text-xs font-bold text-slate-400 z-10 relative">
                             <div>{session?.user?.email || 'المركز التسويقي المعتمد'}</div>
                             <div className="flex items-center gap-1.5 bg-slate-50 px-4 py-2 rounded-xl">
