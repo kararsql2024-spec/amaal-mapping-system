@@ -267,6 +267,8 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
 
   // التوجيه الافتراضي والذكي للمستخدمين فور الدخول لتجنب جلب المخطط العام بشكل مكرر
   useEffect(() => {
+    if (isAuthChecking) return; // الحماية الذهبية: منع البدء بالتوجيه العشوائي قبل انتهاء فحص الهوية والتحقق من الجلسة
+    
     if (!selectedProjectId) {
       if (isLoggedIn && currentCenter && currentCenter.allowed_projects && currentCenter.allowed_projects.length > 0) {
         setSelectedProjectId(currentCenter.allowed_projects[0]);
@@ -274,7 +276,7 @@ const Index = ({ projects, housesData, setHousesData }: IndexProps) => {
         setSelectedProjectId('main_map');
       }
     }
-  }, [selectedProjectId, isLoggedIn, currentCenter]);
+  }, [selectedProjectId, isLoggedIn, currentCenter, isAuthChecking]);
 
   const handleLogout = () => {
     setIsLoggedIn(false);
