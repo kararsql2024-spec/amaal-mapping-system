@@ -250,8 +250,8 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
             تفاصيل الوحدة: {unitLabel || unitId}
           </DialogTitle>
           
-          {/* زر عرض بروشور الوحدة السكنية في نافذة مستقلة */}
-          {projectId && unitId && (
+          {/* زر عرض بروشور الوحدة السكنية في نافذة مستقلة - يتم التحقق من الصلاحية showBrochureButton */}
+          {projectId && unitId && permissions?.showBrochureButton !== false && (
             <Button 
               onClick={handleOpenBrochure}
               className="bg-white/10 hover:bg-white/20 text-white font-black text-xs gap-1.5 h-10 px-4 rounded-xl border border-white/20 shrink-0 ml-6"
