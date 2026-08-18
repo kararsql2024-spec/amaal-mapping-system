@@ -1,0 +1,228 @@
+/* Arabic + Latin subsets only; cyrillic is intentionally not imported. */
+@import "@fontsource/ibm-plex-sans-arabic/arabic-300.css";
+@import "@fontsource/ibm-plex-sans-arabic/arabic-400.css";
+@import "@fontsource/ibm-plex-sans-arabic/arabic-500.css";
+@import "@fontsource/ibm-plex-sans-arabic/arabic-600.css";
+@import "@fontsource/ibm-plex-sans-arabic/arabic-700.css";
+@import "@fontsource/ibm-plex-sans-arabic/latin-300.css";
+@import "@fontsource/ibm-plex-sans-arabic/latin-400.css";
+@import "@fontsource/ibm-plex-sans-arabic/latin-500.css";
+@import "@fontsource/ibm-plex-sans-arabic/latin-600.css";
+@import "@fontsource/ibm-plex-sans-arabic/latin-700.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 60 7% 97%;
+    --foreground: 0 0% 1%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 1%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 1%;
+
+    /* Primary action is near-black, not a saturated brand hue */
+    --primary: 0 0% 10%;
+    --primary-foreground: 60 7% 97%;
+
+    --secondary: 60 6% 94%;
+    --secondary-foreground: 0 0% 10%;
+
+    --muted: 60 6% 94%;
+    --muted-foreground: 0 0% 42%;
+
+    --accent: 60 6% 92%;
+    --accent-foreground: 0 0% 10%;
+
+    --destructive: 9 45% 50%;
+    --destructive-foreground: 60 7% 97%;
+
+    --border: 48 5% 87%;
+    --input: 48 5% 85%;
+    --ring: 0 0% 20%;
+
+    --radius: 4px;
+
+    /* Extra neutral steps used by the app shell */
+    --surface-sunken: 55 6% 95%;
+    --foreground-secondary: 0 0% 40%;
+    --foreground-muted: 0 0% 49%;
+    --foreground-faint: 0 0% 64%;
+    --line-strong: 45 4% 78%;
+
+    /* Unit status palette — sharp/light fills for the interactive map */
+    --status-available: 154 48% 62%;
+    --status-sold: 0 86% 74%;
+    --status-reserved: 37 88% 68%;
+    --status-pending: 199 58% 68%;
+    --status-investment: 272 38% 72%;
+    --status-frozen: 28 18% 78%;
+
+    --sidebar-background: 60 7% 97%;
+    --sidebar-foreground: 0 0% 25%;
+    --sidebar-primary: 0 0% 10%;
+    --sidebar-primary-foreground: 60 7% 97%;
+    --sidebar-accent: 60 6% 92%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 48 5% 87%;
+    --sidebar-ring: 0 0% 20%;
+  }
+
+  .dark {
+    --background: 0 0% 4%;
+    --foreground: 60 7% 97%;
+
+    --card: 0 0% 7%;
+    --card-foreground: 60 7% 97%;
+
+    --popover: 0 0% 8%;
+    --popover-foreground: 60 7% 97%;
+
+    --primary: 60 7% 97%;
+    --primary-foreground: 0 0% 6%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 60 7% 97%;
+
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 62%;
+
+    --accent: 0 0% 15%;
+    --accent-foreground: 60 7% 97%;
+
+    --destructive: 9 48% 55%;
+    --destructive-foreground: 60 7% 97%;
+
+    --border: 0 0% 17%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 70%;
+
+    --surface-sunken: 0 0% 9%;
+    --foreground-secondary: 0 0% 68%;
+    --foreground-muted: 0 0% 56%;
+    --foreground-faint: 0 0% 42%;
+    --line-strong: 0 0% 26%;
+
+    --status-available: 154 45% 58%;
+    --status-sold: 0 82% 68%;
+    --status-reserved: 37 84% 62%;
+    --status-pending: 199 52% 62%;
+    --status-investment: 272 34% 66%;
+    --status-frozen: 28 16% 72%;
+
+    --sidebar-background: 0 0% 6%;
+    --sidebar-foreground: 0 0% 75%;
+    --sidebar-primary: 60 7% 97%;
+    --sidebar-primary-foreground: 0 0% 6%;
+    --sidebar-accent: 0 0% 13%;
+    --sidebar-accent-foreground: 60 7% 97%;
+    --sidebar-border: 0 0% 17%;
+    --sidebar-ring: 0 0% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Arabic is a connected script: letter-spacing breaks glyph joining.
+     Negative tracking is reserved for large Latin-friendly display sizes. */
+  :where([lang="ar"], [dir="rtl"]) {
+    letter-spacing: normal;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 400;
+    line-height: 1.18;
+  }
+
+  /* Tabular figures keep numeric columns and map labels from jittering. */
+  table,
+  input[type="number"],
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--line-strong));
+    border: 3px solid hsl(var(--background));
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--foreground-faint));
+  }
+}
+
+@layer components {
+  /* Section / eyebrow label — readable Arabic, not tiny mono caps */
+  .eyebrow {
+    @apply text-[12px] font-medium leading-snug text-fg-secondary;
+  }
+
+  .eyebrow-mono {
+    @apply font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted;
+  }
+
+  /* Hairline-separated cell grid, the core Lightspark layout primitive. */
+  .hairline-grid {
+    @apply border-s border-t border-border;
+  }
+
+  .hairline-grid > * {
+    @apply border-b border-e border-border;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Large display type only; never applied to Arabic body copy. */
+  .tracking-display {
+    letter-spacing: -0.035em;
+  }
+}
