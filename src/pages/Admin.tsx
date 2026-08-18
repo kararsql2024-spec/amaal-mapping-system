@@ -58,6 +58,18 @@ import {
   getCenterBrochureProfile,
   type CenterBrochureProfiles,
 } from '@/lib/center-brochure';
+import PaymentAdminPanel from '@/components/payment/PaymentAdminPanel';
+import type { ProjectConfigsMap } from '@/lib/project-config';
+import {
+  fetchCenterSubscriptions,
+  saveCenterSubscription,
+  deleteCenterSubscription,
+  getCenterSubscription,
+  getSubscriptionStatusLabel,
+  addDaysToDateString,
+  formatSubscriptionDate,
+  type CenterSubscriptions,
+} from '@/lib/center-subscription';
 
 interface AdminProps {
   projects: Project[];
@@ -67,7 +79,7 @@ interface AdminProps {
 }
 
 /** الأقسام الرئيسية للوحة الإدارة — قسم واحد ظاهر في كل مرة. */
-type AdminView = 'projects' | 'brochure' | 'backup' | 'departments' | 'sales';
+type AdminView = 'projects' | 'brochure' | 'backup' | 'departments' | 'sales' | 'payment';
 
 const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
   <div className="flex items-center justify-between gap-4">
@@ -140,14 +152,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   // الأقسام الأربعة كانت أربعة مفاتيح منفصلة يُطفأ بعضها يدوياً عند تشغيل أحدها.
   const [activeView, setActiveView] = useState<AdminView>('projects');
   const showSalesUpdate = activeView === 'sales';
+  const showPaymentAdmin = activeView === 'payment';
   const showMarketingCenters = activeView === 'departments';
   const showDatabaseInspector = activeView === 'backup';
   const showBrochureDesigner = activeView === 'brochure';
-  const [formData, setFormData] = useState({ name: '', width: 1000, height: 800 });
+  const [formData, setFormData] = useState({ name: '', width: 1000, height: 800, projectLogo: '' });
   const [isSavingMap, setIsSavingMap] = useState(false);
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [centerBrochureProfiles, setCenterBrochureProfiles] = useState<CenterBrochureProfiles>({});
+  const [centerSubscriptions, setCenterSubscriptions] = useState<CenterSubscriptions>({});
   const [previewBrochureCenterId, setPreviewBrochureCenterId] = useState<string>('');
   const [newCenter, setNewCenter] = useState({
     name: '',
@@ -157,6 +171,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     phone: '',
     phone2: '',
     marketingLogo: '',
+    subscription_start: '',
+    subscription_end: '',
+    subscription_status: 'active' as 'active' | 'expired' | 'suspended',
+    subscription_notes: '',
   });
   const [editingCenterId, setEditingCenterId] = useState<string | null>(null);
   
@@ -190,7 +208,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
+  const [projectConfigs, setProjectConfigs] = useState<ProjectConfigsMap>({});
 
   // إعدادات مصمم البروشورات
   const [brochureConfigs, setBrochureConfigs] = useState<Record<string, BrochureConfig>>({});
@@ -302,6 +320,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const profiles = await fetchCenterBrochureProfiles(supabase);
         setCenterBrochureProfiles(profiles);
+
+        const subscriptions = await fetchCenterSubscriptions(supabase);
+        setCenterSubscriptions(subscriptions);
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -514,6 +535,61 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     await supabase.auth.signOut();
   };
 
+  const resetCenterForm = () => {
+    setEditingCenterId(null);
+    setNewCenter({
+      name: '',
+      password: '',
+      type: '',
+      allowed_projects: [],
+      phone: '',
+      phone2: '',
+      marketingLogo: '',
+      subscription_start: '',
+      subscription_end: '',
+      subscription_status: 'active',
+      subscription_notes: '',
+    });
+  };
+
+  const buildCenterSubscriptionPayload = () => ({
+    subscription_start: newCenter.subscription_start,
+    subscription_end: newCenter.subscription_end,
+    subscription_status: newCenter.subscription_status,
+    subscription_notes: newCenter.subscription_notes,
+  });
+
+  const handleRenewCenterSubscription = async (centerId: string, days: number) => {
+    try {
+      const current = getCenterSubscription(centerSubscriptions, centerId);
+      const today = new Date();
+      const nextEnd = addDaysToDateString(today, days);
+      const updated = {
+        ...current,
+        subscription_start: current.subscription_start || addDaysToDateString(today, 0),
+        subscription_end: nextEnd,
+        subscription_status: 'active' as const,
+      };
+
+      await saveCenterSubscription(supabase, centerId, updated, centerSubscriptions);
+      setCenterSubscriptions((prev) => ({ ...prev, [centerId]: updated }));
+
+      if (editingCenterId === centerId) {
+        setNewCenter((prev) => ({
+          ...prev,
+          subscription_start: updated.subscription_start || '',
+          subscription_end: updated.subscription_end || '',
+          subscription_status: 'active',
+        }));
+      }
+
+      showSuccess(`تم تجديد الاشتراك حتى ${formatSubscriptionDate(nextEnd)}`);
+    } catch (error) {
+      console.error("Error renewing subscription:", error);
+      showError("فشل تجديد الاشتراك");
+    }
+  };
+
   const handleAddCenter = async () => {
     if (!newCenter.name || !newCenter.password || !newCenter.type) {
       showError("يرجى إكمال كافة البيانات واختيار نوع القسم");
@@ -546,6 +622,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             },
             centerBrochureProfiles,
           );
+          await saveCenterSubscription(
+            supabase,
+            editingCenterId,
+            buildCenterSubscriptionPayload(),
+            centerSubscriptions,
+          );
           setCenterBrochureProfiles((prev) => ({
             ...prev,
             [editingCenterId]: {
@@ -554,8 +636,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               marketingLogo: newCenter.marketingLogo,
             },
           }));
+          setCenterSubscriptions((prev) => ({
+            ...prev,
+            [editingCenterId]: buildCenterSubscriptionPayload(),
+          }));
           setMarketingCenters(marketingCenters.map(c => c.id === editingCenterId ? data[0] : c));
-          setEditingCenterId(null);
+          resetCenterForm();
           showSuccess("تم تحديث القسم بنجاح");
         }
       } else {
@@ -577,6 +663,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             },
             centerBrochureProfiles,
           );
+          await saveCenterSubscription(
+            supabase,
+            newId,
+            buildCenterSubscriptionPayload(),
+            centerSubscriptions,
+          );
           setCenterBrochureProfiles((prev) => ({
             ...prev,
             [newId]: {
@@ -585,12 +677,16 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
               marketingLogo: newCenter.marketingLogo,
             },
           }));
+          setCenterSubscriptions((prev) => ({
+            ...prev,
+            [newId]: buildCenterSubscriptionPayload(),
+          }));
           setMarketingCenters([data[0], ...marketingCenters]);
           if (!previewBrochureCenterId) setPreviewBrochureCenterId(newId);
           showSuccess("تم إضافة القسم بنجاح");
         }
       }
-      setNewCenter({ name: '', password: '', type: '', allowed_projects: [], phone: '', phone2: '', marketingLogo: '' });
+      resetCenterForm();
     } catch (error) {
       console.error("Error in handleAddCenter:", error);
       showError(editingCenterId ? "فشل في تحديث القسم" : "فشل في إضافة القسم");
@@ -613,6 +709,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         value: nextProfiles,
       });
       setCenterBrochureProfiles(nextProfiles);
+
+      const nextSubscriptions = { ...centerSubscriptions };
+      delete nextSubscriptions[id];
+      await deleteCenterSubscription(supabase, id, centerSubscriptions);
+      setCenterSubscriptions(nextSubscriptions);
 
       setMarketingCenters(marketingCenters.filter(c => c.id !== id));
       if (previewBrochureCenterId === id) {
@@ -762,7 +863,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showQuickPreview: true,
       canAccessReports: true,
       showDiagnosticTerminal: true,
-      showBrochureButton: true
+      showBrochureButton: true,
+      canAccessPaymentForm: true,
+      canAccessPaymentArchive: true,
+      showPaymentPlanButton: true,
     };
     
     const currentValue = current[permission];
@@ -1346,8 +1450,17 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     const newProject = { id: newId, name: formData.name, description: '', elements: [], map_width: Math.round(formData.width), map_height: Math.round(formData.height) };
     try {
       await supabase.from('projects').insert(newProject);
+      const updatedConfigs = {
+        ...projectConfigs,
+        [newId]: {
+          ...(projectConfigs[newId] || {}),
+          projectLogo: formData.projectLogo.trim(),
+        },
+      };
+      await supabase.from('settings').upsert({ key: 'project_configs', value: updatedConfigs });
+      setProjectConfigs(updatedConfigs);
       setProjects([{ ...newProject, mapWidth: Math.round(formData.width), mapHeight: Math.round(formData.height), createdAt: new Date().toISOString(), elements: [] }, ...projects]);
-      setFormData({ name: '', width: 1000, height: 800 });
+      setFormData({ name: '', width: 1000, height: 800, projectLogo: '' });
       setIsCreating(false);
       showSuccess('تم إنشاء المشروع بنجاح');
     } catch (error) { showError("فشل في إنشاء المشروع"); }
@@ -1357,9 +1470,18 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     if (!editingProjectInfo || !formData.name) return;
     try {
       await supabase.from('projects').update({ name: formData.name, map_width: Math.round(formData.width), map_height: Math.round(formData.height) }).eq('id', editingProjectInfo.id);
+      const updatedConfigs = {
+        ...projectConfigs,
+        [editingProjectInfo.id]: {
+          ...(projectConfigs[editingProjectInfo.id] || {}),
+          projectLogo: formData.projectLogo.trim(),
+        },
+      };
+      await supabase.from('settings').upsert({ key: 'project_configs', value: updatedConfigs });
+      setProjectConfigs(updatedConfigs);
       setProjects(projects.map(p => p.id === editingProjectInfo.id ? { ...p, name: formData.name, mapWidth: Math.round(formData.width), mapHeight: Math.round(formData.height) } : p));
       setEditingProjectInfo(null);
-      setFormData({ name: '', width: 1000, height: 800 });
+      setFormData({ name: '', width: 1000, height: 800, projectLogo: '' });
       showSuccess('تم تحديث بيانات المشروع بنجاح');
     } catch (error) { showError("فشل في تحديث المشروع"); }
   };
@@ -1418,7 +1540,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const startEditingInfo = (project: Project) => {
     setEditingProjectInfo(project);
-    setFormData({ name: project.name, width: project.mapWidth, height: project.mapHeight });
+    setFormData({
+      name: project.name,
+      width: project.mapWidth,
+      height: project.mapHeight,
+      projectLogo: projectConfigs[project.id]?.projectLogo || '',
+    });
     setIsCreating(false);
     setActiveView('projects');
   };
@@ -1618,6 +1745,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'canAccessReports', label: 'صلاحية الوصول إلى نافذة التقارير والتحليلات' },
         { key: 'showDiagnosticTerminal', label: 'رؤية لوحة تحليل الأداء الفورية (Realtime)' },
         { key: 'showBrochureButton', label: 'عرض زر بروشور الوحدة السكنية الفاخرة' },
+        { key: 'canAccessPaymentForm', label: 'الوصول إلى استمارة تنظيم آلية الدفعات' },
+        { key: 'canAccessPaymentArchive', label: 'الوصول إلى أرشيف استمارات الدفعات' },
       ]
     },
     {
@@ -1764,6 +1893,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     { id: 'backup', label: 'النسخ الاحتياطي', icon: <Database size={14} /> },
     { id: 'departments', label: 'الأقسام', icon: <Store size={14} /> },
     { id: 'sales', label: 'تحديث المبيعات', icon: <FileSpreadsheet size={14} /> },
+    { id: 'payment', label: 'آلية الدفعات', icon: <CreditCard size={14} /> },
   ];
 
   return (
@@ -2233,12 +2363,90 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       </AdminField>
                     </div>
 
+                    <div className="border-t border-line pt-4">
+                      <SubHeading icon={<Calendar size={14} />}>فترة الاشتراك</SubHeading>
+                      <p className="mt-1 text-[10px] leading-relaxed text-fg-faint">
+                        عند تحديد تاريخ الانتهاء، يُقفل القسم تلقائياً بعدها. اترك الحقول فارغة لعدم تطبيق حد زمني.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <AdminField label="بداية الاشتراك">
+                        <Input
+                          type="date"
+                          value={newCenter.subscription_start}
+                          onChange={(e) => setNewCenter({ ...newCenter, subscription_start: e.target.value })}
+                          className="text-[12px]"
+                        />
+                      </AdminField>
+                      <AdminField label="نهاية الاشتراك">
+                        <Input
+                          type="date"
+                          value={newCenter.subscription_end}
+                          onChange={(e) => setNewCenter({ ...newCenter, subscription_end: e.target.value })}
+                          className="text-[12px]"
+                        />
+                      </AdminField>
+                    </div>
+
+                    <AdminField label="حالة الاشتراك">
+                      <Select
+                        value={newCenter.subscription_status}
+                        onValueChange={(val: 'active' | 'expired' | 'suspended') =>
+                          setNewCenter({ ...newCenter, subscription_status: val })
+                        }
+                      >
+                        <SelectTrigger className="text-[12px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">نشط</SelectItem>
+                          <SelectItem value="suspended">معلّق</SelectItem>
+                          <SelectItem value="expired">منتهي</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </AdminField>
+
+                    <AdminField label="ملاحظات الاشتراك (اختياري)">
+                      <Textarea
+                        value={newCenter.subscription_notes}
+                        onChange={(e) => setNewCenter({ ...newCenter, subscription_notes: e.target.value })}
+                        placeholder="مثال: تجديد 6 أشهر — دفع نقدي"
+                        className="min-h-[72px] text-[12px]"
+                      />
+                    </AdminField>
+
+                    {editingCenterId && (
+                      <div className="space-y-2">
+                        <Label className="text-[11px] text-fg-muted">تجديد سريع</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { label: '30 يوم', days: 30 },
+                            { label: '3 أشهر', days: 90 },
+                            { label: '6 أشهر', days: 180 },
+                            { label: 'سنة', days: 365 },
+                          ].map((option) => (
+                            <Button
+                              key={option.days}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="text-[11px]"
+                              onClick={() => handleRenewCenterSubscription(editingCenterId, option.days)}
+                            >
+                              {option.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-2 pt-1">
                       <Button onClick={handleAddCenter} className="flex-1">
                         {editingCenterId ? 'تحديث القسم' : 'إضافة القسم'}
                       </Button>
                       {editingCenterId && (
-                        <Button variant="ghost" onClick={() => { setEditingCenterId(null); setNewCenter({ name: '', password: '', type: '', allowed_projects: [], phone: '', phone2: '', marketingLogo: '' }); }}>
+                        <Button variant="ghost" onClick={resetCenterForm}>
                           إلغاء
                         </Button>
                       )}
@@ -2307,6 +2515,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       <div className="divide-y divide-line">
                         {marketingCenters.map(center => {
                           const profile = getCenterBrochureProfile(centerBrochureProfiles, center.id);
+                          const subscription = getCenterSubscription(centerSubscriptions, center.id);
+                          const subscriptionLabel = getSubscriptionStatusLabel(subscription);
+                          const isSubscriptionWarning = subscriptionLabel.includes('ينتهي خلال');
+                          const isSubscriptionExpired = subscriptionLabel === 'منتهي' || subscriptionLabel === 'معلّق';
                           return (
                           <div key={center.id} className="group flex items-center justify-between gap-4 px-5 py-3.5">
                             <div className="flex min-w-0 items-center gap-3">
@@ -2320,14 +2532,30 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                     {[profile.phone, profile.phone2].filter(Boolean).join(' · ')}
                                   </span>
                                 )}
+                                {subscription.subscription_end && (
+                                  <span className="block truncate text-[10px] text-fg-faint">
+                                    ينتهي: {formatSubscriptionDate(subscription.subscription_end)}
+                                  </span>
+                                )}
                               </div>
                               <span className="shrink-0 border border-line px-1.5 py-0.5 text-[10px] text-fg-muted">
                                 {center.type}
+                              </span>
+                              <span className={cn(
+                                "shrink-0 border px-1.5 py-0.5 text-[10px]",
+                                isSubscriptionExpired
+                                  ? "border-status-sold/30 bg-status-sold/10 text-status-sold"
+                                  : isSubscriptionWarning
+                                    ? "border-status-reserved/30 bg-status-reserved/10 text-status-reserved"
+                                    : "border-line text-fg-muted",
+                              )}>
+                                {subscriptionLabel}
                               </span>
                             </div>
                             <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               <Button variant="ghost" size="icon" onClick={() => {
                                 const p = getCenterBrochureProfile(centerBrochureProfiles, center.id);
+                                const s = getCenterSubscription(centerSubscriptions, center.id);
                                 setEditingCenterId(center.id);
                                 setNewCenter({
                                   name: center.name,
@@ -2337,6 +2565,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                   phone: p.phone || '',
                                   phone2: p.phone2 || '',
                                   marketingLogo: p.marketingLogo || '',
+                                  subscription_start: s.subscription_start || '',
+                                  subscription_end: s.subscription_end || '',
+                                  subscription_status: s.subscription_status || 'active',
+                                  subscription_notes: s.subscription_notes || '',
                                 });
                               }} className="size-8 text-fg-faint hover:text-fg">
                                 <Edit2 size={13} />
@@ -2431,6 +2663,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   )}
                 </div>
               </div>
+            )}
+
+            {showPaymentAdmin && (
+              <PaymentAdminPanel projects={projects.map((p) => ({ id: p.id, name: p.name }))} />
             )}
 
             {showSalesUpdate && (
@@ -2562,6 +2798,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                         <Input type="number" value={formData.height} onChange={(e) => setFormData({...formData, height: parseInt(e.target.value)})} className="font-mono" />
                       </AdminField>
                     </div>
+                    <AdminField label="رابط لوغو المشروع / المدينة" hint="يُستخدم في استمارة تنظيم الدفعات والطباعة">
+                      <Input
+                        placeholder="https://..."
+                        value={formData.projectLogo}
+                        onChange={(e) => setFormData({ ...formData, projectLogo: e.target.value })}
+                      />
+                      {formData.projectLogo ? (
+                        <img
+                          src={formData.projectLogo}
+                          alt=""
+                          className="mt-2 h-14 w-14 rounded border border-line object-contain"
+                        />
+                      ) : null}
+                    </AdminField>
                     <div className="flex gap-2 pt-1">
                       <Button onClick={editingProjectInfo ? handleUpdateProjectInfo : handleCreateProject}>
                         {editingProjectInfo ? 'تحديث البيانات' : 'إنشاء المشروع'}
@@ -2578,7 +2828,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                   title="المشاريع الحالية"
                   description={`${projects.length} مخطط سكني`}
                   actions={
-                    <Button size="sm" onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800 }); }} className="gap-1.5">
+                    <Button size="sm" onClick={() => { setIsCreating(true); setEditingProjectInfo(null); setFormData({ name: '', width: 1000, height: 800, projectLogo: '' }); }} className="gap-1.5">
                       <Plus size={13} /> مشروع جديد
                     </Button>
                   }

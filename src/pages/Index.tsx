@@ -9,7 +9,7 @@ import DiagnosticTerminal from '@/components/DiagnosticTerminal';
 import { showSuccess, showError } from '@/utils/toast';
 import {
   Map as MapIcon, ChevronDown, ChevronUp, LogOut, Bell,
-  Clock, Info, Search, RefreshCcw, X, AlertTriangle, Trash2
+  Clock, Info, Search, RefreshCcw, X, AlertTriangle, Trash2, Archive
 } from 'lucide-react';
 import { AppShell, Eyebrow, StatGrid, QuickStatGrid, EmptyState, LoadingBlock } from '@/components/layout/AppShell';
 import { BrandMark, BrandWordmark } from '@/components/layout/Brand';
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { canAccessPaymentArchive } from "@/lib/dept-permissions";
 import { getHouseArea as getHouseAreaFor } from "@/lib/units";
 import {
   fetchWithRetry,
@@ -50,6 +51,13 @@ import {
   writeProjectCache,
   fingerprintMainMap,
 } from "@/lib/map-cache";
+import {
+  fetchCenterSubscriptions,
+  getCenterSubscription,
+  evaluateCenterSubscription,
+  formatSubscriptionDate,
+  type CenterSubscriptions,
+} from "@/lib/center-subscription";
 
 interface IndexProps {
   projects: Project[];
@@ -78,6 +86,8 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
   const [loginData, setLoginData] = useState({ centerId: '', password: '' });
   const [currentCenter, setCurrentCenter] = useState<any>(null);
+  const [centerSubscriptions, setCenterSubscriptions] = useState<CenterSubscriptions>({});
+  const [subscriptionWarning, setSubscriptionWarning] = useState<{ daysRemaining: number; endDate: string } | null>(null);
   
   const [mainMapData, setMainMapData] = useState<any>(null);
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
@@ -125,7 +135,10 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     showQuickPreview: true,
     canAccessReports: true,
     showDiagnosticTerminal: true,
-    showBrochureButton: true
+    showBrochureButton: true,
+    canAccessPaymentForm: true,
+    showPaymentPlanButton: true,
+    canAccessPaymentArchive: true,
   });
 
   const activeUnitsData = React.useMemo(() => {
@@ -304,10 +317,32 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentCenter(null);
+    setSubscriptionWarning(null);
     setLoginData({ centerId: '', password: '' });
     localStorage.removeItem('marketing_center_session');
     localStorage.removeItem('marketing_center_password');
     localStorage.removeItem('marketing_center_name');
+  };
+
+  const getSubscriptionBlockMessage = (reason?: 'expired' | 'suspended' | 'not_started') => {
+    if (reason === 'suspended') {
+      return "تم تعليق اشتراك هذا القسم. للتجديد، تواصل مع مشرف النظام.";
+    }
+    if (reason === 'not_started') {
+      return "لم يبدأ اشتراك هذا القسم بعد. تواصل مع مشرف النظام.";
+    }
+    return "انتهى اشتراك هذا القسم. للتجديد، تواصل مع مشرف النظام.";
+  };
+
+  const applySubscriptionAccess = (centerId: string, subscriptions: CenterSubscriptions) => {
+    const subscription = getCenterSubscription(subscriptions, centerId);
+    const access = evaluateCenterSubscription(subscription);
+    if (!access.allowed) {
+      setSubscriptionWarning(null);
+      return { ok: false as const, reason: access.reason };
+    }
+    setSubscriptionWarning(access.warning ?? null);
+    return { ok: true as const };
   };
 
   // المراقبة اللحظية (Realtime Logout) لتغيير كلمة المرور أو حذف الحساب من الإدارة
@@ -362,6 +397,9 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         const { data: centers } = await supabase.from('marketing_centers').select('*');
         if (centers) setMarketingCenters(centers);
 
+        const subscriptions = await fetchCenterSubscriptions(supabase);
+        setCenterSubscriptions(subscriptions);
+
         const savedCenterId = localStorage.getItem('marketing_center_session');
         const savedCenterPass = localStorage.getItem('marketing_center_password');
 
@@ -370,6 +408,13 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           
           // التحقق من صحة كلمة المرور المعتمدة للجلسة وبث الطلبات الخفيفة فقط
           if (center && center.password === savedCenterPass) {
+            const subscriptionAccess = applySubscriptionAccess(center.id, subscriptions);
+            if (!subscriptionAccess.ok) {
+              handleLogout();
+              showError(getSubscriptionBlockMessage(subscriptionAccess.reason));
+              return;
+            }
+
             const { data: settings } = await supabase
               .from('settings')
               .select('key, value')
@@ -409,6 +454,27 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     };
     fetchCentersAndPermissions();
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn || !currentCenter?.id) return;
+
+    const refreshSubscriptionAccess = async () => {
+      try {
+        const subscriptions = await fetchCenterSubscriptions(supabase);
+        setCenterSubscriptions(subscriptions);
+        const access = applySubscriptionAccess(currentCenter.id, subscriptions);
+        if (!access.ok) {
+          handleLogout();
+          showError(getSubscriptionBlockMessage(access.reason));
+        }
+      } catch (error) {
+        console.error("Error refreshing subscription access:", error);
+      }
+    };
+
+    const intervalId = window.setInterval(refreshSubscriptionAccess, 5 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [isLoggedIn, currentCenter?.id]);
 
   useEffect(() => {
     setMapFilterZone('all');
@@ -729,6 +795,14 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     if (center && center.password === loginData.password) {
       setIsAuthChecking(true);
       try {
+        const subscriptions = await fetchCenterSubscriptions(supabase);
+        setCenterSubscriptions(subscriptions);
+        const subscriptionAccess = applySubscriptionAccess(center.id, subscriptions);
+        if (!subscriptionAccess.ok) {
+          showError(getSubscriptionBlockMessage(subscriptionAccess.reason));
+          return;
+        }
+
         const { data: settings } = await supabase
           .from('settings')
           .select('key, value')
@@ -1090,6 +1164,15 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
               <Button variant="ghost" size="sm" className="px-2">التقارير</Button>
             </Link>
           )}
+
+          {canAccessPaymentArchive(permissions) && (
+            <Link to="/sales/archive">
+              <Button variant="ghost" size="sm" className="gap-1.5 px-2">
+                <Archive size={14} />
+                أرشيف الدفعات
+              </Button>
+            </Link>
+          )}
         </>
       }
       actions={
@@ -1114,6 +1197,30 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           logs={diagLogs}
           onClearLogs={() => setDiagLogs([])}
         />
+      )}
+
+      {subscriptionWarning && (
+        <div className="mb-6 flex items-start gap-3 border border-status-reserved/30 bg-status-reserved/10 px-4 py-3.5">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-reserved" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-fg">تنبيه: اشتراك القسم على وشك الانتهاء</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-fg-secondary">
+              متبقي{" "}
+              <span className="font-medium tabular-nums text-fg">
+                {subscriptionWarning.daysRemaining}
+              </span>{" "}
+              {subscriptionWarning.daysRemaining === 1 ? "يوم" : "أيام"}{" "}
+              على انتهاء الاشتراك
+              {subscriptionWarning.endDate ? (
+                <>
+                  {" "}
+                  (<span className="text-fg">{formatSubscriptionDate(subscriptionWarning.endDate)}</span>)
+                </>
+              ) : null}
+              . للتجديد، تواصل مع مشرف النظام.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Page title */}
@@ -1360,6 +1467,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         onSaveApartment={handleSaveData}
         permissions={permissions}
         initialSelectedApartmentKey={pendingApartmentKey}
+        projectId={selectedProjectId && selectedProjectId !== "main_map" ? selectedProjectId : undefined}
       />
 
       <footer className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-line pt-6 sm:flex-row">

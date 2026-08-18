@@ -20,8 +20,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, Clock, ShieldCheck, Store, Ruler, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, Clock, ShieldCheck, Store, Ruler, AlertTriangle, FileSpreadsheet, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { canAccessPaymentForm } from '@/lib/dept-permissions';
 import { getStatusMeta } from '@/lib/unit-status';
 import { Eyebrow } from '@/components/layout/AppShell';
 
@@ -306,6 +307,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   };
 
+  const handleOpenPaymentPlan = () => {
+    if (projectId && unitId) {
+      window.open(`/sales/new/${projectId}/${unitId}`, "_blank");
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0" dir="rtl">
@@ -317,11 +324,18 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
             </DialogTitle>
           </div>
 
-          {projectId && unitId && permissions?.showBrochureButton !== false && (
-            <Button variant="outline" size="sm" onClick={handleOpenBrochure} className="shrink-0 gap-1.5">
-              <FileSpreadsheet size={13} /> البروشور
-            </Button>
-          )}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {projectId && unitId && permissions?.showBrochureButton !== false && (
+              <Button variant="outline" size="sm" onClick={handleOpenBrochure} className="gap-1.5">
+                <FileSpreadsheet size={13} /> البروشور
+              </Button>
+            )}
+            {projectId && unitId && canAccessPaymentForm(permissions) && (
+              <Button variant="outline" size="sm" onClick={handleOpenPaymentPlan} className="gap-1.5">
+                <Receipt size={13} /> تنظيم الدفعات
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="max-h-[70vh] space-y-6 overflow-y-auto p-5">
