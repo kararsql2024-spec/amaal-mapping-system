@@ -149,3 +149,31 @@ export const getHouseArea = (
   if (el.customArea !== undefined && el.customArea > 0) return el.customArea;
   return houseTypeAreas[getHouseType(el.label)] || 0;
 };
+
+/** مساحة الوحدة من بيانات الخريطة (منزل أو شقة) لاستمارة الدفعات */
+export const resolvePaymentUnitArea = (
+  unitKey: string,
+  elements: MapElement[],
+  houseTypeAreas: Record<string, number> = {},
+): number => {
+  if (isApartmentKey(unitKey)) {
+    const towerId = getTowerIdFromKey(unitKey);
+    const tower = elements.find((el) => el.id === towerId && el.type === "tower");
+    if (!tower) return 0;
+
+    const match = unitKey.match(/_F(\d+)_A(\d+)/i);
+    if (!match) return 0;
+
+    const floor = Number(match[1]);
+    const apt = Number(match[2]);
+    return getApartmentSize(tower, floor, apt);
+  }
+
+  const house = elements.find((el) => el.id === unitKey && el.type === "house");
+  if (!house) return 0;
+
+  return getHouseArea(house, houseTypeAreas);
+};
+
+export const formatAreaForPayment = (area: number): string =>
+  area > 0 ? String(area) : "";

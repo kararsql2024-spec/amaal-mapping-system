@@ -15,6 +15,9 @@ import { LoadingBlock } from "@/components/layout/AppShell";
 const Admin = lazy(() => import("./pages/Admin"));
 const Reports = lazy(() => import("./pages/Reports"));
 const Brochure = lazy(() => import("./pages/Brochure"));
+const SalesForm = lazy(() => import("./pages/SalesForm"));
+const SalesPrint = lazy(() => import("./pages/SalesPrint"));
+const SalesArchive = lazy(() => import("./pages/SalesArchive"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const RouteFallback = () => (
@@ -101,6 +104,9 @@ const App = () => {
               element={<Reports projects={projects} housesData={housesData} />}
             />
             <Route path="/brochure/:projectId/:unitId" element={<Brochure />} />
+            <Route path="/sales/new/:projectId/:unitId" element={<SalesForm />} />
+            <Route path="/sales/print/:id" element={<SalesPrint />} />
+            <Route path="/sales/archive" element={<SalesArchive />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

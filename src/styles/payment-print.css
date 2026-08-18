@@ -1,0 +1,1543 @@
+.payment-print-root {
+  font-family: Calibri, "Segoe UI", Tahoma, sans-serif;
+  color: #0f172a;
+  background: #f1f5f9;
+  padding: 24px 0;
+}
+
+.payment-print-page {
+  box-sizing: border-box;
+  width: 210mm;
+  height: 297mm;
+  margin: 0 auto;
+  padding: 10mm;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+}
+
+.payment-print-sheet {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 24px;
+  background: #fff;
+}
+
+.payment-print-watermark {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 0;
+}
+
+.payment-print-watermark img {
+  width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+  filter: grayscale(100%);
+}
+
+.payment-print-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.payment-print-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.payment-print-header-logo {
+  display: block;
+  height: 56px;
+  width: auto;
+  max-width: 72px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.payment-print-header-center {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding: 0 8px;
+}
+
+.payment-print-title-main {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.payment-print-title-sub {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.payment-print-title-form {
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.payment-print-grid-3,
+.payment-print-grid-2,
+.payment-print-grid-4 {
+  display: grid;
+  gap: 4px 16px;
+  margin-bottom: 4px;
+}
+
+.payment-print-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.payment-print-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.payment-print-grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* صف تفاصيل الوحدة — العنوان أوسع، يُؤخذ العرض الزائد من مدة التسليم فقط */
+.payment-print-grid-unit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1fr) minmax(0, 0.6fr);
+  gap: 4px 16px;
+  margin-bottom: 4px;
+}
+
+.payment-print-grid-unit .payment-print-field--unit-address {
+  min-width: 0;
+}
+
+.payment-print-field-value-nowrap {
+  white-space: nowrap;
+  word-break: normal;
+  overflow: visible;
+}
+
+.payment-print-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.payment-print-field-label {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.payment-print-field-value {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.payment-print-field-value-lg {
+  font-size: 18px;
+}
+
+.payment-print-field-value-md {
+  font-size: 17px;
+}
+
+.payment-print-note {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.payment-print-price-box {
+  margin-bottom: 4px;
+}
+
+.payment-print-price-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payment-print-price-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.payment-print-price-desc {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.payment-print-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.payment-print-table-wrap--compact {
+  flex: 1 1 0;
+}
+
+.payment-print-table-wrap--compact + .payment-print-notes-box .payment-print-notes-box-body {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.payment-print-table-border {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 2px solid var(--payment-frame-color, #1e40af);
+}
+
+.payment-print-table-wrap--compact .payment-print-table-border {
+  overflow: hidden;
+}
+
+.payment-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.payment-print-table th,
+.payment-print-table td {
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  padding: 4px 6px;
+  vertical-align: middle;
+  word-wrap: break-word;
+}
+
+.payment-print-table-wrap--compact .payment-print-table {
+  height: 100%;
+  font-size: var(--payment-table-font-size, 10px);
+}
+
+.payment-print-table-wrap--compact .payment-print-table thead th {
+  height: 24px;
+  padding: 2px 4px;
+  font-size: var(--payment-table-font-size, 10px);
+  line-height: var(--payment-table-line-height, 1.08);
+}
+
+.payment-print-table-wrap--compact .payment-print-table tbody tr {
+  height: var(--payment-table-row-height, auto);
+}
+
+.payment-print-table-wrap--compact .payment-print-table td {
+  padding: var(--payment-table-cell-padding, 1px 4px);
+  font-size: var(--payment-table-font-size, 10px);
+  line-height: var(--payment-table-line-height, 1.08);
+}
+
+.payment-print-table thead th {
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  background: var(--payment-frame-color, #1e40af);
+}
+
+.payment-print-table tbody tr:nth-child(1) {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.payment-print-table tfoot td {
+  font-weight: 700;
+  text-align: center;
+  background: #eff6ff;
+}
+
+.payment-print-notes-box {
+  margin-bottom: 4px;
+  overflow: hidden;
+  border: 2px solid var(--payment-frame-color, #1e40af);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.payment-print-notes-box-head {
+  padding: 4px 8px;
+  font-weight: 700;
+  background: #f1f5f9;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.payment-print-notes-box-body {
+  min-height: 40px;
+  padding: 8px;
+  line-height: 1.45;
+}
+
+.payment-print-consent {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.payment-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 2px solid var(--payment-frame-color, #1e40af);
+}
+
+.payment-print-signature-box {
+  min-height: 60px;
+  padding: 8px;
+  text-align: center;
+  border: 2px solid var(--payment-frame-color, #1e40af);
+  border-radius: 8px;
+}
+
+.payment-print-signature-box p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ─── Premium print themes (full document styling) ─── */
+
+.payment-print-sheet[class*="payment-theme-"] .payment-print-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* 👑 Royal Crest */
+.payment-theme-royal_crest {
+  background: linear-gradient(180deg, #fffef9 0%, #ffffff 12%);
+}
+
+.payment-theme-royal_crest::before,
+.payment-theme-royal_crest::after {
+  content: "";
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border: 3px solid var(--payment-frame-color);
+  opacity: 0.55;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.payment-theme-royal_crest::before {
+  top: 10px;
+  right: 10px;
+  border-left: none;
+  border-bottom: none;
+}
+
+.payment-theme-royal_crest::after {
+  bottom: 10px;
+  left: 10px;
+  border-right: none;
+  border-top: none;
+}
+
+.payment-theme-royal_crest .payment-print-header {
+  border-bottom: 2px solid var(--payment-frame-color);
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--payment-frame-color) 10%, white),
+    transparent
+  );
+}
+
+.payment-theme-royal_crest .payment-print-title-form {
+  align-self: center;
+  margin-top: 10px;
+  padding: 6px 28px;
+  color: #fff;
+  background: var(--payment-frame-color);
+  border-radius: 3px;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--payment-frame-color) 35%, transparent);
+}
+
+.payment-theme-royal_crest .payment-print-field {
+  padding: 3px 8px 3px 4px;
+  background: #faf8f2;
+  border-right: 3px solid var(--payment-frame-color);
+}
+
+.payment-theme-royal_crest .payment-print-price-box {
+  margin-top: 4px;
+  padding: 8px 12px;
+  text-align: center;
+  border: 2px solid var(--payment-frame-color);
+  background: linear-gradient(135deg, #fffef9, #fff);
+}
+
+.payment-theme-royal_crest .payment-print-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--payment-frame-color) 7%, white);
+}
+
+.payment-theme-royal_crest .payment-print-signature-box {
+  border-radius: 0;
+  background: #faf8f2;
+}
+
+/* 🌙 Midnight Gold */
+.payment-theme-midnight_gold {
+  background: #fff;
+}
+
+.payment-theme-midnight_gold .payment-print-header {
+  margin: 0 0 10px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #0f172a 0%, var(--payment-frame-color) 100%);
+}
+
+.payment-theme-midnight_gold .payment-print-header-logo {
+  filter: brightness(0) invert(1);
+}
+
+.payment-theme-midnight_gold .payment-print-title-main {
+  color: #fff !important;
+}
+
+.payment-theme-midnight_gold .payment-print-title-sub {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.payment-theme-midnight_gold .payment-print-content {
+  padding: 0 18px 14px;
+}
+
+.payment-theme-midnight_gold .payment-print-title-form {
+  align-self: center;
+  margin-top: 4px;
+  padding: 5px 20px;
+  color: #0f172a;
+  background: linear-gradient(90deg, #fbbf24, #fde68a, #fbbf24);
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.payment-theme-midnight_gold .payment-print-field-label {
+  color: #64748b;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.payment-theme-midnight_gold .payment-print-price-box {
+  padding: 10px;
+  text-align: center;
+  background: #0f172a;
+  border-radius: 6px;
+}
+
+.payment-theme-midnight_gold .payment-print-price-label,
+.payment-theme-midnight_gold .payment-print-price-desc {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.payment-theme-midnight_gold .payment-print-price-value {
+  color: #fde68a !important;
+  font-size: 24px;
+}
+
+.payment-theme-midnight_gold .payment-print-table thead th {
+  background: #0f172a !important;
+}
+
+.payment-theme-midnight_gold .payment-print-table tbody tr:nth-child(1) {
+  background: #fef3c7;
+}
+
+.payment-theme-midnight_gold .payment-print-signatures {
+  border-top-color: #0f172a;
+}
+
+.payment-theme-midnight_gold .payment-print-signature-box {
+  background: #f8fafc;
+  border-color: #0f172a;
+}
+
+/* ◆ Marble Luxe */
+.payment-theme-marble_luxe {
+  background:
+    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.9) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(200, 200, 210, 0.25) 0%, transparent 45%),
+    linear-gradient(160deg, #f8f9fb 0%, #eef1f5 40%, #f5f6f8 100%);
+}
+
+.payment-theme-marble_luxe .payment-print-header {
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--payment-frame-color) 25%, #cbd5e1);
+}
+
+.payment-theme-marble_luxe .payment-print-title-form {
+  align-self: center;
+  font-size: 19px;
+  letter-spacing: 0.12em;
+  color: var(--payment-frame-color);
+}
+
+.payment-theme-marble_luxe .payment-print-field {
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 4px;
+}
+
+.payment-theme-marble_luxe .payment-print-price-box {
+  padding: 10px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid color-mix(in srgb, var(--payment-frame-color) 30%, #cbd5e1);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+.payment-theme-marble_luxe .payment-print-table-border,
+.payment-theme-marble_luxe .payment-print-notes-box,
+.payment-theme-marble_luxe .payment-print-signature-box {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* 🎗 Ribbon Premium */
+.payment-theme-ribbon_premium .payment-print-header {
+  border-bottom: 3px solid var(--payment-frame-color);
+}
+
+.payment-theme-ribbon_premium .payment-print-title-form {
+  align-self: center;
+  position: relative;
+  margin: 10px auto 8px;
+  padding: 8px 44px;
+  color: #fff;
+  background: var(--payment-frame-color);
+  clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--payment-frame-color) 50%, #000);
+}
+
+.payment-theme-ribbon_premium .payment-print-grid-3,
+.payment-theme-ribbon_premium .payment-print-grid-2,
+.payment-theme-ribbon_premium .payment-print-grid-4,
+.payment-theme-ribbon_premium .payment-print-grid-unit {
+  padding: 6px 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.payment-theme-ribbon_premium .payment-print-price-box {
+  padding: 8px;
+  text-align: center;
+  border: 2px dashed var(--payment-frame-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--payment-frame-color) 5%, white);
+}
+
+.payment-theme-ribbon_premium .payment-print-table thead th {
+  background: linear-gradient(
+    180deg,
+    var(--payment-frame-color),
+    color-mix(in srgb, var(--payment-frame-color) 75%, #000)
+  ) !important;
+}
+
+.payment-theme-ribbon_premium .payment-print-signature-box {
+  border-radius: 0 0 12px 12px;
+  border-top: 3px solid var(--payment-frame-color);
+}
+
+/* 📜 Heritage Parchment */
+.payment-theme-heritage_parchment {
+  background: linear-gradient(180deg, #f9f3e8 0%, #f5ebe0 50%, #f9f3e8 100%);
+  font-family: "Times New Roman", "Segoe UI", serif;
+}
+
+.payment-theme-heritage_parchment .payment-print-header {
+  border-bottom: 1px solid #8b6914;
+  padding-bottom: 8px;
+}
+
+.payment-theme-heritage_parchment .payment-print-title-main {
+  font-family: "Times New Roman", serif;
+  letter-spacing: 0.04em;
+}
+
+.payment-theme-heritage_parchment .payment-print-title-form {
+  align-self: center;
+  font-family: "Times New Roman", serif;
+  font-style: italic;
+  border-top: 1px solid #8b6914;
+  border-bottom: 1px solid #8b6914;
+  padding: 6px 0;
+  margin: 8px 0;
+}
+
+.payment-theme-heritage_parchment .payment-print-field {
+  border-bottom: 1px dotted #c4a574;
+  padding-bottom: 2px;
+}
+
+.payment-theme-heritage_parchment .payment-print-table th,
+.payment-theme-heritage_parchment .payment-print-table td {
+  border-color: #c4a574;
+}
+
+.payment-theme-heritage_parchment .payment-print-table thead th {
+  background: #8b6914 !important;
+}
+
+.payment-theme-heritage_parchment .payment-print-notes-box-head {
+  background: #ede4d3;
+  color: #5c4a1f;
+}
+
+/* 💼 Corporate Sidebar */
+.payment-theme-corporate_sidebar {
+  background: #fff;
+}
+
+.payment-theme-corporate_sidebar .payment-print-content {
+  padding-right: 8px;
+}
+
+.payment-theme-corporate_sidebar .payment-print-header-center {
+  text-align: right;
+}
+
+.payment-theme-corporate_sidebar .payment-print-title-form {
+  text-align: right;
+  font-size: 22px;
+  padding-right: 4px;
+  border-right: 5px solid var(--payment-frame-color);
+  margin: 6px 0;
+}
+
+.payment-theme-corporate_sidebar .payment-print-field {
+  padding: 5px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.payment-theme-corporate_sidebar .payment-print-field-label {
+  font-size: 10px;
+  color: #64748b;
+  letter-spacing: 0.06em;
+}
+
+.payment-theme-corporate_sidebar .payment-print-price-box {
+  padding: 8px 12px;
+  background: var(--payment-frame-color);
+  border-radius: 4px;
+}
+
+.payment-theme-corporate_sidebar .payment-print-price-label,
+.payment-theme-corporate_sidebar .payment-print-price-desc {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.payment-theme-corporate_sidebar .payment-print-price-value {
+  color: #fff !important;
+}
+
+.payment-theme-corporate_sidebar .payment-print-table-border {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.payment-theme-corporate_sidebar .payment-print-signature-box {
+  border-radius: 4px;
+  background: #f8fafc;
+}
+
+/* ✦ Glass Gradient */
+.payment-theme-glass_gradient {
+  background: linear-gradient(145deg, #f0f9ff 0%, #ffffff 45%, #f8fafc 100%);
+}
+
+.payment-theme-glass_gradient .payment-print-header {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--payment-frame-color) 85%, white),
+    var(--payment-frame-color)
+  );
+}
+
+.payment-theme-glass_gradient .payment-print-header-logo {
+  filter: brightness(0) invert(1);
+}
+
+.payment-theme-glass_gradient .payment-print-title-main {
+  color: #fff !important;
+}
+
+.payment-theme-glass_gradient .payment-print-title-sub {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.payment-theme-glass_gradient .payment-print-title-form {
+  align-self: center;
+  margin-top: 6px;
+  color: var(--payment-frame-color);
+  font-weight: 800;
+}
+
+.payment-theme-glass_gradient .payment-print-field {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.payment-theme-glass_gradient .payment-print-table-border {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.payment-theme-glass_gradient .payment-print-table th,
+.payment-theme-glass_gradient .payment-print-table td {
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.payment-theme-glass_gradient .payment-print-notes-box,
+.payment-theme-glass_gradient .payment-print-signature-box {
+  border-radius: 8px;
+}
+
+/* 📐 Blueprint */
+.payment-theme-blueprint {
+  background-color: #eef6ff;
+  background-image:
+    linear-gradient(rgba(30, 64, 175, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 64, 175, 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.payment-theme-blueprint .payment-print-title-main,
+.payment-theme-blueprint .payment-print-title-form,
+.payment-theme-blueprint .payment-print-field-value,
+.payment-theme-blueprint .payment-print-price-value {
+  font-family: Calibri, "Segoe UI", sans-serif;
+}
+
+.payment-theme-blueprint .payment-print-title-form {
+  align-self: center;
+  padding: 4px 16px;
+  border: 2px solid var(--payment-frame-color);
+  color: var(--payment-frame-color);
+  letter-spacing: 0.08em;
+}
+
+.payment-theme-blueprint .payment-print-field {
+  border-bottom: 1px dashed color-mix(in srgb, var(--payment-frame-color) 40%, transparent);
+}
+
+.payment-theme-blueprint .payment-print-field-label {
+  color: var(--payment-frame-color);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.payment-theme-blueprint .payment-print-table-border {
+  border: 2px solid var(--payment-frame-color);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.payment-theme-blueprint .payment-print-table thead th {
+  background: transparent !important;
+  color: var(--payment-frame-color) !important;
+  border-bottom: 3px solid var(--payment-frame-color);
+}
+
+.payment-theme-blueprint .payment-print-table tbody tr:nth-child(1) {
+  background: rgba(30, 64, 175, 0.06);
+}
+
+.payment-theme-blueprint .payment-print-signature-box {
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* ◇ Art Deco */
+.payment-theme-art_deco {
+  background: #fffef5;
+}
+
+.payment-theme-art_deco::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid color-mix(in srgb, var(--payment-frame-color) 40%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.payment-theme-art_deco .payment-print-header {
+  text-align: center;
+  border-bottom: 4px double var(--payment-frame-color);
+  padding-bottom: 10px;
+}
+
+.payment-theme-art_deco .payment-print-title-main {
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-size: 22px;
+}
+
+.payment-theme-art_deco .payment-print-title-form {
+  align-self: center;
+  margin-top: 8px;
+  letter-spacing: 0.2em;
+  font-size: 16px;
+  color: var(--payment-frame-color);
+}
+
+.payment-theme-art_deco .payment-print-grid-3,
+.payment-theme-art_deco .payment-print-grid-2,
+.payment-theme-art_deco .payment-print-grid-4,
+.payment-theme-art_deco .payment-print-grid-unit {
+  gap: 8px 12px;
+}
+
+.payment-theme-art_deco .payment-print-field {
+  text-align: center;
+  padding: 4px;
+  border-top: 2px solid var(--payment-frame-color);
+  border-bottom: 2px solid var(--payment-frame-color);
+}
+
+.payment-theme-art_deco .payment-print-price-box {
+  text-align: center;
+  padding: 10px;
+  border: 3px double var(--payment-frame-color);
+}
+
+.payment-theme-art_deco .payment-print-table thead th {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.9em;
+}
+
+.payment-theme-art_deco .payment-print-signature-box {
+  border-radius: 0;
+  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  padding-top: 14px;
+}
+
+/* 🏛 National Pride */
+.payment-theme-national_pride {
+  background: linear-gradient(180deg, #fafffe 0%, #ffffff 100%);
+}
+
+.payment-theme-national_pride .payment-print-header {
+  padding-bottom: 8px;
+  border-bottom: 4px solid;
+  border-image: linear-gradient(
+      90deg,
+      #007a3d 0%,
+      #007a3d 33%,
+      #ffffff 33%,
+      #ffffff 38%,
+      #ce1126 38%,
+      #ce1126 62%,
+      #ffffff 62%,
+      #ffffff 67%,
+      #007a3d 67%,
+      #007a3d 100%
+    )
+    1;
+}
+
+.payment-theme-national_pride .payment-print-title-form {
+  align-self: center;
+  padding: 6px 24px;
+  color: #fff;
+  background: linear-gradient(90deg, #007a3d, var(--payment-frame-color), #007a3d);
+  border-radius: 2px;
+}
+
+.payment-theme-national_pride .payment-print-field {
+  padding: 3px 8px;
+  border-right: 3px solid #007a3d;
+  background: #f0fdf4;
+}
+
+.payment-theme-national_pride .payment-print-price-box {
+  padding: 8px;
+  text-align: center;
+  border: 2px solid #007a3d;
+  background: linear-gradient(135deg, #f0fdf4, #fff);
+}
+
+.payment-theme-national_pride .payment-print-table thead th {
+  background: linear-gradient(90deg, #007a3d, var(--payment-frame-color)) !important;
+}
+
+.payment-theme-national_pride .payment-print-table tbody tr:nth-child(even) {
+  background: #f0fdf4;
+}
+
+.payment-theme-national_pride .payment-print-signatures {
+  border-top: 3px solid #007a3d;
+}
+
+.payment-theme-national_pride .payment-print-signature-box {
+  border-color: #007a3d;
+  background: #fafafa;
+}
+
+/* 🌅 Desert Sunset */
+.payment-theme-desert_sunset {
+  background: linear-gradient(165deg, #fff8f0 0%, #fff5eb 35%, #ffffff 100%);
+}
+
+.payment-theme-desert_sunset .payment-print-header {
+  padding-bottom: 10px;
+  border-bottom: 2px solid #c2783a;
+}
+
+.payment-theme-desert_sunset .payment-print-title-main {
+  color: #9a3412 !important;
+}
+
+.payment-theme-desert_sunset .payment-print-title-form {
+  align-self: center;
+  padding: 5px 22px;
+  color: #fff;
+  background: linear-gradient(90deg, #c2783a, var(--payment-frame-color), #ea580c);
+  border-radius: 20px;
+}
+
+.payment-theme-desert_sunset .payment-print-field {
+  padding: 3px 8px;
+  background: rgba(255, 247, 237, 0.8);
+  border-right: 3px solid #c2783a;
+}
+
+.payment-theme-desert_sunset .payment-print-price-box {
+  padding: 8px;
+  text-align: center;
+  border: 2px solid #c2783a;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fff7ed, #fff);
+}
+
+.payment-theme-desert_sunset .payment-print-table thead th {
+  background: linear-gradient(90deg, #9a3412, var(--payment-frame-color)) !important;
+}
+
+.payment-theme-desert_sunset .payment-print-table tbody tr:nth-child(even) {
+  background: #fff7ed;
+}
+
+/* 🥉 Copper Luxe */
+.payment-theme-copper_luxe {
+  background: linear-gradient(180deg, #fdf8f3 0%, #faf6f1 50%, #fff 100%);
+}
+
+.payment-theme-copper_luxe::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: linear-gradient(90deg, #92400e, #d4a574, #92400e);
+  z-index: 3;
+}
+
+.payment-theme-copper_luxe .payment-print-title-form {
+  align-self: center;
+  letter-spacing: 0.1em;
+  color: #92400e;
+  border-bottom: 2px solid #d4a574;
+  padding-bottom: 4px;
+}
+
+.payment-theme-copper_luxe .payment-print-field {
+  padding: 4px 8px;
+  border: 1px solid #e7d5c0;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.payment-theme-copper_luxe .payment-print-price-box {
+  text-align: center;
+  padding: 10px;
+  border: 2px solid #d4a574;
+  background: linear-gradient(180deg, #fdf8f3, #fff);
+}
+
+.payment-theme-copper_luxe .payment-print-price-value {
+  color: #92400e !important;
+}
+
+.payment-theme-copper_luxe .payment-print-table thead th {
+  background: linear-gradient(180deg, #92400e, var(--payment-frame-color)) !important;
+}
+
+.payment-theme-copper_luxe .payment-print-signature-box {
+  border-color: #d4a574;
+  background: #fdf8f3;
+}
+
+/* 🕌 Islamic Arch */
+.payment-theme-islamic_arch {
+  background: #fff;
+}
+
+.payment-theme-islamic_arch::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 28px;
+  background: var(--payment-frame-color);
+  border-radius: 0 0 50% 50%;
+  z-index: 2;
+  opacity: 0.15;
+}
+
+.payment-theme-islamic_arch .payment-print-content {
+  padding-top: 8px;
+}
+
+.payment-theme-islamic_arch .payment-print-header {
+  border-bottom: 2px solid var(--payment-frame-color);
+  padding-bottom: 8px;
+}
+
+.payment-theme-islamic_arch .payment-print-title-form {
+  align-self: center;
+  padding: 6px 30px;
+  color: #fff;
+  background: var(--payment-frame-color);
+  border-radius: 0 0 12px 12px;
+}
+
+.payment-theme-islamic_arch .payment-print-field {
+  padding: 3px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--payment-frame-color) 25%, #cbd5e1);
+}
+
+.payment-theme-islamic_arch .payment-print-table thead th {
+  background: var(--payment-frame-color) !important;
+  border-bottom: 3px solid color-mix(in srgb, var(--payment-frame-color) 60%, #000);
+}
+
+.payment-theme-islamic_arch .payment-print-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--payment-frame-color) 5%, white);
+}
+
+.payment-theme-islamic_arch .payment-print-signatures {
+  border-top: 2px solid var(--payment-frame-color);
+}
+
+/* 🏡 Emerald Estate */
+.payment-theme-emerald_estate {
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 30%);
+}
+
+.payment-theme-emerald_estate .payment-print-header {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #059669, var(--payment-frame-color));
+}
+
+.payment-theme-emerald_estate .payment-print-header-logo {
+  filter: brightness(0) invert(1);
+}
+
+.payment-theme-emerald_estate .payment-print-title-main {
+  color: #fff !important;
+}
+
+.payment-theme-emerald_estate .payment-print-title-sub {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.payment-theme-emerald_estate .payment-print-title-form {
+  align-self: center;
+  color: #059669;
+  font-weight: 800;
+}
+
+.payment-theme-emerald_estate .payment-print-field {
+  padding: 4px 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+}
+
+.payment-theme-emerald_estate .payment-print-price-box {
+  padding: 8px;
+  text-align: center;
+  background: #059669;
+  border-radius: 6px;
+}
+
+.payment-theme-emerald_estate .payment-print-price-label,
+.payment-theme-emerald_estate .payment-print-price-desc {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.payment-theme-emerald_estate .payment-print-price-value {
+  color: #fff !important;
+}
+
+.payment-theme-emerald_estate .payment-print-table thead th {
+  background: #059669 !important;
+}
+
+/* 🎓 Certificate */
+.payment-theme-certificate {
+  background: #fff;
+  text-align: center;
+}
+
+.payment-theme-certificate .payment-print-content {
+  align-items: center;
+}
+
+.payment-theme-certificate .payment-print-header {
+  flex-direction: column;
+  align-items: center;
+  border-bottom: 1px solid var(--payment-frame-color);
+  padding-bottom: 10px;
+  width: 100%;
+}
+
+.payment-theme-certificate .payment-print-header-logo {
+  height: 64px;
+  max-width: 90px;
+}
+
+.payment-theme-certificate .payment-print-header-center {
+  padding: 4px 0;
+}
+
+.payment-theme-certificate .payment-print-title-form {
+  align-self: center;
+  margin: 8px 0;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  color: var(--payment-frame-color);
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+
+.payment-theme-certificate .payment-print-grid-3,
+.payment-theme-certificate .payment-print-grid-2,
+.payment-theme-certificate .payment-print-grid-unit {
+  width: 100%;
+  text-align: right;
+}
+
+.payment-theme-certificate .payment-print-price-box {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid var(--payment-frame-color);
+  background: color-mix(in srgb, var(--payment-frame-color) 4%, white);
+}
+
+.payment-theme-certificate .payment-print-table-border {
+  width: 100%;
+}
+
+.payment-theme-certificate .payment-print-signatures {
+  width: 100%;
+}
+
+/* 📮 Stamp Official */
+.payment-theme-stamp_official {
+  background: #fafafa;
+}
+
+.payment-theme-stamp_official::after {
+  content: "";
+  position: absolute;
+  bottom: 80px;
+  left: 24px;
+  width: 80px;
+  height: 80px;
+  border: 3px double var(--payment-frame-color);
+  border-radius: 50%;
+  opacity: 0.12;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.payment-theme-stamp_official .payment-print-title-form {
+  font-size: 18px;
+  letter-spacing: 0.05em;
+  color: var(--payment-frame-color);
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.payment-theme-stamp_official .payment-print-field-label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.payment-theme-stamp_official .payment-print-field {
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 2px;
+}
+
+.payment-theme-stamp_official .payment-print-table thead th {
+  background: #f1f5f9 !important;
+  color: var(--payment-frame-color) !important;
+  border-bottom: 2px solid var(--payment-frame-color);
+}
+
+.payment-theme-stamp_official .payment-print-signature-box {
+  border-style: dashed;
+  background: #fff;
+}
+
+/* 🌃 Neon City */
+.payment-theme-neon_city {
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 8%, #ffffff 8%);
+  color: #0f172a;
+}
+
+.payment-theme-neon_city .payment-print-content {
+  padding-top: 4px;
+}
+
+.payment-theme-neon_city .payment-print-header {
+  padding: 8px 0 4px;
+}
+
+.payment-theme-neon_city .payment-print-title-main {
+  color: #fff !important;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--payment-frame-color) 80%, transparent);
+}
+
+.payment-theme-neon_city .payment-print-title-sub {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.payment-theme-neon_city .payment-print-title-form {
+  align-self: center;
+  padding: 4px 20px;
+  color: var(--payment-frame-color);
+  border: 2px solid var(--payment-frame-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--payment-frame-color) 50%, transparent);
+  border-radius: 4px;
+}
+
+.payment-theme-neon_city .payment-print-field {
+  padding: 3px 8px;
+  background: #f8fafc;
+  border-left: 3px solid var(--payment-frame-color);
+}
+
+.payment-theme-neon_city .payment-print-price-box {
+  padding: 8px;
+  text-align: center;
+  background: #0f172a;
+  border-radius: 4px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--payment-frame-color) 30%, transparent);
+}
+
+.payment-theme-neon_city .payment-print-price-label,
+.payment-theme-neon_city .payment-print-price-desc {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.payment-theme-neon_city .payment-print-price-value {
+  color: var(--payment-frame-color) !important;
+  filter: brightness(1.3);
+}
+
+.payment-theme-neon_city .payment-print-table thead th {
+  background: #0f172a !important;
+  box-shadow: 0 2px 0 var(--payment-frame-color);
+}
+
+.payment-theme-neon_city .payment-print-signatures {
+  border-top-color: var(--payment-frame-color);
+}
+
+/* 🌊 Gradient Wave */
+.payment-theme-gradient_wave {
+  background: #fff;
+  overflow: hidden;
+}
+
+.payment-theme-gradient_wave::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: linear-gradient(
+    135deg,
+    var(--payment-frame-color) 0%,
+    color-mix(in srgb, var(--payment-frame-color) 70%, #6366f1) 50%,
+    color-mix(in srgb, var(--payment-frame-color) 40%, #a855f7) 100%
+  );
+  clip-path: ellipse(120% 100% at 50% 0%);
+  z-index: 0;
+}
+
+.payment-theme-gradient_wave .payment-print-content {
+  padding-top: 0;
+}
+
+.payment-theme-gradient_wave .payment-print-header {
+  padding-top: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.payment-theme-gradient_wave .payment-print-header-logo {
+  filter: brightness(0) invert(1);
+}
+
+.payment-theme-gradient_wave .payment-print-title-main {
+  color: #fff !important;
+}
+
+.payment-theme-gradient_wave .payment-print-title-sub {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.payment-theme-gradient_wave .payment-print-title-form {
+  align-self: center;
+  margin-top: 6px;
+  color: var(--payment-frame-color);
+  font-weight: 800;
+}
+
+.payment-theme-gradient_wave .payment-print-field {
+  padding: 4px 8px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.payment-theme-gradient_wave .payment-print-price-box {
+  padding: 10px;
+  text-align: center;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--payment-frame-color) 10%, white),
+    #fff
+  );
+  border: 2px solid color-mix(in srgb, var(--payment-frame-color) 30%, #e2e8f0);
+}
+
+.payment-theme-gradient_wave .payment-print-table-border {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.payment-theme-gradient_wave .payment-print-table thead th {
+  background: linear-gradient(
+    90deg,
+    var(--payment-frame-color),
+    color-mix(in srgb, var(--payment-frame-color) 60%, #6366f1)
+  ) !important;
+}
+
+/* 📰 Newspaper */
+.payment-theme-newspaper {
+  background: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.payment-theme-newspaper .payment-print-header {
+  border-bottom: 4px double #0f172a;
+  padding-bottom: 8px;
+}
+
+.payment-theme-newspaper .payment-print-title-main {
+  font-family: Georgia, serif;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  color: #0f172a !important;
+}
+
+.payment-theme-newspaper .payment-print-title-sub {
+  font-style: italic;
+  color: #64748b;
+}
+
+.payment-theme-newspaper .payment-print-title-form {
+  align-self: center;
+  font-family: Calibri, sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #0f172a;
+  border-top: 1px solid #0f172a;
+  border-bottom: 1px solid #0f172a;
+  padding: 4px 0;
+  margin: 6px 0;
+}
+
+.payment-theme-newspaper .payment-print-field-label {
+  font-family: Calibri, sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  font-style: italic;
+  color: #64748b;
+}
+
+.payment-theme-newspaper .payment-print-field-value {
+  font-family: Calibri, sans-serif;
+}
+
+.payment-theme-newspaper .payment-print-grid-3,
+.payment-theme-newspaper .payment-print-grid-2 {
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 4px;
+}
+
+.payment-theme-newspaper .payment-print-price-box {
+  padding: 8px;
+  border-top: 3px solid #0f172a;
+  border-bottom: 3px solid #0f172a;
+}
+
+.payment-theme-newspaper .payment-print-price-value {
+  font-family: Georgia, serif;
+  font-size: 26px;
+}
+
+.payment-theme-newspaper .payment-print-table thead th {
+  background: #0f172a !important;
+  font-family: Calibri, sans-serif;
+  font-size: 0.85em;
+  letter-spacing: 0.05em;
+}
+
+.payment-theme-newspaper .payment-print-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.payment-theme-newspaper .payment-print-signatures {
+  border-top: 4px double #0f172a;
+}
+
+.payment-theme-newspaper .payment-print-signature-box {
+  border-radius: 0;
+  border-color: #0f172a;
+}
+
+@media print {
+  .payment-no-print {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .payment-print-root {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  .payment-print-page {
+    width: 210mm !important;
+    height: 297mm !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    box-shadow: none !important;
+    page-break-after: always;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .payment-print-sheet {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .payment-print-sheet * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+}
+
+@media screen and (max-width: 900px) {
+  .payment-print-page {
+    width: 100%;
+    height: auto;
+    min-height: 297mm;
+  }
+}
+
+.payment-print-preview-shell .payment-print-root {
+  padding: 0;
+  background: transparent;
+}
+
+.payment-print-preview-shell .payment-print-page {
+  box-shadow: none;
+}
