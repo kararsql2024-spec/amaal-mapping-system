@@ -23,6 +23,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { showSuccess, showError } from '@/utils/toast';
 import { palette, mapPalette, canvasFont } from '@/lib/theme';
 import { STATUS_META } from '@/lib/unit-status';
+import {
+  getReferenceImageSrc,
+  uploadMapImageFile,
+  type MapImageScope,
+} from '@/lib/map-image-storage';
 
 interface MapEditorProps {
   initialElements: MapElement[];
@@ -35,6 +40,9 @@ interface MapEditorProps {
   initialBackgroundColor?: string;
   initialShowGrid?: boolean;
   initialHouseTypeAreas?: Record<string, number>;
+  /** سياق رفع الصور إلى Storage */
+  storageScope?: MapImageScope;
+  storageScopeId?: string;
 }
 
 const GRID_SIZE = 10;
@@ -91,10 +99,13 @@ const MapEditor = ({
   onCancel,
   initialBackgroundColor = '#ffffff',
   initialShowGrid = true,
-  initialHouseTypeAreas = {}
+  initialHouseTypeAreas = {},
+  storageScope,
+  storageScopeId,
 }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | null>(null);
   const [isBrushMode, setIsBrushMode] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
@@ -531,47 +542,84 @@ const MapEditor = ({
     });
   };
 
-  const handleAddReferenceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAddReferenceImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
+
+    const newElementId = 'ref-image-' + Math.random().toString(36).substr(2, 9);
+    const newPoints = [
+      { x: 0, y: 0 },
+      { x: 800, y: 0 },
+      { x: 800, y: 600 },
+      { x: 0, y: 600 },
+    ];
+
+    const baseElement: MapElement = {
+      id: newElementId,
+      type: 'reference_image',
+      label: 'صورة مرجعية',
+      points: newPoints,
+      rotation: 0,
+      x: 0, y: 0, width: 800, height: 600,
+      opacity: 0.5,
+      locked: false,
+      showInMain: false,
+      isBold: false
+    };
+
+    if (storageScope && storageScopeId) {
+      setIsUploadingImage(true);
+      try {
+        const imageUrl = await uploadMapImageFile(file, storageScope, storageScopeId, newElementId);
+        const newElement = { ...baseElement, imageUrl };
+        setElements(prev => [newElement, ...prev]);
+        setSelectedId(newElement.id);
+        showSuccess('تم رفع الصورة بنجاح');
+      } catch (err) {
+        console.error('Reference image upload failed:', err);
+        showError('فشل رفع الصورة. تأكد من إعداد bucket map-images في Supabase.');
+      } finally {
+        setIsUploadingImage(false);
+      }
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       const url = evt.target?.result as string;
-      const newPoints = [
-        { x: 0, y: 0 },
-        { x: 800, y: 0 },
-        { x: 800, y: 600 },
-        { x: 0, y: 600 },
-      ];
-      const newElement: MapElement = {
-        id: 'ref-image-' + Math.random().toString(36).substr(2, 9),
-        type: 'reference_image',
-        label: 'صورة مرجعية',
-        points: newPoints,
-        rotation: 0,
-        x: 0, y: 0, width: 800, height: 600,
-        color: url,
-        opacity: 0.5,
-        locked: false,
-        showInMain: false,
-        isBold: false
-      };
+      const newElement: MapElement = { ...baseElement, color: url };
       setElements(prev => [newElement, ...prev]);
       setSelectedId(newElement.id);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleReplaceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReplaceImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedElement) return;
+    e.target.value = '';
+
+    if (storageScope && storageScopeId) {
+      setIsUploadingImage(true);
+      try {
+        const imageUrl = await uploadMapImageFile(file, storageScope, storageScopeId, selectedElement.id);
+        updateSelectedElement({ imageUrl, color: undefined });
+        showSuccess('تم استبدال الصورة بنجاح');
+      } catch (err) {
+        console.error('Reference image replace failed:', err);
+        showError('فشل استبدال الصورة');
+      } finally {
+        setIsUploadingImage(false);
+      }
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       const url = evt.target?.result as string;
       updateSelectedElement({ color: url });
-      showSuccess("تم استبدال الصورة بنجاح");
+      showSuccess('تم استبدال الصورة بنجاح');
     };
     reader.readAsDataURL(file);
   };
@@ -768,10 +816,12 @@ const MapEditor = ({
                 const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : null;
 
                 if (el.type === 'reference_image') {
+                  const refSrc = getReferenceImageSrc(el);
                   return (
                     <g key={el.id} transform={`rotate(${el.rotation || 0} ${centerX} ${centerY})`}>
+                      {refSrc && (
                       <image 
-                        href={el.color} 
+                        href={refSrc} 
                         x={minX} y={minY} 
                         width={maxX - minX} height={maxY - minY} 
                         opacity={el.opacity}
@@ -783,6 +833,7 @@ const MapEditor = ({
                           setDragMode({ type: 'move' }); 
                         }}
                       />
+                      )}
                       {isSelectedEl && !el.locked && (
                         <>
                           {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="cursor-pointer fill-surface stroke-fg stroke-2" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
@@ -1239,12 +1290,15 @@ const MapEditor = ({
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label className="text-[11px] text-fg-muted">استبدال الصورة</Label>
-                        <label className="flex h-10 w-full cursor-pointer appearance-none items-center justify-center border border-dashed border-line px-4 transition-colors hover:border-line-strong focus:outline-none">
+                        <label className={cn(
+                          "flex h-10 w-full cursor-pointer appearance-none items-center justify-center border border-dashed border-line px-4 transition-colors hover:border-line-strong focus:outline-none",
+                          isUploadingImage && "pointer-events-none opacity-50",
+                        )}>
                           <span className="flex items-center space-x-2 rtl:space-x-reverse">
-                            <RefreshCcw size={14} className="text-fg-muted" />
-                            <span className="text-[12px] text-fg-secondary">اختر صورة جديدة</span>
+                            {isUploadingImage ? <Loader2 size={14} className="animate-spin text-fg-muted" /> : <RefreshCcw size={14} className="text-fg-muted" />}
+                            <span className="text-[12px] text-fg-secondary">{isUploadingImage ? 'جاري رفع الصورة...' : 'اختر صورة جديدة'}</span>
                           </span>
-                          <input type="file" accept="image/*" className="hidden" onChange={handleReplaceImage} />
+                          <input type="file" accept="image/*" className="hidden" onChange={handleReplaceImage} disabled={isUploadingImage} />
                         </label>
                       </div>
                       <div className="flex items-center justify-between border border-line bg-surface-sunken p-4">

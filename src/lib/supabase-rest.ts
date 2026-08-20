@@ -18,6 +18,16 @@ export const fetchWithRetry = async <T>(
   }
 };
 
+/** جلب إصدار المخطط العام فقط (~بضع بايتات) */
+export const fetchMainMapVersion = async (signal?: AbortSignal) => {
+  const rows = await fetchNativeSupabase(
+    "settings?select=key,value&key=eq.main_map_version",
+    signal,
+  );
+  const versionRow = rows?.find((r: { key: string }) => r.key === "main_map_version");
+  return versionRow?.value != null ? String(versionRow.value) : null;
+};
+
 /** REST fetch خفيف للحمولات الكبيرة (elements / main_map_config) */
 export const fetchNativeSupabase = async (
   path: string,
