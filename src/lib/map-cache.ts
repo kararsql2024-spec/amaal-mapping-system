@@ -75,6 +75,9 @@ export const clearMainMapCache = () => {
   localStorage.removeItem(MAIN_MAP_VERSION_KEY);
 };
 
+export const isProjectCacheFresh = (entry: ProjectCacheEntry): boolean =>
+  Date.now() - entry.cachedAt < PROJECT_CACHE_TTL_MS;
+
 export const readProjectCache = (
   projectId: string,
 ): ProjectCacheEntry | null => {

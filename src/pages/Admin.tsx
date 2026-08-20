@@ -21,7 +21,15 @@ import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from '@/lib/utils';
-import { clearMainMapCache, clearProjectCache } from '@/lib/map-cache';
+import { clearMainMapCache, clearProjectCache, readMainMapCache } from '@/lib/map-cache';
+import { fetchNativeSupabase, fetchWithRetry } from '@/lib/supabase-rest';
+import {
+  prepareElementsForSave,
+  migrateAllEmbeddedMapImages,
+  scanEmbeddedMapImages,
+  verifyMapImagesStorageReady,
+  type EmbeddedMapImageScan,
+} from '@/lib/map-image-storage';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -147,6 +155,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [editingMapProject, setEditingMapProject] = useState<Project | null>(null);
   const [isEditingMainMap, setIsEditingMainMap] = useState(false);
   const [mainMapData, setMainMapData] = useState<any>(null);
+  const [isLoadingMainMap, setIsLoadingMainMap] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingProjectInfo, setEditingProjectInfo] = useState<Project | null>(null);
   // الأقسام الأربعة كانت أربعة مفاتيح منفصلة يُطفأ بعضها يدوياً عند تشغيل أحدها.
@@ -238,6 +247,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [isMigratingMapImages, setIsMigratingMapImages] = useState(false);
+  const [embeddedImageScan, setEmbeddedImageScan] = useState<EmbeddedMapImageScan | null>(null);
+  const [isScanningMapImages, setIsScanningMapImages] = useState(false);
   const [isSendingToTelegram, setIsSendingToTelegram] = useState(false);
 
   // Telegram Config
@@ -331,6 +343,24 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     fetchData();
   }, [session]);
 
+  const refreshEmbeddedImageScan = async () => {
+    setIsScanningMapImages(true);
+    try {
+      const scan = await scanEmbeddedMapImages();
+      setEmbeddedImageScan(scan);
+    } catch (err) {
+      console.error("Error scanning embedded map images:", err);
+    } finally {
+      setIsScanningMapImages(false);
+    }
+  };
+
+  useEffect(() => {
+    if (session) {
+      refreshEmbeddedImageScan();
+    }
+  }, [session]);
+
   // جلب إعدادات البروشورات المخصصة ديناميكياً وفقط عند فتح شاشتها
   useEffect(() => {
     if (showBrochureDesigner) {
@@ -353,27 +383,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   }, [showBrochureDesigner]);
 
-  // جلب المخطط العام الهندسي فقط وفقط عند تفعيله للرسم والتعديل
-  useEffect(() => {
-    if (isEditingMainMap) {
-      const fetchMainMap = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('settings')
-            .select('value')
-            .eq('key', 'main_map_config')
-            .maybeSingle();
-          if (error) throw error;
-          if (data && data.value) {
-            setMainMapData(data.value);
-          }
-        } catch (err) {
-          console.error("Error fetching main map:", err);
-        }
-      };
-      fetchMainMap();
-    }
-  }, [isEditingMainMap]);
+  // جلب المخطط العام يتم عند الضغط على «المخطط العام» — startEditingMainMap
 
   // جلب دقيق ومؤكد لعناصر ومخططات المشروع المحدد فور اختياره من خادم قاعدة البيانات
   useEffect(() => {
@@ -1494,11 +1504,38 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) { showError("فشل في حذف المشروع"); }
   };
 
+  const startEditingMainMap = async () => {
+    setIsLoadingMainMap(true);
+    try {
+      const cached = readMainMapCache();
+      if (cached.config?.elements?.length) {
+        setMainMapData(cached.config);
+      }
+
+      const config = await fetchWithRetry(async () => {
+        const rows = await fetchNativeSupabase(
+          'settings?select=value&key=eq.main_map_config',
+        );
+        if (!rows?.[0]?.value) throw new Error('main_map_config not found');
+        return rows[0].value;
+      });
+
+      setMainMapData(config);
+      setIsEditingMainMap(true);
+    } catch (err) {
+      console.error('Error loading main map for editor:', err);
+      showError('تعذر تحميل المخطط العام للتعديل. حاول مرة أخرى.');
+    } finally {
+      setIsLoadingMainMap(false);
+    }
+  };
+
   const handleSaveMap = async (elements: MapElement[], newWidth: number, newHeight: number, backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number>) => {
     if (isEditingMainMap) {
       setIsSavingMap(true);
       try {
-        const config = { elements, width: newWidth, height: newHeight, backgroundColor, showGrid };
+        const preparedElements = await prepareElementsForSave(elements, 'main-map', 'main-map');
+        const config = { elements: preparedElements, width: newWidth, height: newHeight, backgroundColor, showGrid };
         await supabase.from('settings').upsert([
           { key: 'main_map_config', value: config },
           { key: 'main_map_version', value: Date.now() },
@@ -1514,7 +1551,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     if (!editingMapProject || isSavingMap) return;
     setIsSavingMap(true);
     try {
-      const cleanedElements = elements.map(el => {
+      const preparedElements = await prepareElementsForSave(
+        elements,
+        'project',
+        editingMapProject.id,
+      );
+      const cleanedElements = preparedElements.map(el => {
         const cleaned: any = { ...el };
         Object.keys(cleaned).forEach(key => {
           if (cleaned[key] === undefined || cleaned[key] === null) delete cleaned[key];
@@ -1536,6 +1578,40 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       setEditingMapProject(null);
       showSuccess('تم حفظ المخطط بنجاح');
     } catch (error) { showError("فشل في حفظ المخطط"); } finally { setIsSavingMap(false); }
+  };
+
+  const handleMigrateMapImages = async () => {
+    setIsMigratingMapImages(true);
+    try {
+      const storageCheck = await verifyMapImagesStorageReady();
+      if (!storageCheck.ok) {
+        showError(`Storage غير جاهز: ${storageCheck.message}. نفّذ database_map_images_storage.sql`);
+        return;
+      }
+
+      const result = await migrateAllEmbeddedMapImages();
+      clearMainMapCache();
+      clearProjectCache();
+      await refreshEmbeddedImageScan();
+      if (result.totalImages === 0) {
+        showSuccess('لا توجد صور مضمّنة في JSON — ربما تم التحويل مسبقاً');
+      } else {
+        showSuccess(
+          `تم تحويل ${result.totalImages} صورة تلقائياً إلى Storage (مخطط عام: ${result.mainMapMigrated}، مشاريع: ${result.projectsMigrated}). لا حاجة لرفع الصور يدوياً.`,
+        );
+      }
+    } catch (error: unknown) {
+      console.error('Map image migration failed:', error);
+      const msg =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error && 'message' in error
+            ? String((error as { message: unknown }).message)
+            : 'خطأ غير معروف';
+      showError(`فشل تحويل الصور: ${msg}`);
+    } finally {
+      setIsMigratingMapImages(false);
+    }
   };
 
   const startEditingInfo = (project: Project) => {
@@ -1864,9 +1940,30 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     );
   }
 
+  if (isLoadingMainMap) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background text-[13px] text-fg-muted">
+        <RefreshCcw size={20} className="animate-spin text-fg-faint" />
+        جاري تحميل المخطط العام للتعديل...
+      </div>
+    );
+  }
+
   if (editingMapProject || isEditingMainMap) {
+    if (isEditingMainMap && !mainMapData) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background text-[13px] text-fg-muted">
+          تعذر فتح المخطط العام — لا توجد بيانات
+          <Button variant="outline" size="sm" onClick={() => setIsEditingMainMap(false)}>
+            العودة
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <MapEditor 
+        key={isEditingMainMap ? `main-map-${mainMapData?.elements?.length ?? 0}` : editingMapProject?.id}
         initialElements={isEditingMainMap ? (mainMapData?.elements || []) : (editingMapProject?.elements || [])} 
         onSave={handleSaveMap} 
         mapWidth={isEditingMainMap ? (mainMapData?.width || 1200) : (editingMapProject?.mapWidth || 1000)} 
@@ -1877,6 +1974,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         initialBackgroundColor={isEditingMainMap ? (mainMapData?.backgroundColor || '#ffffff') : (projectConfigs[editingMapProject?.id || '']?.backgroundColor || '#ffffff')}
         initialShowGrid={isEditingMainMap ? (mainMapData?.showGrid !== false) : (projectConfigs[editingMapProject?.id || '']?.showGrid !== false)}
         initialHouseTypeAreas={isEditingMainMap ? {} : (projectConfigs[editingMapProject?.id || '']?.houseTypeAreas || {})}
+        storageScope={isEditingMainMap ? 'main-map' : 'project'}
+        storageScopeId={isEditingMainMap ? 'main-map' : (editingMapProject?.id || '')}
       />
     );
   }
@@ -1926,8 +2025,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       }
       actions={
         <>
-          <Button variant="outline" size="sm" onClick={() => setIsEditingMainMap(true)} className="gap-1.5">
-            <MapIcon size={13} /> المخطط العام
+          <Button variant="outline" size="sm" onClick={startEditingMainMap} disabled={isLoadingMainMap} className="gap-1.5">
+            <MapIcon size={13} /> {isLoadingMainMap ? 'جاري التحميل...' : 'المخطط العام'}
           </Button>
           <Link to="/">
             <Button variant="ghost" size="sm" className="gap-1.5 text-fg-secondary">
@@ -2273,12 +2372,29 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 </div>
 
                 <div className="flex items-center bg-surface p-5 lg:col-span-2">
-                  <div className="max-w-md space-y-3">
+                  <div className="max-w-md space-y-4">
                     <SubHeading>نسخة احتياطية دورية</SubHeading>
                     <p className="text-[12px] leading-relaxed text-fg-muted">
                       احرص على استخدام الإرسال إلى تيليجرام أو التحميل المباشر لحفظ بيانات الحجوزات
                       وملاحظاتها وتحديثات الإكسل اليومية ضد أي فقدان طارئ.
                     </p>
+
+                    <div className="border border-line bg-surface-sunken p-4 space-y-3">
+                      <SubHeading icon={<ImageIcon size={14} />}>تحويل صور المخططات</SubHeading>
+                      <p className="text-[11px] leading-relaxed text-fg-muted">
+                        نفس زر «تحويل الصور المحفوظة» في تبويب المشاريع — يستخرج Base64 من JSON تلقائياً بدون رفع يدوي.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMigrateMapImages}
+                        disabled={isMigratingMapImages}
+                        className="gap-1.5"
+                      >
+                        {isMigratingMapImages ? <RefreshCcw size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+                        {isMigratingMapImages ? 'جاري التحويل...' : 'تحويل الصور المحفوظة إلى Storage'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </Panel>
@@ -2782,6 +2898,73 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
             {activeView === 'projects' && (
               <>
+                <Panel
+                  icon={<ImageIcon size={14} />}
+                  title="تحويل صور المخططات إلى Storage"
+                  description="لا حاجة لامتلاك ملفات الصور على جهازك — تُستخرج تلقائياً من المخطط المحفوظ"
+                  bodyClassName="space-y-4 p-5"
+                >
+                  <p className="text-[12px] leading-relaxed text-fg-muted">
+                    الصور موجودة حالياً داخل JSON (Base64) في قاعدة البيانات — لذلك التحميل بطيء.
+                    هذا الزر يقرأها من المخطط المحفوظ ويرفعها إلى Supabase Storage تلقائياً،
+                    <strong className="font-medium text-fg"> بدون أن ترفع أي ملف من جديد</strong>.
+                  </p>
+
+                  {isScanningMapImages ? (
+                    <p className="text-[11px] text-fg-faint">جاري فحص الصور المضمّنة...</p>
+                  ) : embeddedImageScan ? (
+                    <div className="rounded border border-line bg-surface-sunken px-4 py-3 text-[12px] text-fg-secondary">
+                      {embeddedImageScan.total === 0 ? (
+                        <span className="text-status-available">✓ لا توجد صور مضمّنة — التحويل مكتمل أو غير مطلوب</span>
+                      ) : (
+                        <ul className="space-y-1">
+                          <li>
+                            <span className="font-medium text-fg">{embeddedImageScan.total}</span> صورة مضمّنة جاهزة للتحويل:
+                          </li>
+                          {embeddedImageScan.mainMapCount > 0 && (
+                            <li>• المخطط العام: {embeddedImageScan.mainMapCount}</li>
+                          )}
+                          {embeddedImageScan.projectCounts.map((p) => (
+                            <li key={p.projectId}>• {p.projectName}: {p.count}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+
+                  <p className="text-[11px] text-fg-faint">
+                    الخطوة 1: نفّذ <code className="font-mono text-[10px]">database_map_images_storage.sql</code> في Supabase.
+                    الخطوة 2: اضغط الزر أدناه.
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={handleMigrateMapImages}
+                      disabled={isMigratingMapImages || isScanningMapImages}
+                      className="gap-1.5"
+                    >
+                      {isMigratingMapImages ? (
+                        <RefreshCcw size={13} className="animate-spin" />
+                      ) : (
+                        <ImageIcon size={13} />
+                      )}
+                      {isMigratingMapImages
+                        ? 'جاري التحويل التلقائي...'
+                        : 'تحويل الصور المحفوظة إلى Storage'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={refreshEmbeddedImageScan}
+                      disabled={isScanningMapImages || isMigratingMapImages}
+                      className="gap-1.5"
+                    >
+                      <RefreshCcw size={13} className={isScanningMapImages ? 'animate-spin' : ''} />
+                      إعادة الفحص
+                    </Button>
+                  </div>
+                </Panel>
+
                 {(isCreating || editingProjectInfo) && (
                   <Panel
                     title={editingProjectInfo ? 'تعديل بيانات المشروع' : 'إنشاء مشروع جديد'}

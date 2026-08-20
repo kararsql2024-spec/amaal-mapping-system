@@ -39,6 +39,7 @@ import { getHouseArea as getHouseAreaFor } from "@/lib/units";
 import {
   fetchWithRetry,
   fetchNativeSupabase,
+  fetchMainMapVersion,
   fetchProjectUnitsParallel,
   formatLightweightUnits,
 } from "@/lib/supabase-rest";
@@ -50,6 +51,7 @@ import {
   readProjectCache,
   writeProjectCache,
   fingerprintMainMap,
+  isProjectCacheFresh,
 } from "@/lib/map-cache";
 import {
   fetchCenterSubscriptions,
@@ -506,6 +508,20 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         }
 
         try {
+          const serverVersion = await fetchWithRetry(() => fetchMainMapVersion());
+
+          if (isStale()) return;
+
+          if (
+            cached.config &&
+            serverVersion &&
+            cached.version === serverVersion &&
+            cached.isFresh
+          ) {
+            addDiagLog('المخطط العام محدّث — لا حاجة لإعادة التحميل', 'success');
+            return;
+          }
+
           const rows = await fetchWithRetry(async () => {
             const res = await fetchNativeSupabase(
               'settings?select=key,value&key=in.(main_map_config,main_map_version)',
@@ -521,14 +537,14 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           if (!configRow?.value) throw new Error('No main_map_config found');
 
           const config = configRow.value;
-          const serverVersion =
+          const resolvedVersion =
             versionRow?.value != null
               ? String(versionRow.value)
-              : fingerprintMainMap(config);
+              : serverVersion ?? fingerprintMainMap(config);
 
           if (
             cached.config &&
-            cached.version === serverVersion &&
+            cached.version === resolvedVersion &&
             cached.isFresh
           ) {
             addDiagLog('المخطط العام محدّث — لا حاجة لإعادة التحميل', 'success');
@@ -537,7 +553,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
 
           setMainMapData(config);
           setActiveElements(config.elements || []);
-          writeMainMapCache(config, serverVersion);
+          writeMainMapCache(config, resolvedVersion);
           addDiagLog('تم مزامنة المخطط العام من السيرفر', 'success');
         } catch (e: unknown) {
           if (isStale()) return;
@@ -587,6 +603,14 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     const loadProject = async () => {
       const hadInstantCache = !!(sessionCached || memoryCached);
       if (!hadInstantCache) setIsProjectLoading(true);
+
+      if (sessionCached && isProjectCacheFresh(sessionCached)) {
+        addDiagLog(
+          `المشروع (${activeProject?.name || projectId}) من الكاش — بدون إعادة جلب`,
+          'success',
+        );
+        return;
+      }
 
       const startTime = performance.now();
       try {

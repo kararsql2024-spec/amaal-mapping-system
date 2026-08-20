@@ -17,6 +17,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { canvasFont, mapPalette, palette } from "@/lib/theme";
+import { getReferenceImageSrc } from "@/lib/map-image-storage";
 import { PRIMARY_STATUSES, STATUS_META } from "@/lib/unit-status";
 import { StatusBadge } from "@/components/StatusBadge";
 
@@ -61,6 +62,34 @@ const getCachedReferenceImage = (url: string, onLoaded?: () => void): HTMLImageE
   referenceImageCache.set(url, img);
   return img;
 };
+
+/** Preload site-plan images before drawing sellable units on top */
+const preloadReferenceImage = (url: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    let img = referenceImageCache.get(url);
+    if (img?.complete && img.naturalWidth > 0) {
+      resolve();
+      return;
+    }
+    if (!img) {
+      img = new Image();
+      img.crossOrigin = 'anonymous';
+      referenceImageCache.set(url, img);
+    }
+    const onLoad = () => {
+      img!.onload = null;
+      img!.onerror = null;
+      resolve();
+    };
+    const onError = () => {
+      img!.onload = null;
+      img!.onerror = null;
+      reject(new Error('reference image load failed'));
+    };
+    img.onload = onLoad;
+    img.onerror = onError;
+    if (img.src !== url) img.src = url;
+  });
 
 const getIconSvgUri = (type: string, color: string) => {
   let svgContent = '';
@@ -241,7 +270,7 @@ const InteractiveMap = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
-  const [, setImagesLoadedCount] = useState(0);
+  const [areReferenceImagesReady, setAreReferenceImagesReady] = useState(true);
 
   // حالة التحكم في المعاينة السريعة (تكون مفعّلة افتراضياً)
   const [isQuickPreviewEnabled, setIsQuickPreviewEnabled] = useState(true);
@@ -502,6 +531,36 @@ const InteractiveMap = ({
       });
   }, [elements]);
 
+  const referenceImageUrls = useMemo(() => {
+    return sortedElements
+      .filter((el) => el.type === 'reference_image')
+      .map((el) => getReferenceImageSrc(el))
+      .filter((url): url is string => !!url);
+  }, [sortedElements]);
+
+  useEffect(() => {
+    if (referenceImageUrls.length === 0) {
+      setAreReferenceImagesReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setAreReferenceImagesReady(false);
+
+    Promise.all(referenceImageUrls.map((url) => preloadReferenceImage(url)))
+      .then(() => {
+        if (!cancelled) setAreReferenceImagesReady(true);
+      })
+      .catch(() => {
+        // عند فشل التحميل نعرض العناصر anyway حتى لا يعلق المستخدم
+        if (!cancelled) setAreReferenceImagesReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [referenceImageUrls.join('|')]);
+
   // دورة الرسم الفائقة على HTML5 Canvas بـ 60 FPS
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -547,7 +606,8 @@ const InteractiveMap = ({
       ctx.globalAlpha = 1.0;
     }
 
-    // رسم كل العناصر السكنية والرسومية
+    // رسم كل العناصر بعد جاهزية صورة Site plan
+    if (areReferenceImagesReady) {
     sortedElements.forEach((el) => {
       const styles = getElementStyles(el);
       const isSelected = selectedHouseId === el.id;
@@ -587,10 +647,9 @@ const InteractiveMap = ({
 
       // معالجة ورسم الصورة المرجعية بمطابقة تامة ونسب قياسية لحسابات SVG preserveAspectRatio
       if (el.type === 'reference_image') {
-        if (el.color) {
-          const refImg = getCachedReferenceImage(el.color, () => {
-            setImagesLoadedCount(c => c + 1);
-          });
+        const refSrc = getReferenceImageSrc(el);
+        if (refSrc) {
+          const refImg = getCachedReferenceImage(refSrc);
           if (refImg && refImg.complete && refImg.naturalWidth > 0 && refImg.naturalHeight > 0) {
             const imgAspect = refImg.naturalWidth / refImg.naturalHeight;
             const boxAspect = elWidth / elHeight;
@@ -725,13 +784,14 @@ const InteractiveMap = ({
 
       ctx.restore();
     });
+    }
 
     ctx.restore();
     ctx.restore();
   }, [
     position, scale, mapWidth, mapHeight, backgroundColor, showGrid, 
     sortedElements, selectedHouseId, housesData, isAnyFilterActive, 
-    matchesFilter, getElementStyles
+    matchesFilter, getElementStyles, areReferenceImagesReady
   ]);
 
   // فحص النقر المباشر والدقيق Hit Testing (تتجاهل الوحدات المظللة بالرمادي إذا كان هناك فلتر نشط)
@@ -920,6 +980,17 @@ const InteractiveMap = ({
         ref={canvasRef}
         className="w-full h-full block"
       />
+
+      {!areReferenceImagesReady && (
+        <div
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-background/85 backdrop-blur-[2px]"
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-fg" />
+          <p className="text-[12px] text-fg-muted">جاري تحميل صورة المخطط...</p>
+        </div>
+      )}
 
       {/* شريط أدوات تصفية الخريطة وتوهج الوحدات المنسدل الجانبي على اليمين ومربع اختيار المعاينة السريعة أسفله */}
       <div 

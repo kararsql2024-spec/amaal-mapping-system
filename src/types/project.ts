@@ -12,7 +12,9 @@ export interface MapElement {
   points: Point[];
   rotation: number;
   orientation?: 'horizontal' | 'vertical';
-  color?: string; 
+  color?: string;
+  /** رابط صورة مرجعية في Supabase Storage (بديل عن Base64 في color) */
+  imageUrl?: string;
   textColor?: string;
   opacity?: number; 
   hideIcon?: boolean;
