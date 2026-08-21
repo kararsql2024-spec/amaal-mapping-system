@@ -49,6 +49,44 @@ const resolveConfiguredHouseArea = (
   return formatAreaValue(mapArea);
 };
 
+const hasFixedArea = (config: PaymentHouseTypeConfig): boolean =>
+  config.area != null && Number(config.area) > 0;
+
+const areaMatchesMap = (config: PaymentHouseTypeConfig, mapArea: number): boolean =>
+  mapArea <= 0 || !hasFixedArea(config) || Math.abs(Number(config.area) - mapArea) < 0.01;
+
+/** يحلّ نوع المنزل بعد تطابق الترميز، مع دعم C+ عند اختلاف المساحة عن النوع القياسي */
+const resolveLabelMatchedHouseType = (
+  config: PaymentHouseTypeConfig,
+  mapArea: number,
+  configs: PaymentHouseTypeConfig[],
+): { houseType: string; totalArea: string } => {
+  if (areaMatchesMap(config, mapArea)) {
+    return {
+      houseType: config.type,
+      totalArea: resolveConfiguredHouseArea(config, mapArea),
+    };
+  }
+
+  const plusVariant = configs.find(
+    (item) =>
+      item.type.trim().toUpperCase() === `${config.type.trim().toUpperCase()}+` &&
+      !hasFixedArea(item),
+  );
+  if (plusVariant) {
+    return {
+      houseType: plusVariant.type,
+      totalArea: resolveConfiguredHouseArea(plusVariant, mapArea),
+    };
+  }
+
+  // الترميز في عنوان المنزل له الأولوية على مطابقة المساحة وحدها
+  return {
+    houseType: config.type,
+    totalArea: resolveConfiguredHouseArea(config, mapArea),
+  };
+};
+
 /** يطابق نوع المنزل من تسمية الخريطة ومساحتها مع إعدادات الدفعات */
 export function resolveHousePaymentFields(
   houseLabel: string,
@@ -59,10 +97,20 @@ export function resolveHousePaymentFields(
   const lastPart = getHouseLabelLastPart(houseLabel);
   const baseType = extractHouseBaseType(lastPart) || parsedHouseType.toUpperCase();
 
-  const hasFixedArea = (config: PaymentHouseTypeConfig) =>
-    config.area != null && Number(config.area) > 0;
+  // 1) مطابقة الترميز من الجزء الأخير من عنوان المنزل (مثل A في Z1-B1-A1)
+  const prefixMatch = matchPaymentHouseTypeByPrefix(lastPart, configs);
+  if (prefixMatch) {
+    return resolveLabelMatchedHouseType(prefixMatch, mapArea, configs);
+  }
 
-  // 1) مطابقة بالمساحة: نوع في الإعدادات مساحته = مساحة الخريطة
+  const exactMatch = configs.find(
+    (config) => config.type.trim().toUpperCase() === baseType,
+  );
+  if (exactMatch) {
+    return resolveLabelMatchedHouseType(exactMatch, mapArea, configs);
+  }
+
+  // 2) عند غياب تطابق ترميز: مطابقة بالمساحة فقط
   if (mapArea > 0) {
     const areaMatches = configs.filter(
       (config) => hasFixedArea(config) && Math.abs(Number(config.area) - mapArea) < 0.01,
@@ -88,7 +136,6 @@ export function resolveHousePaymentFields(
     }
   }
 
-  // 2) مساحة الخريطة لا تطابق مساحة ثابتة → C+ أو نوع بدون مساحة ثابتة
   const plusVariant = configs.find(
     (config) => config.type.trim().toUpperCase() === `${baseType}+` && !hasFixedArea(config),
   );
@@ -96,24 +143,6 @@ export function resolveHousePaymentFields(
     return {
       houseType: plusVariant.type,
       totalArea: resolveConfiguredHouseArea(plusVariant, mapArea),
-    };
-  }
-
-  const prefixMatch = matchPaymentHouseTypeByPrefix(lastPart, configs);
-  if (prefixMatch) {
-    return {
-      houseType: prefixMatch.type,
-      totalArea: resolveConfiguredHouseArea(prefixMatch, mapArea),
-    };
-  }
-
-  const exactMatch = configs.find(
-    (config) => config.type.trim().toUpperCase() === baseType,
-  );
-  if (exactMatch) {
-    return {
-      houseType: exactMatch.type,
-      totalArea: resolveConfiguredHouseArea(exactMatch, mapArea),
     };
   }
 
