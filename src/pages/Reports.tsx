@@ -15,7 +15,7 @@ import {
   CartesianGrid, Tooltip, PieChart, Pie, Cell, LineChart, Line
 } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from '@/utils/toast';
+import { showError } from '@/utils/toast';
 import { AppShell, Panel, StatGrid, StatCell, EmptyState, LoadingBlock, SegmentedControl } from '@/components/layout/AppShell';
 import {
   chartAxis, chartGrid, chartMargin, formatAxisValue,
@@ -33,10 +33,10 @@ interface ReportsProps {
 
 const Reports = ({ projects }: ReportsProps) => {
   const navigate = useNavigate();
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [housesData, setHousesData] = useState<Record<string, any>>({});
   const [fetchedElements, setFetchedElements] = useState<MapElement[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [hasAccess, setHasAccess] = useState<boolean>(true);
   const [checkingAccess, setCheckingAccess] = useState<boolean>(true);
   const [retryTrigger, setRetryTrigger] = useState<number>(0);
@@ -44,6 +44,7 @@ const Reports = ({ projects }: ReportsProps) => {
   // حالات الفلترة المخصصة
   const [selectedZone, setSelectedZone] = useState<string>('all');
   const [selectedClass, setSelectedClass] = useState<string>('all');
+  const [selectedTower, setSelectedTower] = useState<string>('all');
   const [selectedSize, setSelectedSize] = useState<string>('all');
 
   // حالة التبديل بين المنازل والعمارات في مخطط أداء المبيعات
@@ -94,12 +95,19 @@ const Reports = ({ projects }: ReportsProps) => {
     checkAccessPermission();
   }, []);
 
-  // جلب البيانات حياً ومباشرة من قاعدة البيانات لضمان عمل التقارير بشكل مستقل وموثوق دائماً
+  // جلب البيانات فقط بعد اختيار مشروع أو «كافة المشاريع» — لا تحميل تلقائي عند الدخول
   useEffect(() => {
-    if (!hasAccess) return;
+    if (!hasAccess || !selectedProjectId) {
+      setFetchedElements([]);
+      setHousesData({});
+      setLoading(false);
+      return;
+    }
 
     const fetchReportsData = async () => {
       setLoading(true);
+      setFetchedElements([]);
+      setHousesData({});
       try {
         // 1. جلب عناصر المخطط (elements) كاملة من جدول المشاريع
         let elementsList: MapElement[] = [];
@@ -179,7 +187,6 @@ const Reports = ({ projects }: ReportsProps) => {
           };
         });
         setHousesData(formatted);
-        showSuccess("تم تحديث بيانات التقارير بنجاح وبأعلى أداء");
       } catch (err) {
         console.error("Error fetching reports data:", err);
         showError("فشل الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت وإعادة المحاولة.");
@@ -191,11 +198,12 @@ const Reports = ({ projects }: ReportsProps) => {
     fetchReportsData();
   }, [selectedProjectId, hasAccess, retryTrigger]);
 
-  // استخراج الزونات والأصناف والمساحات المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
-  const { availableZones, availableClasses, availableSizes } = useMemo(() => {
+  // استخراج الزونات والأصناف والعمارات والمساحات المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
+  const { availableZones, availableClasses, availableTowers, availableSizes } = useMemo(() => {
     const zones = new Set<string>();
     const classes = new Set<string>();
     const sizes = new Set<number>();
+    const towers: { id: string; label: string }[] = [];
 
     fetchedElements.forEach(el => {
       if (el.type === 'house') {
@@ -206,6 +214,12 @@ const Reports = ({ projects }: ReportsProps) => {
           if (typeMatch) classes.add(typeMatch[0]);
         }
       } else if (el.type === 'tower') {
+        const towerLabel =
+          selectedProjectId === 'all' && el._projectName
+            ? `${el._projectName} — ${el.label}`
+            : el.label;
+        towers.push({ id: el.id, label: towerLabel });
+
         const floors = el.floors || 1;
         const aptsPerFloor = el.apartmentsPerFloor || 1;
         for (let f = 1; f <= floors; f++) {
@@ -228,21 +242,43 @@ const Reports = ({ projects }: ReportsProps) => {
     return {
       availableZones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
       availableClasses: Array.from(classes).sort(),
+      availableTowers: towers.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })),
       availableSizes: Array.from(sizes).sort((a, b) => a - b)
     };
-  }, [fetchedElements, housesData]);
+  }, [fetchedElements, housesData, selectedProjectId]);
 
   // إعادة تعيين الفلاتر الفرعية عند تغيير المشروع المستهدف
   useEffect(() => {
     setSelectedZone('all');
     setSelectedClass('all');
+    setSelectedTower('all');
     setSelectedSize('all');
     setSalesViewMode('houses');
   }, [selectedProjectId]);
 
+  // فلاتر المنازل والعمارات متبادلة: الزون/الصنف للمنازل، العمارة للشقق
+  useEffect(() => {
+    if (selectedTower !== 'all') {
+      setSelectedZone('all');
+      setSelectedClass('all');
+      setSalesViewMode('towers');
+    }
+  }, [selectedTower]);
+
+  useEffect(() => {
+    if (selectedZone !== 'all' || selectedClass !== 'all') {
+      setSelectedTower('all');
+    }
+  }, [selectedZone, selectedClass]);
+
   // تصفية العناصر بناءً على الفلاتر المحددة
   const filteredElementsForGlobal = useMemo(() => {
     return fetchedElements.filter(el => {
+      if (selectedTower !== 'all') {
+        if (el.type === 'house') return false;
+        if (el.type === 'tower') return el.id === selectedTower;
+      }
+
       if (el.type === 'house') {
         // فلترة الصنف للمنازل
         if (selectedClass !== 'all') {
@@ -274,7 +310,7 @@ const Reports = ({ projects }: ReportsProps) => {
 
       return true;
     });
-  }, [fetchedElements, selectedZone, selectedClass, selectedSize]);
+  }, [fetchedElements, selectedZone, selectedClass, selectedTower, selectedSize]);
 
   // 1. حساب الإحصائيات العامة والمالية المدمجة (منازل وشقق معاً) بناءً على الفلترة
   const stats = useMemo(() => {
@@ -386,7 +422,7 @@ const Reports = ({ projects }: ReportsProps) => {
       // السيناريو الأول: كافة المشاريع المدمجة -> العرض يكون حسب المشاريع
       const projectStats: Record<string, { name: string, total: number, sold: number, investment: number }> = {};
 
-      fetchedElements.forEach(el => {
+      filteredElementsForGlobal.forEach(el => {
         const projId = el._projectId || 'unknown';
         const projName = el._projectName || 'مشروع غير معروف';
 
@@ -429,7 +465,7 @@ const Reports = ({ projects }: ReportsProps) => {
         // عرض المنازل حسب الزونات
         const zones: Record<string, { total: number, sold: number, investment: number }> = {};
 
-        fetchedElements.forEach(el => {
+        filteredElementsForGlobal.forEach(el => {
           if (el.type === 'house') {
             const parts = el.label.split('-');
             const zone = parts[0] || "عام";
@@ -462,7 +498,7 @@ const Reports = ({ projects }: ReportsProps) => {
         // عرض العمارات (كل عمارة على حدة)
         const towersDataList: any[] = [];
 
-        fetchedElements.forEach(el => {
+        filteredElementsForGlobal.forEach(el => {
           if (el.type === 'tower') {
             let total = 0;
             let sold = 0;
@@ -495,7 +531,7 @@ const Reports = ({ projects }: ReportsProps) => {
         return towersDataList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       }
     }
-  }, [selectedProjectId, fetchedElements, housesData, salesViewMode]);
+  }, [selectedProjectId, filteredElementsForGlobal, housesData, salesViewMode]);
 
   // 4. بيانات منحنى المبيعات الزمني مرتبة كرونولوجياً من الأقدم للأحدث (Line Chart)
   const salesTrendData = useMemo(() => {
@@ -562,7 +598,7 @@ const Reports = ({ projects }: ReportsProps) => {
   const averagePriceDataHouses = useMemo(() => {
     const classPrices: Record<string, { sumIQD: number, countIQD: number, sumUSD: number, countUSD: number }> = {};
 
-    fetchedElements.filter(el => el.type === 'house').forEach(el => {
+    filteredElementsForGlobal.filter(el => el.type === 'house').forEach(el => {
       const parts = el.label.split('-');
       let uClass = "غير محدد";
       if (parts.length >= 3) {
@@ -599,13 +635,13 @@ const Reports = ({ projects }: ReportsProps) => {
       'متوسط السعر (د.ع)': data.countIQD > 0 ? Math.round(data.sumIQD / data.countIQD) : 0,
       'متوسط السعر ($)': data.countUSD > 0 ? Math.round(data.sumUSD / data.countUSD) : 0,
     })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
-  }, [fetchedElements, housesData, selectedProjectId]);
+  }, [filteredElementsForGlobal, housesData, selectedProjectId]);
 
   // 6. تقرير متوسط أسعار الشقق حسب المساحة (الأسلوب المنفصل الجديد)
   const averagePriceDataApartments = useMemo(() => {
     const sizePrices: Record<string, { sumIQD: number, countIQD: number, sumUSD: number, countUSD: number }> = {};
 
-    fetchedElements.filter(el => el.type === 'tower').forEach(el => {
+    filteredElementsForGlobal.filter(el => el.type === 'tower').forEach(el => {
       const floors = el.floors || 1;
       const aptsPerFloor = el.apartmentsPerFloor || 1;
 
@@ -649,7 +685,7 @@ const Reports = ({ projects }: ReportsProps) => {
       'متوسط السعر (د.ع)': data.countIQD > 0 ? Math.round(data.sumIQD / data.countIQD) : 0,
       'متوسط السعر ($)': data.countUSD > 0 ? Math.round(data.sumUSD / data.countUSD) : 0,
     })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
-  }, [fetchedElements, housesData, selectedProjectId]);
+  }, [filteredElementsForGlobal, housesData, selectedProjectId]);
 
   const salesRatio = stats.total > 0
     ? Math.round(((stats.sold + stats.investment) / stats.total) * 100)
@@ -679,7 +715,7 @@ const Reports = ({ projects }: ReportsProps) => {
   ];
 
   const hasSubFilters =
-    selectedZone !== 'all' || selectedClass !== 'all' || selectedSize !== 'all';
+    selectedZone !== 'all' || selectedClass !== 'all' || selectedTower !== 'all' || selectedSize !== 'all';
 
   const priceChartProps = {
     grid: chartGrid,
@@ -716,6 +752,8 @@ const Reports = ({ projects }: ReportsProps) => {
       ]}
     />
   );
+
+  const hasSelectedProject = selectedProjectId !== '';
 
   if (checkingAccess) {
     return (
@@ -757,9 +795,12 @@ const Reports = ({ projects }: ReportsProps) => {
         </Link>
       }
       actions={
-        <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+        <Select
+          value={selectedProjectId || undefined}
+          onValueChange={setSelectedProjectId}
+        >
           <SelectTrigger className="h-8 w-[200px] text-[12px]">
-            <SelectValue placeholder="اختر المشروع" />
+            <SelectValue placeholder="اختر المشروع أو المدينة" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">كافة المشاريع المدمجة</SelectItem>
@@ -770,7 +811,8 @@ const Reports = ({ projects }: ReportsProps) => {
         </Select>
       }
     >
-      {/* Filter bar */}
+      {/* Filter bar — يظهر فقط بعد اختيار مشروع */}
+      {hasSelectedProject && (
       <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-line py-3">
         <div className="flex items-center gap-2 text-fg-muted">
           <Filter size={13} />
@@ -808,6 +850,21 @@ const Reports = ({ projects }: ReportsProps) => {
         </label>
 
         <label className="flex items-center gap-2">
+          <span className="text-[11px] text-fg-muted">عمارة</span>
+          <Select value={selectedTower} onValueChange={setSelectedTower}>
+            <SelectTrigger className="h-8 w-[160px] text-[12px]">
+              <SelectValue placeholder="كل العمارات" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل العمارات</SelectItem>
+              {availableTowers.map((tower) => (
+                <SelectItem key={tower.id} value={tower.id}>{tower.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+
+        <label className="flex items-center gap-2">
           <span className="text-[11px] text-fg-muted">مساحة الشقة</span>
           <Select value={selectedSize} onValueChange={setSelectedSize}>
             <SelectTrigger className="h-8 w-[130px] text-[12px]">
@@ -826,15 +883,29 @@ const Reports = ({ projects }: ReportsProps) => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSelectedZone('all'); setSelectedClass('all'); setSelectedSize('all'); }}
+            onClick={() => {
+              setSelectedZone('all');
+              setSelectedClass('all');
+              setSelectedTower('all');
+              setSelectedSize('all');
+            }}
             className="ms-auto text-status-sold hover:text-status-sold"
           >
             إعادة تعيين
           </Button>
         )}
       </div>
+      )}
 
-      {loading ? (
+      {!hasSelectedProject ? (
+        <div className="mt-10">
+          <EmptyState
+            icon={<PieIcon size={26} strokeWidth={1.25} />}
+            title="اختر مشروعاً لعرض التقرير"
+            description="لم يتم تحميل أي بيانات بعد. اختر مدينة أو مشروعاً محدداً من القائمة أعلاه، أو «كافة المشاريع المدمجة» لإنشاء التقرير الشامل."
+          />
+        </div>
+      ) : loading ? (
         <div className="mt-10">
           <LoadingBlock label="جاري تحميل وتحليل البيانات المالية" />
         </div>
