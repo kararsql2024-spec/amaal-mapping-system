@@ -59,7 +59,22 @@ import {
   evaluateCenterSubscription,
   formatSubscriptionDate,
   type CenterSubscriptions,
+  type CenterSubscription,
 } from "@/lib/center-subscription";
+import {
+  SubscriptionBlockedScreen,
+  type SubscriptionBlockReason,
+} from "@/components/SubscriptionBlockedScreen";
+import {
+  centerSessionToRecord,
+  clearCenterSession,
+  getStoredCenterSessionToken,
+  persistCenterSession,
+  revokeCenterSession,
+  validateCenterSession,
+  verifyCenterLogin,
+  formatCenterLoginError,
+} from "@/lib/center-auth";
 
 interface IndexProps {
   projects: Project[];
@@ -90,6 +105,12 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   const [currentCenter, setCurrentCenter] = useState<any>(null);
   const [centerSubscriptions, setCenterSubscriptions] = useState<CenterSubscriptions>({});
   const [subscriptionWarning, setSubscriptionWarning] = useState<{ daysRemaining: number; endDate: string } | null>(null);
+  const [subscriptionBlock, setSubscriptionBlock] = useState<{
+    reason: SubscriptionBlockReason;
+    centerName?: string;
+    endDate?: string;
+    notes?: string;
+  } | null>(null);
   
   const [mainMapData, setMainMapData] = useState<any>(null);
   const [projectConfigs, setProjectConfigs] = useState<Record<string, { backgroundColor?: string, showGrid?: boolean, houseTypeAreas?: Record<string, number> }>>({});
@@ -317,23 +338,34 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   }, [selectedProjectId, isAuthChecking]);
 
   const handleLogout = () => {
+    void revokeCenterSession(supabase);
     setIsLoggedIn(false);
     setCurrentCenter(null);
     setSubscriptionWarning(null);
+    setSubscriptionBlock(null);
     setLoginData({ centerId: '', password: '' });
-    localStorage.removeItem('marketing_center_session');
-    localStorage.removeItem('marketing_center_password');
-    localStorage.removeItem('marketing_center_name');
+    clearCenterSession();
   };
 
-  const getSubscriptionBlockMessage = (reason?: 'expired' | 'suspended' | 'not_started') => {
-    if (reason === 'suspended') {
-      return "تم تعليق اشتراك هذا القسم. للتجديد، تواصل مع مشرف النظام.";
-    }
-    if (reason === 'not_started') {
-      return "لم يبدأ اشتراك هذا القسم بعد. تواصل مع مشرف النظام.";
-    }
-    return "انتهى اشتراك هذا القسم. للتجديد، تواصل مع مشرف النظام.";
+  const blockSubscriptionAccess = (
+    reason: SubscriptionBlockReason,
+    center?: { id?: string; name?: string } | null,
+    subscription?: CenterSubscription,
+  ) => {
+    const resolvedSubscription =
+      subscription ?? getCenterSubscription(centerSubscriptions, center?.id);
+
+    setIsLoggedIn(false);
+    setCurrentCenter(null);
+    setSubscriptionWarning(null);
+    setLoginData({ centerId: center?.id || '', password: '' });
+    clearCenterSession();
+    setSubscriptionBlock({
+      reason,
+      centerName: center?.name,
+      endDate: resolvedSubscription.subscription_end,
+      notes: resolvedSubscription.subscription_notes,
+    });
   };
 
   const applySubscriptionAccess = (centerId: string, subscriptions: CenterSubscriptions) => {
@@ -347,11 +379,21 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     return { ok: true as const };
   };
 
-  // المراقبة اللحظية (Realtime Logout) لتغيير كلمة المرور أو حذف الحساب من الإدارة
+  // المراقبة اللحظية — إنهاء الجلسة عند تغيير بيانات القسم أو حذفه
   useEffect(() => {
     if (!currentCenter?.id || !isLoggedIn) return;
 
-    const savedCenterPass = localStorage.getItem('marketing_center_password');
+    const invalidateSessionIfNeeded = async (message: string) => {
+      const { session } = await validateCenterSession(supabase);
+      if (!session) {
+        clearCenterSession();
+        setIsLoggedIn(false);
+        setCurrentCenter(null);
+        setSubscriptionWarning(null);
+        setLoginData({ centerId: '', password: '' });
+        showError(message);
+      }
+    };
 
     const channel = supabase
       .channel(`center_auth_check_${currentCenter.id}`)
@@ -363,12 +405,10 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           table: 'marketing_centers',
           filter: `id=eq.${currentCenter.id}`
         },
-        (payload) => {
-          const updatedCenter = payload.new as any;
-          if (updatedCenter && updatedCenter.password !== savedCenterPass) {
-            handleLogout();
-            showError("تم تغيير كلمة المرور لهذا القسم من قِبل الإدارة. تم تسجيل الخروج تلقائياً.");
-          }
+        () => {
+          void invalidateSessionIfNeeded(
+            "تم تحديث بيانات هذا القسم من قِبل الإدارة. يرجى إعادة تسجيل الدخول.",
+          );
         }
       )
       .on(
@@ -396,24 +436,27 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
       setIsAuthChecking(true);
       const startTime = performance.now();
       try {
-        const { data: centers } = await supabase.from('marketing_centers').select('*');
+        const { data: centers } = await supabase
+          .from('marketing_centers')
+          .select('id, name, type');
         if (centers) setMarketingCenters(centers);
 
         const subscriptions = await fetchCenterSubscriptions(supabase);
         setCenterSubscriptions(subscriptions);
 
-        const savedCenterId = localStorage.getItem('marketing_center_session');
-        const savedCenterPass = localStorage.getItem('marketing_center_password');
+        const savedToken = getStoredCenterSessionToken();
+        if (savedToken) {
+          const { session } = await validateCenterSession(supabase, savedToken);
 
-        if (savedCenterId && centers) {
-          const center = centers.find(c => c.id === savedCenterId);
-          
-          // التحقق من صحة كلمة المرور المعتمدة للجلسة وبث الطلبات الخفيفة فقط
-          if (center && center.password === savedCenterPass) {
-            const subscriptionAccess = applySubscriptionAccess(center.id, subscriptions);
+          if (session) {
+            const centerRecord = centerSessionToRecord(session);
+            const subscriptionAccess = applySubscriptionAccess(session.id, subscriptions);
             if (!subscriptionAccess.ok) {
-              handleLogout();
-              showError(getSubscriptionBlockMessage(subscriptionAccess.reason));
+              blockSubscriptionAccess(
+                subscriptionAccess.reason!,
+                centerRecord,
+                getCenterSubscription(subscriptions, session.id),
+              );
               return;
             }
 
@@ -424,8 +467,8 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
 
             if (settings) {
               const permsSetting = settings.find(s => s.key === 'dept_permissions');
-              if (permsSetting && permsSetting.value && center.type) {
-                const deptPerms = permsSetting.value[center.type];
+              if (permsSetting && permsSetting.value && session.type) {
+                const deptPerms = permsSetting.value[session.type];
                 if (deptPerms) setPermissions(deptPerms);
               }
 
@@ -436,14 +479,11 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
               if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
             }
 
-            setCurrentCenter(center);
-            localStorage.setItem('marketing_center_name', center.name);
+            persistCenterSession(session);
+            setCurrentCenter(centerRecord);
             setIsLoggedIn(true);
           } else {
-            handleLogout();
-            if (center && center.password !== savedCenterPass) {
-              showError("تم تغيير كلمة المرور لهذا القسم من قِبل الإدارة. يرجى إعادة تسجيل الدخول.");
-            }
+            clearCenterSession();
           }
         }
         const endTime = performance.now();
@@ -466,8 +506,11 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         setCenterSubscriptions(subscriptions);
         const access = applySubscriptionAccess(currentCenter.id, subscriptions);
         if (!access.ok) {
-          handleLogout();
-          showError(getSubscriptionBlockMessage(access.reason));
+          blockSubscriptionAccess(
+            access.reason!,
+            currentCenter,
+            getCenterSubscription(subscriptions, currentCenter.id),
+          );
         }
       } catch (error) {
         console.error("Error refreshing subscription access:", error);
@@ -815,51 +858,66 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
       showError("يرجى اختيار القسم أولاً");
       return;
     }
-    const center = marketingCenters.find(c => c.id === loginData.centerId);
-    if (center && center.password === loginData.password) {
-      setIsAuthChecking(true);
-      try {
-        const subscriptions = await fetchCenterSubscriptions(supabase);
-        setCenterSubscriptions(subscriptions);
-        const subscriptionAccess = applySubscriptionAccess(center.id, subscriptions);
-        if (!subscriptionAccess.ok) {
-          showError(getSubscriptionBlockMessage(subscriptionAccess.reason));
-          return;
-        }
+    if (!loginData.password.trim()) {
+      showError("يرجى إدخال كلمة المرور");
+      return;
+    }
 
-        const { data: settings } = await supabase
-          .from('settings')
-          .select('key, value')
-          .in('key', ['dept_permissions', 'project_configs', 'last_excel_update']);
+    setIsAuthChecking(true);
+    try {
+      const { session, error, retryAfterSeconds } = await verifyCenterLogin(
+        supabase,
+        loginData.centerId,
+        loginData.password,
+      );
 
-        if (settings) {
-          const permsSetting = settings.find(s => s.key === 'dept_permissions');
-          if (permsSetting && permsSetting.value && center.type) {
-            const deptPerms = permsSetting.value[center.type];
-            if (deptPerms) setPermissions(deptPerms);
-          }
-
-          const configs = settings.find(s => s.key === 'project_configs');
-          if (configs) setProjectConfigs(configs.value || {});
-
-          const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
-          if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
-        }
-
-        setCurrentCenter(center);
-        localStorage.setItem('marketing_center_session', center.id);
-        localStorage.setItem('marketing_center_password', center.password);
-        localStorage.setItem('marketing_center_name', center.name);
-        setIsLoggedIn(true);
-        showSuccess(`مرحباً بك في مركز ${center.name}`);
-      } catch (err) {
-        console.error("Error confirming permissions on login:", err);
-        showError("حدث خطأ أثناء تحميل صلاحيات القسم");
-      } finally {
-        setIsAuthChecking(false);
+      if (!session) {
+        showError(formatCenterLoginError(error, retryAfterSeconds));
+        return;
       }
-    } else {
-      showError("بيانات الدخول غير صحيحة");
+
+      const centerRecord = centerSessionToRecord(session);
+      const subscriptions = await fetchCenterSubscriptions(supabase);
+      setCenterSubscriptions(subscriptions);
+      const subscriptionAccess = applySubscriptionAccess(session.id, subscriptions);
+      if (!subscriptionAccess.ok) {
+        blockSubscriptionAccess(
+          subscriptionAccess.reason!,
+          centerRecord,
+          getCenterSubscription(subscriptions, session.id),
+        );
+        return;
+      }
+
+      const { data: settings } = await supabase
+        .from('settings')
+        .select('key, value')
+        .in('key', ['dept_permissions', 'project_configs', 'last_excel_update']);
+
+      if (settings) {
+        const permsSetting = settings.find(s => s.key === 'dept_permissions');
+        if (permsSetting && permsSetting.value && session.type) {
+          const deptPerms = permsSetting.value[session.type];
+          if (deptPerms) setPermissions(deptPerms);
+        }
+
+        const configs = settings.find(s => s.key === 'project_configs');
+        if (configs) setProjectConfigs(configs.value || {});
+
+        const lastUpdateSetting = settings.find(s => s.key === 'last_excel_update');
+        if (lastUpdateSetting) setLastUpdate(lastUpdateSetting.value);
+      }
+
+      persistCenterSession(session);
+      setCurrentCenter(centerRecord);
+      setIsLoggedIn(true);
+      setLoginData((prev) => ({ ...prev, password: '' }));
+      showSuccess(`مرحباً بك في مركز ${session.name}`);
+    } catch (err) {
+      console.error("Error confirming permissions on login:", err);
+      showError("حدث خطأ أثناء تحميل صلاحيات القسم");
+    } finally {
+      setIsAuthChecking(false);
     }
   };
 
@@ -1058,6 +1116,18 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           <p className="text-[13px] text-fg-muted">جاري التحقق من الجلسة والصلاحيات</p>
         </div>
       </div>
+    );
+  }
+
+  if (subscriptionBlock) {
+    return (
+      <SubscriptionBlockedScreen
+        reason={subscriptionBlock.reason}
+        centerName={subscriptionBlock.centerName}
+        endDate={subscriptionBlock.endDate}
+        notes={subscriptionBlock.notes}
+        onBackToLogin={() => setSubscriptionBlock(null)}
+      />
     );
   }
 

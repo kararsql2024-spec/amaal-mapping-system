@@ -47,6 +47,7 @@ import {
   recalculateUnlockedInstallments,
   validatePaymentTotals,
 } from "@/lib/payment-installments";
+import { verifyCenterPassword } from "@/lib/center-auth";
 import { formatPaymentUnitNumber } from "@/lib/unit-label-parser";
 import { fetchPaymentUnitSettings, getPaymentProjectUnitSettings } from "@/lib/payment-settings";
 import { resolveHouseTypeSelection } from "@/lib/payment-unit-resolver";
@@ -233,8 +234,8 @@ const SalesArchive = () => {
       return showError(editValidation.message || "مجموع الدفعات لا يطابق سعر البيع");
     }
 
-    const storedPassword = localStorage.getItem("marketing_center_password") || "";
-    if (centerPassword !== storedPassword) return showError("كلمة مرور القسم غير صحيحة");
+    const passwordOk = await verifyCenterPassword(supabase, centerId, centerPassword);
+    if (!passwordOk) return showError("كلمة مرور القسم غير صحيحة");
 
     setSaving(true);
     try {

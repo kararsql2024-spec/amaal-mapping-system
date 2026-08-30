@@ -23,7 +23,7 @@ import {
 } from '@/components/charts/chart-kit';
 import { formatNumber, parsePrice, getCurrencyType } from '@/lib/format';
 import { STATUS_META, PRIMARY_STATUSES } from '@/lib/unit-status';
-import { palette } from '@/lib/theme';
+import { validateCenterSession } from '@/lib/center-auth';
 
 interface ReportsProps {
   projects: Project[];
@@ -55,27 +55,21 @@ const Reports = ({ projects }: ReportsProps) => {
     const checkAccessPermission = async () => {
       setCheckingAccess(true);
       try {
-        const savedCenterId = localStorage.getItem('marketing_center_session');
-        if (!savedCenterId) {
+        const { session } = await validateCenterSession(supabase);
+        if (!session) {
           setHasAccess(false);
           setCheckingAccess(false);
           return;
         }
 
-        const { data: centers } = await supabase.from('marketing_centers').select('*');
-        const center = centers?.find(c => c.id === savedCenterId);
-        
-        if (!center) {
-          setHasAccess(false);
-          setCheckingAccess(false);
-          return;
-        }
+        const { data: settings } = await supabase
+          .from('settings')
+          .select('key, value')
+          .eq('key', 'dept_permissions')
+          .maybeSingle();
 
-        const { data: settings } = await supabase.from('settings').select('*');
-        const permsSetting = settings?.find(s => s.key === 'dept_permissions');
-        
-        if (permsSetting && permsSetting.value && center.type) {
-          const deptPerms = permsSetting.value[center.type];
+        if (settings?.value && session.type) {
+          const deptPerms = (settings.value as Record<string, Record<string, boolean>>)[session.type];
           if (deptPerms && deptPerms.canAccessReports === false) {
             setHasAccess(false);
           } else {

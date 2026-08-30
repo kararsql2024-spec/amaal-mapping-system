@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { centerSessionToRecord, validateCenterSession } from "@/lib/center-auth";
 
 export type DeptPermissionMap = Record<string, boolean | string | undefined>;
 
@@ -21,22 +22,13 @@ export function canAccessPaymentPrint(perms?: DeptPermissionMap | null): boolean
 }
 
 export async function fetchSessionDeptPermissions(supabase: SupabaseClient) {
-  const savedCenterId = localStorage.getItem("marketing_center_session");
-  const savedCenterPass = localStorage.getItem("marketing_center_password");
+  const { session } = await validateCenterSession(supabase);
 
-  if (!savedCenterId) {
+  if (!session) {
     return { center: null, permissions: null as DeptPermissionMap | null };
   }
 
-  const { data: center } = await supabase
-    .from("marketing_centers")
-    .select("*")
-    .eq("id", savedCenterId)
-    .maybeSingle();
-
-  if (!center || center.password !== savedCenterPass) {
-    return { center: null, permissions: null };
-  }
+  const center = centerSessionToRecord(session);
 
   const { data: settingsRow } = await supabase
     .from("settings")

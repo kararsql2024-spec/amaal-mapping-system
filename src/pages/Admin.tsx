@@ -320,7 +320,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const { data: centersData } = await supabase
           .from('marketing_centers')
-          .select('*')
+          .select('id, name, type, allowed_projects, created_at')
           .order('created_at', { ascending: false });
         
         if (centersData) {
@@ -601,17 +601,23 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   };
 
   const handleAddCenter = async () => {
-    if (!newCenter.name || !newCenter.password || !newCenter.type) {
+    if (!newCenter.name || !newCenter.type) {
       showError("يرجى إكمال كافة البيانات واختيار نوع القسم");
       return;
     }
+    if (!editingCenterId && !newCenter.password) {
+      showError("يرجى إدخال كلمة مرور للقسم الجديد");
+      return;
+    }
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: newCenter.name,
-        password: newCenter.password,
         type: newCenter.type,
         allowed_projects: newCenter.allowed_projects
       };
+      if (newCenter.password.trim()) {
+        payload.password = newCenter.password;
+      }
 
       if (editingCenterId) {
         const { data, error } = await supabase
@@ -1675,7 +1681,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const { data: projects } = await supabase.from('projects').select('*');
       const houses = await fetchAllHousesForBackup();
       const { data: settings } = await supabase.from('settings').select('*');
-      const { data: centers } = await supabase.from('marketing_centers').select('*');
+      const { data: centers } = await supabase
+        .from('marketing_centers')
+        .select('id, name, type, allowed_projects, password_hash');
       
       const backup = { timestamp: new Date().toISOString(), projects, houses, settings, centers };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -1699,7 +1707,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       const { data: projectsData } = await supabase.from('projects').select('*');
       const housesData = await fetchAllHousesForBackup();
       const { data: settingsData } = await supabase.from('settings').select('*');
-      const { data: centersData = [] } = await supabase.from('marketing_centers').select('*');
+      const { data: centersData = [] } = await supabase
+        .from('marketing_centers')
+        .select('id, name, type, allowed_projects, password_hash');
       
       const backup = {
         timestamp: new Date().toISOString(),
@@ -2412,8 +2422,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       <Input value={newCenter.name} onChange={(e) => setNewCenter({...newCenter, name: e.target.value})} placeholder="مثال: قسم المبيعات" />
                     </AdminField>
 
-                    <AdminField label="كلمة المرور">
-                      <Input type="password" value={newCenter.password} onChange={(e) => setNewCenter({...newCenter, password: e.target.value})} placeholder="••••" />
+                    <AdminField label={editingCenterId ? "كلمة المرور (اختياري)" : "كلمة المرور"}>
+                      <Input
+                        type="password"
+                        value={newCenter.password}
+                        onChange={(e) => setNewCenter({...newCenter, password: e.target.value})}
+                        placeholder={editingCenterId ? "اتركه فارغاً للإبقاء على كلمة المرور الحالية" : "••••"}
+                      />
                     </AdminField>
 
                     <AdminField label="نوع القسم (للصلاحيات)">
@@ -2675,7 +2690,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                 setEditingCenterId(center.id);
                                 setNewCenter({
                                   name: center.name,
-                                  password: center.password,
+                                  password: '',
                                   type: center.type,
                                   allowed_projects: center.allowed_projects || [],
                                   phone: p.phone || '',
