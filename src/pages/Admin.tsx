@@ -210,7 +210,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     currencyCol: 'G',
     taboNumCol: 'J',
     taboStatusCol: 'K',
-    handoverDateCol: 'L'
+    handoverDateCol: 'L',
+    userCol: '',
+    purposeCol: '',
   });
   const [investmentNames, setInvestmentNames] = useState<string[]>([]);
   const [newInvestmentName, setNewInvestmentName] = useState('');
@@ -1379,6 +1381,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             taboNum: row[excelMapping.taboNumCol]?.toString().trim() || '',
             taboStatus: row[excelMapping.taboStatusCol]?.toString().trim() || 'غير مروج',
             handoverDate: parseExcelDate(row[excelMapping.handoverDateCol]),
+            ...(excelMapping.userCol
+              ? { userName: row[excelMapping.userCol]?.toString().trim() || '' }
+              : {}),
+            ...(excelMapping.purposeCol
+              ? { contractPurpose: row[excelMapping.purposeCol]?.toString().trim() || '' }
+              : {}),
           };
 
           updates.push({ unit_key: realUnitKey, project_id: project.id, data: unitData });
@@ -1405,7 +1413,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                 price: '',
                 taboNum: '',
                 taboStatus: 'غير مروج',
-                handoverDate: ''
+                handoverDate: '',
+                userName: '',
+                contractPurpose: '',
               };
               updates.push({ unit_key: h.unit_key, project_id: h.project_id, data: resetData });
               resetCounter++;
@@ -2038,6 +2048,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           <Button variant="outline" size="sm" onClick={startEditingMainMap} disabled={isLoadingMainMap} className="gap-1.5">
             <MapIcon size={13} /> {isLoadingMainMap ? 'جاري التحميل...' : 'المخطط العام'}
           </Button>
+          <Link to="/incentives">
+            <Button variant="ghost" size="sm" className="gap-1.5 text-fg-secondary">
+              <Coins size={13} /> الحوافز
+            </Button>
+          </Link>
           <Link to="/">
             <Button variant="ghost" size="sm" className="gap-1.5 text-fg-secondary">
               <Layout size={13} /> الموقع
@@ -2872,6 +2887,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     <MappingInput label="عمود رقم الطابو" value={excelMapping.taboNumCol} onChange={(v) => setExcelMapping({...excelMapping, taboNumCol: v})} />
                     <MappingInput label="عمود حالة الطابو" value={excelMapping.taboStatusCol} onChange={(v) => setExcelMapping({...excelMapping, taboStatusCol: v})} />
                     <MappingInput label="عمود تاريخ الاستلام" value={excelMapping.handoverDateCol} onChange={(v) => setExcelMapping({...excelMapping, handoverDateCol: v})} />
+                    <MappingInput label="عمود اسم المستخدم" value={excelMapping.userCol || ''} onChange={(v) => setExcelMapping({...excelMapping, userCol: v})} />
+                    <MappingInput label="عمود الغاية من العقد" value={excelMapping.purposeCol || ''} onChange={(v) => setExcelMapping({...excelMapping, purposeCol: v})} />
                   </Panel>
 
                   <Panel icon={<Tags size={14} />} title="قائمة المستثمرين" bodyClassName="space-y-4 p-5">
