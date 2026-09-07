@@ -204,6 +204,7 @@ EXECUTE FUNCTION hash_marketing_center_password();
 CREATE OR REPLACE FUNCTION revoke_center_sessions_on_password_change()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN

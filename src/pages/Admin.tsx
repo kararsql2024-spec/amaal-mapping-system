@@ -20,6 +20,13 @@ import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
 import { Link } from 'react-router-dom';
 import { supabase } from "@/integrations/supabase/client";
+import {
+  describeDevice,
+  fetchOpenCenterSessions,
+  formatSessionAge,
+  revokeCenterSessionAdmin,
+  type CenterOpenSession,
+} from "@/lib/center-auth";
 import { cn } from '@/lib/utils';
 import { clearMainMapCache, clearProjectCache, readMainMapCache } from '@/lib/map-cache';
 import { fetchNativeSupabase, fetchWithRetry } from '@/lib/supabase-rest';
@@ -169,6 +176,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [isSavingMap, setIsSavingMap] = useState(false);
   
   const [marketingCenters, setMarketingCenters] = useState<any[]>([]);
+  const [centerOpenSessions, setCenterOpenSessions] = useState<CenterOpenSession[]>([]);
+  const [centerSessionsAvailable, setCenterSessionsAvailable] = useState(true);
+  const [killingSessionId, setKillingSessionId] = useState<string | null>(null);
   const [centerBrochureProfiles, setCenterBrochureProfiles] = useState<CenterBrochureProfiles>({});
   const [centerSubscriptions, setCenterSubscriptions] = useState<CenterSubscriptions>({});
   const [previewBrochureCenterId, setPreviewBrochureCenterId] = useState<string>('');
@@ -337,6 +347,10 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const subscriptions = await fetchCenterSubscriptions(supabase);
         setCenterSubscriptions(subscriptions);
+
+        const openSessions = await fetchOpenCenterSessions(supabase);
+        setCenterOpenSessions(openSessions.sessions);
+        setCenterSessionsAvailable(openSessions.available);
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -659,6 +673,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             [editingCenterId]: buildCenterSubscriptionPayload(),
           }));
           setMarketingCenters(marketingCenters.map(c => c.id === editingCenterId ? data[0] : c));
+          const openSessions = await fetchOpenCenterSessions(supabase);
+          setCenterOpenSessions(openSessions.sessions);
+          setCenterSessionsAvailable(openSessions.available);
           resetCenterForm();
           showSuccess("تم تحديث القسم بنجاح");
         }
@@ -708,6 +725,36 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     } catch (error) {
       console.error("Error in handleAddCenter:", error);
       showError(editingCenterId ? "فشل في تحديث القسم" : "فشل في إضافة القسم");
+    }
+  };
+
+  const refreshCenterSessions = async () => {
+    const openSessions = await fetchOpenCenterSessions(supabase);
+    setCenterOpenSessions(openSessions.sessions);
+    setCenterSessionsAvailable(openSessions.available);
+  };
+
+  const handleKillCenterSession = async (session: CenterOpenSession, centerName: string) => {
+    if (!session.id) {
+      showError("تعذر تحديد الجلسة. نفّذ ملف database_center_session_kill.sql في Supabase.");
+      return;
+    }
+    const device = describeDevice(session.userAgent);
+    const ip = session.clientIp || "IP غير معروف";
+    if (!window.confirm(`إنهاء جلسة ${centerName} على ${device} (${ip})؟ سيُطلب منهم تسجيل الدخول من جديد.`)) {
+      return;
+    }
+    setKillingSessionId(session.id);
+    try {
+      const ok = await revokeCenterSessionAdmin(supabase, session.id);
+      if (!ok) throw new Error("revoke failed");
+      await refreshCenterSessions();
+      showSuccess("تم إنهاء الجلسة");
+    } catch (error) {
+      console.error("Error killing center session:", error);
+      showError("فشل إنهاء الجلسة");
+    } finally {
+      setKillingSessionId(null);
     }
   };
 
@@ -879,6 +926,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       canDeleteNotes: false,
       showSearchBox: true,
       showQuickPreview: true,
+      showHeatmap: true,
       canAccessReports: true,
       showDiagnosticTerminal: true,
       showBrochureButton: true,
@@ -1838,6 +1886,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         { key: 'showGeneralStats', label: 'عرض كارت الإحصائيات العام الجانبي بالكامل' },
         { key: 'showSearchBox', label: 'رؤية واستخدم مربع البحث في الواجهة الرئيسية' },
         { key: 'showQuickPreview', label: 'رؤية وتفعيل كارت المعاينة السريعة للوحدات' },
+        { key: 'showHeatmap', label: 'رؤية واستخدام الخريطة الحرارية في المخطط التفاعلي' },
         { key: 'canAccessReports', label: 'صلاحية الوصول إلى نافذة التقارير والتحليلات' },
         { key: 'showDiagnosticTerminal', label: 'رؤية لوحة تحليل الأداء الفورية (Realtime)' },
         { key: 'showBrochureButton', label: 'عرض زر بروشور الوحدة السكنية الفاخرة' },
@@ -2657,6 +2706,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
                 <div className="space-y-6 lg:col-span-2">
                   <Panel title="الأقسام الحالية" bodyClassName="p-0">
+                    {!centerSessionsAvailable ? (
+                      <p className="border-b border-line px-5 py-2.5 text-[11px] text-fg-muted">
+                        لتفعيل سجل الجلسات وتصحيح تغيير كلمة المرور نفّذ ملف database_center_sessions_admin.sql في Supabase.
+                      </p>
+                    ) : null}
                     {marketingCenters.length > 0 ? (
                       <div className="divide-y divide-line">
                         {marketingCenters.map(center => {
@@ -2665,16 +2719,32 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                           const subscriptionLabel = getSubscriptionStatusLabel(subscription);
                           const isSubscriptionWarning = subscriptionLabel.includes('ينتهي خلال');
                           const isSubscriptionExpired = subscriptionLabel === 'منتهي' || subscriptionLabel === 'معلّق';
+                          const sessions = centerOpenSessions.filter((item) => item.centerId === center.id);
                           return (
-                          <div key={center.id} className="group flex items-center justify-between gap-4 px-5 py-3.5">
-                            <div className="flex min-w-0 items-center gap-3">
+                          <div key={center.id} className="group flex items-start justify-between gap-4 px-5 py-3.5">
+                            <div className="flex min-w-0 flex-1 items-start gap-3">
                               {profile.marketingLogo ? (
-                                <img src={profile.marketingLogo} alt="" className="h-8 w-8 shrink-0 rounded object-contain" />
+                                <img src={profile.marketingLogo} alt="" className="mt-0.5 h-8 w-8 shrink-0 rounded object-contain" />
                               ) : null}
-                              <div className="min-w-0">
-                                <span className="block truncate text-[13px] text-fg">{center.name}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <span className="truncate text-[13px] text-fg">{center.name}</span>
+                                  <span className="shrink-0 border border-line px-1.5 py-0.5 text-[10px] text-fg-muted">
+                                    {center.type}
+                                  </span>
+                                  <span className={cn(
+                                    "shrink-0 border px-1.5 py-0.5 text-[10px]",
+                                    isSubscriptionExpired
+                                      ? "border-status-sold/30 bg-status-sold/10 text-status-sold"
+                                      : isSubscriptionWarning
+                                        ? "border-status-reserved/30 bg-status-reserved/10 text-status-reserved"
+                                        : "border-line text-fg-muted",
+                                  )}>
+                                    {subscriptionLabel}
+                                  </span>
+                                </div>
                                 {(profile.phone || profile.phone2) && (
-                                  <span className="block truncate font-mono text-[10px] text-fg-faint tabular-nums">
+                                  <span className="mt-0.5 block truncate font-mono text-[10px] text-fg-faint tabular-nums">
                                     {[profile.phone, profile.phone2].filter(Boolean).join(' · ')}
                                   </span>
                                 )}
@@ -2683,20 +2753,39 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                     ينتهي: {formatSubscriptionDate(subscription.subscription_end)}
                                   </span>
                                 )}
+                                <div className="mt-1.5 space-y-0.5">
+                                  <span className="block text-[11px] text-fg-secondary">
+                                    {sessions.length === 0
+                                      ? "لا جلسات مفتوحة"
+                                      : sessions.length === 1
+                                        ? "جلسة واحدة مفتوحة"
+                                        : `${sessions.length} جلسات مفتوحة`}
+                                  </span>
+                                  {sessions.map((item) => (
+                                    <div
+                                      key={item.id || `${item.centerId}-${item.createdAt}-${item.clientIp}`}
+                                      className="flex items-center justify-between gap-2"
+                                    >
+                                      <span className="min-w-0 truncate font-mono text-[10px] text-fg-faint tabular-nums">
+                                        {describeDevice(item.userAgent)}
+                                        {" · "}
+                                        {item.clientIp || "IP غير معروف"}
+                                        {item.createdAt ? ` · ${formatSessionAge(item.createdAt)}` : ""}
+                                      </span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={killingSessionId === item.id}
+                                        onClick={() => void handleKillCenterSession(item, center.name)}
+                                        className="h-6 shrink-0 px-1.5 text-[10px] text-status-sold hover:text-status-sold"
+                                      >
+                                        {killingSessionId === item.id ? "جاري الإنهاء" : "إنهاء الجلسة"}
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                              <span className="shrink-0 border border-line px-1.5 py-0.5 text-[10px] text-fg-muted">
-                                {center.type}
-                              </span>
-                              <span className={cn(
-                                "shrink-0 border px-1.5 py-0.5 text-[10px]",
-                                isSubscriptionExpired
-                                  ? "border-status-sold/30 bg-status-sold/10 text-status-sold"
-                                  : isSubscriptionWarning
-                                    ? "border-status-reserved/30 bg-status-reserved/10 text-status-reserved"
-                                    : "border-line text-fg-muted",
-                              )}>
-                                {subscriptionLabel}
-                              </span>
                             </div>
                             <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               <Button variant="ghost" size="icon" onClick={() => {

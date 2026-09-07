@@ -185,3 +185,68 @@ export const centerSessionToRecord = (session: CenterSessionInfo) => ({
   type: session.type,
   allowed_projects: session.allowed_projects ?? [],
 });
+
+export interface CenterOpenSession {
+  id: string;
+  centerId: string;
+  clientIp: string;
+  userAgent: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export function describeDevice(userAgent: string): string {
+  const ua = (userAgent || "").toLowerCase();
+  if (!ua.trim()) return "غير معروف";
+  if (/ipad|tablet|playbook|silk/.test(ua)) return "تابلت";
+  if (/mobi|iphone|ipod|android|windows phone/.test(ua)) return "هاتف";
+  return "كمبيوتر";
+}
+
+export function formatSessionAge(iso: string): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (minutes < 1) return "الآن";
+  if (minutes < 60) return `منذ ${minutes} د`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `منذ ${hours} س`;
+  return `منذ ${Math.round(hours / 24)} ي`;
+}
+
+export async function fetchOpenCenterSessions(
+  supabase: SupabaseClient,
+): Promise<{ sessions: CenterOpenSession[]; available: boolean }> {
+  const { data, error } = await supabase.rpc("list_open_center_sessions");
+  if (error) {
+    console.error("list_open_center_sessions failed:", error);
+    return { sessions: [], available: false };
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  return {
+    available: true,
+    sessions: rows.map((row) => ({
+      id: String(row?.id || ""),
+      centerId: String(row?.center_id || ""),
+      clientIp: String(row?.client_ip || "").trim(),
+      userAgent: String(row?.user_agent || ""),
+      createdAt: String(row?.created_at || ""),
+      expiresAt: String(row?.expires_at || ""),
+    })),
+  };
+}
+
+export async function revokeCenterSessionAdmin(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("revoke_center_session_admin", {
+    p_public_id: sessionId,
+  });
+  if (error) {
+    console.error("revoke_center_session_admin failed:", error);
+    return false;
+  }
+  return data === true;
+}
