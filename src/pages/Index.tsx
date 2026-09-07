@@ -37,6 +37,11 @@ import { cn } from "@/lib/utils";
 import { canAccessPaymentArchive } from "@/lib/dept-permissions";
 import { getHouseArea as getHouseAreaFor } from "@/lib/units";
 import {
+  collectProjectBookingActivity,
+  fetchCityRecentBookings,
+  type BookingActivityItem,
+} from "@/lib/booking-activity";
+import {
   fetchWithRetry,
   fetchNativeSupabase,
   fetchMainMapVersion,
@@ -90,8 +95,9 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(true);
+  const [activityTab, setActivityTab] = useState<"alerts" | "recent">("alerts");
+  const [cityRecentBookings, setCityRecentBookings] = useState<BookingActivityItem[]>([]);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
 
   // سجل التشخيصات فقط دون وجود لوب FPS ثقيل يعيد رندرة الصفحة الرئيسية
@@ -156,6 +162,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     canEditUnitData: false,
     showSearchBox: true,
     showQuickPreview: true,
+    showHeatmap: true,
     canAccessReports: true,
     showDiagnosticTerminal: true,
     showBrochureButton: true,
@@ -193,68 +200,22 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     return projects.filter(p => currentCenter.allowed_projects.includes(p.id));
   }, [projects, currentCenter]);
 
+  const projectNameById = React.useMemo(
+    () => Object.fromEntries(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
+
   const activeProject = React.useMemo(() => {
     return filteredProjects.find(p => p.id === selectedProjectId);
   }, [filteredProjects, selectedProjectId]);
 
   const selectedElement = activeElements.find(el => el.id === selectedElementId);
 
-  const expiringSoonBookings = React.useMemo(() => {
-    if (selectedProjectId === 'main_map' || !activeProject) return [];
-    const soon: any[] = [];
-    const now = new Date();
-
-    const checkUnit = (key: string, label: string) => {
-      const data = activeUnitsData[key];
-      if (data?.status === 'pending' && data?.saleDate) {
-        const bookingDate = new Date(data.saleDate);
-        const diffTime = now.getTime() - bookingDate.getTime();
-        const diffDays = diffTime / (1000 * 60 * 60 * 24);
-
-        if (diffDays >= 5 && diffDays <= 7) {
-          const daysLeft = (7 - diffDays).toFixed(1);
-          soon.push({
-            key,
-            label,
-            daysLeft,
-            data
-          });
-        }
-      }
-    };
-
-    activeElements.forEach(el => {
-      if (el.type === 'house') {
-        checkUnit(el.id, el.label);
-      } else if (el.type === 'tower') {
-        const floors = el.floors || 0;
-        const aptsPerFloor = el.apartmentsPerFloor || 0;
-        for (let f = 1; f <= floors; f++) {
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            const key = `${el.id}_F${f}_A${a}`;
-            
-            let pCounter = 0;
-            for (let f_idx = 1; f_idx <= floors; f_idx++) {
-              for (let a_idx = 1; a_idx <= aptsPerFloor; a_idx++) {
-                const innerKey = `${el.id}_F${f_idx}_A${a_idx}`;
-                const innerData = activeUnitsData[innerKey];
-                if (innerData?.status !== 'frozen_uncounted' && innerData?.status !== 'frozen_hidden') {
-                  pCounter++;
-                }
-                if (f_idx === f && a_idx === a) {
-                  const floorCode = f === 1 ? "FG" : `F${f - 1}`;
-                  const aptCode = (innerData?.status === 'frozen_uncounted' || innerData?.status === 'frozen_hidden') ? "مجمدة" : `P${pCounter}`;
-                  const label = `${el.label}-${floorCode}-${aptCode}`;
-                  checkUnit(key, label);
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    return soon;
+  const projectBookingActivity = React.useMemo(() => {
+    if (selectedProjectId === "main_map" || !activeProject) {
+      return { alerts: [] as BookingActivityItem[], recent: [] as BookingActivityItem[] };
+    }
+    return collectProjectBookingActivity(activeElements, activeUnitsData);
   }, [selectedProjectId, activeProject, activeElements, activeUnitsData]);
 
   const handleExtendBooking = async (key: string, currentData: any) => {
@@ -281,11 +242,6 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         project_id: selectedProjectId, 
         data: updatedData 
       }, { onConflict: 'unit_key' });
-
-      await supabase.from('notifications').insert({
-        project_id: selectedProjectId,
-        message: `تم تمديد الحجز الأولي للوحدة ${key} بنجاح من قبل مركز ${currentCenter?.name || ''} لمدة 7 أيام إضافية.`
-      });
 
       patchProjectUnits(selectedProjectId, (prev) => ({ ...prev, [key]: updatedData }));
       showSuccess(`تم تمديد حجز الوحدة ${key} لمدة 7 أيام إضافية بنجاح!`);
@@ -678,10 +634,6 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         setHousesData(formattedUnits);
         writeProjectCache(projectId, elements, formattedUnits);
 
-        setTimeout(() => {
-          if (!isStale()) checkExpiredBookings(allUnits, projectId);
-        }, 0);
-
         const totalTime = performance.now() - startTime;
         addDiagLog(
           `استعادة المشروع (${activeProject?.name || projectId}): ${totalTime.toFixed(0)}ms — ${allUnits.length} وحدة`,
@@ -812,46 +764,25 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     showSuccess(`جاري الانتقال لـ ${projects.find(p => p.id === projectId)?.name || 'المشروع'}...`);
   };
 
-  const checkExpiredBookings = async (units: any[], projectId: string) => {
-    const now = new Date();
-    const expiredUnits: any[] = [];
-    const expiredNotifications: any[] = [];
+  useEffect(() => {
+    if (!isLoggedIn || permissions.showNotifications === false) return;
+    if (selectedProjectId !== "main_map") return;
 
-    units.forEach(unit => {
-      const status = unit.status || unit.data?.status;
-      const saleDate = unit.saleDate || unit.data?.saleDate;
+    const projectIds = filteredProjects.map((project) => project.id);
+    let cancelled = false;
 
-      if (status === 'pending' && saleDate) {
-        const bookingDate = new Date(saleDate);
-        const diffTime = Math.abs(now.getTime() - bookingDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays > 7) {
-          expiredUnits.push({
-            unit_key: unit.unit_key,
-            project_id: projectId,
-            data: { ...(unit.data || {}), status: 'available', name: '', phone: '', saleDate: '', details: 'انتهى الحجز التلقائي' }
-          });
-          
-          expiredNotifications.push({
-            project_id: projectId,
-            message: `انتهى الحجز الأولي للوحدة ${unit.unit_key} لعدم تحويلها لمباع خلال 7 أيام.`
-          });
-        }
-      }
-    });
-
-    if (expiredUnits.length > 0) {
-      await supabase.from('houses_data').upsert(expiredUnits, { onConflict: 'unit_key' });
-      await supabase.from('notifications').insert(expiredNotifications);
-      
-      patchProjectUnits(projectId, (prev) => {
-        const next = { ...prev };
-        expiredUnits.forEach((u) => { next[u.unit_key] = u.data; });
-        return next;
+    fetchCityRecentBookings(projectIds)
+      .then((rows) => {
+        if (!cancelled) setCityRecentBookings(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setCityRecentBookings([]);
       });
-    }
-  };
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, permissions.showNotifications, selectedProjectId, filteredProjects]);
 
   const handleLogin = async () => {
     if (!loginData.centerId) {
@@ -1072,13 +1003,6 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
 
   const stats = calculateStats();
 
-  const getNotificationColor = (message: string) => {
-    if (message.includes('مباع') || message.includes('بيع')) return 'border-status-sold/30 bg-status-sold/[0.06]';
-    if (message.includes('استثمار')) return 'border-status-investment/30 bg-status-investment/[0.06]';
-    if (message.includes('متوفر') || message.includes('انتهى الحجز')) return 'border-status-pending/30 bg-status-pending/[0.06]';
-    return 'border-line bg-surface-sunken';
-  };
-
   const getHouseArea = (el: MapElement) =>
     getHouseAreaFor(el, projectConfigs[selectedProjectId || '']?.houseTypeAreas || {});
 
@@ -1227,6 +1151,10 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
 
   const isMainMap = selectedProjectId === 'main_map';
   const showStatsBand = !isMainMap && permissions.showGeneralStats;
+  const bookingAlerts = projectBookingActivity.alerts;
+  const recentBookings = isMainMap ? cityRecentBookings : projectBookingActivity.recent;
+  const visibleActivityTab = isMainMap ? "recent" : activityTab;
+  const activityBadge = isMainMap ? recentBookings.length : bookingAlerts.length;
 
   return (
     <AppShell
@@ -1405,32 +1333,6 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         </div>
       )}
 
-      {/* Expiring bookings */}
-      {!isMainMap && expiringSoonBookings.length > 0 && (
-        <section className="mt-10 border border-status-reserved/35 bg-status-reserved/[0.05]">
-          <div className="flex items-center gap-2 border-b border-status-reserved/25 px-4 py-3">
-            <AlertTriangle size={14} className="shrink-0 text-status-reserved" />
-            <span className="text-[13px] font-medium text-fg">حجوزات أولية توشك على الانتهاء</span>
-            <span className="eyebrow ms-auto">{expiringSoonBookings.length}</span>
-          </div>
-          <div className="max-h-56 divide-y divide-status-reserved/20 overflow-y-auto no-scrollbar">
-            {expiringSoonBookings.map((b) => (
-              <div key={b.key} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] text-fg">{b.label}</p>
-                  <p className="mt-0.5 text-[11px] text-fg-muted">
-                    متبقي <span className="tabular text-status-reserved">{b.daysLeft}</span> يوم — تاريخ الحجز {b.data.saleDate}
-                  </p>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => handleExtendBooking(b.key, b.data)} className="shrink-0">
-                  تمديد 7 أيام
-                </Button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Statistics */}
       {showStatsBand && primaryStatCells.length > 0 && (
         <div className="mt-10">
@@ -1495,8 +1397,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         )}
       </section>
 
-      {/* Notifications */}
-      {!isMainMap && permissions.showNotifications && (
+      {permissions.showNotifications && (
         <section className="mt-10 border border-line bg-surface">
           <button
             type="button"
@@ -1504,9 +1405,9 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
           >
             <Bell size={14} className="text-fg-muted" />
-            <span className="text-[13px] font-medium text-fg">الإشعارات</span>
+            <span className="text-[13px] font-medium text-fg">النشاط والحجوزات</span>
             <span className="border border-line px-1.5 py-0.5 text-[11px] tabular text-fg-muted">
-              {notifications.length}
+              {activityBadge}
             </span>
             <span className="ms-auto text-fg-faint">
               {isNotificationsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
@@ -1514,26 +1415,118 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           </button>
 
           {isNotificationsOpen && (
-            <div className="h-[380px] border-t border-line">
-              <ScrollArea className="h-full w-full">
-                {notifications.length > 0 ? (
-                  <div className="space-y-2 p-4">
-                    {notifications.map((notif) => (
-                      <div key={notif.id} className={cn("border px-3.5 py-3", getNotificationColor(notif.message))}>
-                        <p className="text-[13px] leading-relaxed text-fg">{notif.message}</p>
-                        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-fg-faint">
-                          <Clock size={11} /> {new Date(notif.created_at).toLocaleString('ar-EG')}
-                        </div>
+            <div className="border-t border-line">
+              {!isMainMap && (
+                <div className="flex border-b border-line">
+                  <button
+                    type="button"
+                    onClick={() => setActivityTab("alerts")}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-[12px] transition-colors",
+                      visibleActivityTab === "alerts"
+                        ? "bg-surface-sunken text-fg"
+                        : "text-fg-muted hover:bg-surface-sunken hover:text-fg"
+                    )}
+                  >
+                    تنبيهات
+                    {bookingAlerts.length > 0 && (
+                      <span className="ms-2 tabular text-status-reserved">{bookingAlerts.length}</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivityTab("recent")}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-[12px] transition-colors",
+                      visibleActivityTab === "recent"
+                        ? "bg-surface-sunken text-fg"
+                        : "text-fg-muted hover:bg-surface-sunken hover:text-fg"
+                    )}
+                  >
+                    آخر الحجوزات
+                    <span className="ms-2 tabular text-fg-faint">{recentBookings.length}</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="h-[380px]">
+                <ScrollArea className="h-full w-full">
+                  {visibleActivityTab === "alerts" ? (
+                    bookingAlerts.length > 0 ? (
+                      <div className="divide-y divide-line">
+                        {bookingAlerts.map((item) => (
+                          <div
+                            key={item.key}
+                            className={cn(
+                              "flex items-center justify-between gap-3 px-4 py-3",
+                              item.kind === "expired"
+                                ? "bg-status-sold/[0.04]"
+                                : "bg-status-reserved/[0.04]"
+                            )}
+                          >
+                            <button
+                              type="button"
+                              className="min-w-0 text-right"
+                              onClick={() => parseSearchClick({ unit_key: item.key, project_id: selectedProjectId })}
+                            >
+                              <p className="truncate text-[13px] text-fg">{item.label}</p>
+                              <p className="mt-0.5 text-[11px] text-fg-muted">
+                                {item.kind === "expired"
+                                  ? `منتهٍ منذ ${Math.abs(item.daysLeft ?? 0)} يوم`
+                                  : `متبقٍ ${item.daysLeft} يوم`}
+                                {" — "}تاريخ الحجز {item.saleDate}
+                              </p>
+                            </button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleExtendBooking(item.key, item.data)}
+                              className="shrink-0"
+                            >
+                              تمديد 7 أيام
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex h-[380px] flex-col items-center justify-center gap-2 text-fg-faint">
-                    <Info size={22} strokeWidth={1.25} />
-                    <p className="text-[13px]">لا توجد إشعارات حالياً</p>
-                  </div>
-                )}
-              </ScrollArea>
+                    ) : (
+                      <div className="flex h-[380px] flex-col items-center justify-center gap-2 text-fg-faint">
+                        <Info size={22} strokeWidth={1.25} />
+                        <p className="text-[13px]">لا توجد حجوزات منتهية أو على وشك الانتهاء</p>
+                      </div>
+                    )
+                  ) : recentBookings.length > 0 ? (
+                    <div className="divide-y divide-line">
+                      {recentBookings.map((item) => (
+                          <button
+                            key={`${item.projectId || selectedProjectId}-${item.key}`}
+                            type="button"
+                            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-right transition-colors hover:bg-surface-sunken"
+                            onClick={() => parseSearchClick({
+                              unit_key: item.key,
+                              project_id: item.projectId || selectedProjectId,
+                            })}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-[13px] text-fg">{item.label}</p>
+                              <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-fg-muted">
+                                <Clock size={11} />
+                                {item.saleDate}
+                                {item.name ? ` — ${item.name}` : ""}
+                                {isMainMap && item.projectId ? ` — ${projectNameById[item.projectId] || ""}` : ""}
+                              </p>
+                            </div>
+                            <StatusBadge status={item.status} />
+                          </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-[380px] flex-col items-center justify-center gap-2 text-fg-faint">
+                      <Info size={22} strokeWidth={1.25} />
+                      <p className="text-[13px]">لا توجد حجوزات حديثة</p>
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
             </div>
           )}
         </section>

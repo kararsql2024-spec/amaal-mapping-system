@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { MapElement, Point } from '@/types/project';
 import { 
   ZoomIn, ZoomOut, RotateCcw, Maximize, Minimize,
-  Home, Building2, SlidersHorizontal, X
+  Home, Building2, SlidersHorizontal, X, Flame
 } from "lucide-react";
 import {
   Select,
@@ -20,6 +20,187 @@ import { canvasFont, mapPalette, palette } from "@/lib/theme";
 import { getReferenceImageSrc } from "@/lib/map-image-storage";
 import { PRIMARY_STATUSES, STATUS_META } from "@/lib/unit-status";
 import { StatusBadge } from "@/components/StatusBadge";
+
+type HeatmapMode = "off" | "saleDate" | "volume";
+type HeatmapStyle = "units" | "kernel" | "hull" | "merge";
+
+const HEAT_MUTED = "#D4D4D0";
+const HEAT_CLOTH = "#EDE6D6";
+const HEATMAP_STYLES: { id: HeatmapStyle; label: string }[] = [
+  { id: "units", label: "الوحدات" },
+  { id: "kernel", label: "نواة حرارية" },
+  { id: "hull", label: "غلاف البلوك" },
+  { id: "merge", label: "دمج ناعم" },
+];
+
+const heatMix = (from: number, to: number, t: number) => Math.round(from + (to - from) * t);
+const heatChannels = (t: number) => {
+  const n = Math.min(1, Math.max(0, t));
+  if (n < 0.5) {
+    const u = n * 2;
+    return { r: heatMix(29, 234, u), g: heatMix(78, 179, u), b: heatMix(216, 8, u) };
+  }
+  const u = (n - 0.5) * 2;
+  return { r: heatMix(234, 220, u), g: heatMix(179, 38, u), b: heatMix(8, 38, u) };
+};
+const heatRgb = (t: number): string => {
+  const { r, g, b } = heatChannels(t);
+  return `rgb(${r}, ${g}, ${b})`;
+};
+const heatRgba = (t: number, a: number): string => {
+  const { r, g, b } = heatChannels(t);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+};
+
+const parseSaleTime = (value: unknown): number | null => {
+  const time = Date.parse(String(value || ""));
+  return Number.isFinite(time) ? time : null;
+};
+
+const getHouseZone = (el: MapElement) => el.label.split("-")[0] || "عام";
+
+const getHouseBlockKey = (el: MapElement) => {
+  const parts = el.label.split("-");
+  const zone = parts[0] || "عام";
+  const block = parts[1] || "";
+  return block ? `${zone}-${block}` : zone;
+};
+
+const elementPoints = (el: MapElement): Point[] => {
+  if (el.points && el.points.length > 0) return el.points;
+  return [
+    { x: el.x, y: el.y },
+    { x: el.x + el.width, y: el.y },
+    { x: el.x + el.width, y: el.y + el.height },
+    { x: el.x, y: el.y + el.height },
+  ];
+};
+
+const worldPoints = (el: MapElement): Point[] => {
+  const pts = elementPoints(el);
+  if (!el.rotation || pts.length === 0) return pts;
+  const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+  const cy = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+  const rad = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return pts.map((p) => ({
+    x: cx + (p.x - cx) * cos - (p.y - cy) * sin,
+    y: cy + (p.x - cx) * sin + (p.y - cy) * cos,
+  }));
+};
+
+const convexHull = (points: Point[]): Point[] => {
+  const pts = points
+    .slice()
+    .sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+  if (pts.length <= 2) return pts;
+  const cross = (o: Point, a: Point, b: Point) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Point[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  const upper: Point[] = [];
+  for (let i = pts.length - 1; i >= 0; i -= 1) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+};
+
+const inflatePolygon = (pts: Point[], pad: number): Point[] => {
+  if (pts.length === 0 || pad === 0) return pts;
+  const cx = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+  const cy = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+  return pts.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: p.x + (dx / len) * pad, y: p.y + (dy / len) * pad };
+  });
+};
+
+const formatHeatDate = (time: number) =>
+  new Date(time).toLocaleDateString("ar", { year: "numeric", month: "short", day: "numeric" });
+
+const describeHeatMeaning = (t: number | null, mode: HeatmapMode) => {
+  if (mode === "saleDate") {
+    if (t === null) return "هذه المنطقة بلا مبيعات مؤرخة";
+    if (t >= 0.75) return "من أحدث المناطق بيعاً";
+    if (t >= 0.5) return "أحدث من متوسط المناطق";
+    if (t >= 0.25) return "أقدم من متوسط المناطق";
+    return "من أقدم المناطق بيعاً";
+  }
+  if (t === null || t <= 0) return "هذه المنطقة بلا مبيعات";
+  if (t >= 0.75) return "من أكثر المناطق مبيعاً";
+  if (t >= 0.5) return "مبيعات أعلى من متوسط المناطق";
+  if (t >= 0.25) return "مبيعات أقل من متوسط المناطق";
+  return "من أقل المناطق مبيعاً";
+};
+
+const createUnionCanvas = (
+  members: { pts: Point[] }[],
+  allPts: Point[],
+  avgSize: number,
+  fillStyle: string,
+) => {
+  if (allPts.length === 0) return null;
+  const pad = Math.max(16, avgSize * 0.7);
+  const minX = Math.min(...allPts.map((p) => p.x)) - pad;
+  const maxX = Math.max(...allPts.map((p) => p.x)) + pad;
+  const minY = Math.min(...allPts.map((p) => p.y)) - pad;
+  const maxY = Math.max(...allPts.map((p) => p.y)) + pad;
+  const width = Math.max(2, Math.ceil(maxX - minX));
+  const height = Math.max(2, Math.ceil(maxY - minY));
+  const off = document.createElement("canvas");
+  off.width = width;
+  off.height = height;
+  const offCtx = off.getContext("2d");
+  if (!offCtx) return null;
+  offCtx.filter = `blur(${Math.min(36, Math.max(8, avgSize * 0.32))}px)`;
+  offCtx.fillStyle = "#ffffff";
+  members.forEach((m) => {
+    if (m.pts.length === 0) return;
+    offCtx.beginPath();
+    offCtx.moveTo(m.pts[0].x - minX, m.pts[0].y - minY);
+    for (let i = 1; i < m.pts.length; i += 1) {
+      offCtx.lineTo(m.pts[i].x - minX, m.pts[i].y - minY);
+    }
+    offCtx.closePath();
+    offCtx.fill();
+  });
+  offCtx.filter = "none";
+  offCtx.globalCompositeOperation = "source-in";
+  offCtx.fillStyle = fillStyle;
+  offCtx.fillRect(0, 0, width, height);
+  return { canvas: off, x: minX, y: minY };
+};
+
+const countTowerSales = (el: MapElement, housesData: Record<string, any>) => {
+  const floors = el.floors || 1;
+  const aptsPerFloor = el.apartmentsPerFloor || 1;
+  let count = 0;
+  let latest: number | null = null;
+  for (let floor = 1; floor <= floors; floor += 1) {
+    for (let apt = 1; apt <= aptsPerFloor; apt += 1) {
+      const data = housesData[`${el.id}_F${floor}_A${apt}`];
+      if (data?.status !== "sold") continue;
+      count += 1;
+      const time = parseSaleTime(data.saleDate);
+      if (time !== null && (latest === null || time > latest)) latest = time;
+    }
+  }
+  return { count, latest };
+};
 
 interface InteractiveMapProps {
   elements: MapElement[];
@@ -277,6 +458,10 @@ const InteractiveMap = ({
 
   // حالة شريط التصفية المنسدل الجانبي
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [isHeatmapPanelOpen, setIsHeatmapPanelOpen] = useState(false);
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>("off");
+  const [heatmapStyle, setHeatmapStyle] = useState<HeatmapStyle>("units");
+  const canShowHeatmap = permissions?.showHeatmap !== false;
 
   // حالات الفلترة الداخلية في حال عدم تمريرها من الخارج
   const [internalFilterZone, setInternalFilterZone] = useState('all');
@@ -312,6 +497,202 @@ const InteractiveMap = ({
     handleSizeChange('all');
     handleStatusChange('all');
   };
+
+  const heatmapStats = useMemo(() => {
+    const soldTimes: number[] = [];
+    const zoneSold = new Map<string, number>();
+    const blockSold = new Map<string, number>();
+    const towerSold = new Map<string, number>();
+
+    elements.forEach((el) => {
+      if (el.type === "house") {
+        const data = housesData[el.id];
+        if (data?.status !== "sold") return;
+        const zone = getHouseZone(el);
+        const block = getHouseBlockKey(el);
+        zoneSold.set(zone, (zoneSold.get(zone) || 0) + 1);
+        blockSold.set(block, (blockSold.get(block) || 0) + 1);
+        const time = parseSaleTime(data.saleDate);
+        if (time !== null) soldTimes.push(time);
+        return;
+      }
+      if (el.type === "tower") {
+        const sales = countTowerSales(el, housesData);
+        towerSold.set(el.id, sales.count);
+        if (sales.latest !== null) soldTimes.push(sales.latest);
+      }
+    });
+
+    return {
+      minTime: soldTimes.length ? Math.min(...soldTimes) : 0,
+      maxTime: soldTimes.length ? Math.max(...soldTimes) : 0,
+      maxZoneSold: Math.max(0, ...Array.from(zoneSold.values()), 0),
+      maxBlockSold: Math.max(0, ...Array.from(blockSold.values()), 0),
+      maxTowerSold: Math.max(0, ...Array.from(towerSold.values()), 0),
+      zoneSold,
+      blockSold,
+      towerSold,
+    };
+  }, [elements, housesData]);
+
+  useEffect(() => {
+    if (!canShowHeatmap) {
+      setHeatmapMode("off");
+      setIsHeatmapPanelOpen(false);
+    }
+  }, [canShowHeatmap]);
+
+  const heatmapBlobs = useMemo(() => {
+    if (!canShowHeatmap || heatmapMode === "off") return [];
+
+    type HeatMember = {
+      el: MapElement;
+      pts: Point[];
+      cx: number;
+      cy: number;
+      size: number;
+      soldCount: number;
+      latest: number | null;
+    };
+
+    const groups = new Map<string, HeatMember[]>();
+
+    const pushMember = (key: string, el: MapElement, soldCount: number, latest: number | null) => {
+      const pts = worldPoints(el);
+      if (pts.length === 0) return;
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 12);
+      const list = groups.get(key) || [];
+      list.push({
+        el,
+        pts,
+        cx: xs.reduce((sum, x) => sum + x, 0) / xs.length,
+        cy: ys.reduce((sum, y) => sum + y, 0) / ys.length,
+        size,
+        soldCount,
+        latest,
+      });
+      groups.set(key, list);
+    };
+
+    elements.forEach((el) => {
+      if (el.type === "house") {
+        const data = housesData[el.id];
+        const latest = data?.status === "sold" ? parseSaleTime(data.saleDate) : null;
+        pushMember(getHouseBlockKey(el), el, data?.status === "sold" ? 1 : 0, latest);
+        return;
+      }
+      if (el.type === "tower") {
+        const sales = countTowerSales(el, housesData);
+        pushMember(`tower:${el.id}`, el, sales.count, sales.latest);
+      }
+    });
+
+    const timeSpan = heatmapStats.maxTime - heatmapStats.minTime;
+
+    return Array.from(groups.entries()).map(([key, members]) => {
+      const isTower = key.startsWith("tower:");
+      const soldCount = members.reduce((sum, m) => sum + m.soldCount, 0);
+      const latest = members.reduce<number | null>((acc, m) => {
+        if (m.latest === null) return acc;
+        if (acc === null || m.latest > acc) return m.latest;
+        return acc;
+      }, null);
+      const oldest = members.reduce<number | null>((acc, m) => {
+        if (m.latest === null) return acc;
+        if (acc === null || m.latest < acc) return m.latest;
+        return acc;
+      }, null);
+      const regionTitle = isTower
+        ? (members[0]?.el.label || "عمارة")
+        : (key.includes("-") ? `بلوك ${key.split("-").slice(1).join("-")}` : `زون ${key}`);
+      const regionSubtitle = isTower
+        ? "عمارة"
+        : (key.includes("-") ? `زون ${key.split("-")[0]}` : "منطقة");
+
+      let heatT: number | null = null;
+      if (heatmapMode === "saleDate") {
+        if (latest !== null) heatT = timeSpan > 0 ? (latest - heatmapStats.minTime) / timeSpan : 1;
+      } else {
+        const maxSold = isTower ? heatmapStats.maxTowerSold : heatmapStats.maxBlockSold;
+        if (maxSold > 0 && soldCount > 0) heatT = soldCount / maxSold;
+      }
+
+      const allPts = members.flatMap((m) => m.pts);
+      const avgSize = members.reduce((sum, m) => sum + m.size, 0) / members.length;
+      const hull = inflatePolygon(convexHull(allPts), Math.max(8, avgSize * 0.28));
+      const cx = members.reduce((sum, m) => sum + m.cx, 0) / members.length;
+      const cy = members.reduce((sum, m) => sum + m.cy, 0) / members.length;
+      const maxR = Math.max(...hull.map((p) => Math.hypot(p.x - cx, p.y - cy)), avgSize);
+      const colorT = heatT ?? 0;
+      const fill = heatT === null ? "rgba(212, 212, 208, 0.88)" : heatRgba(colorT, 0.82);
+
+      const kernels = members.map((m) => {
+        const unitT = heatmapMode === "saleDate"
+          ? (m.latest === null ? null : (timeSpan > 0 ? (m.latest - heatmapStats.minTime) / timeSpan : 1))
+          : (m.soldCount > 0 ? (heatT ?? 0.35) : null);
+        return {
+          x: m.cx,
+          y: m.cy,
+          r: Math.max(m.size * 1.15, 16),
+          color: unitT === null ? "rgba(212, 212, 208, 0.35)" : heatRgba(unitT, m.soldCount > 0 ? 0.62 : 0.22),
+        };
+      });
+
+      const cloth = heatmapStyle === "units" ? null : createUnionCanvas(members, allPts, avgSize, HEAT_CLOTH);
+      const merge = heatmapStyle === "merge" ? createUnionCanvas(members, allPts, avgSize, fill) : null;
+
+      return {
+        key,
+        isTower,
+        regionTitle,
+        regionSubtitle,
+        unitCount: members.length,
+        soldCount,
+        oldest,
+        latest,
+        heatT,
+        members: members.map((m) => m.el),
+        hull,
+        cx,
+        cy,
+        maxR,
+        fill,
+        kernels,
+        clothCanvas: cloth?.canvas || null,
+        clothX: cloth?.x || 0,
+        clothY: cloth?.y || 0,
+        mergeCanvas: merge?.canvas || null,
+        mergeX: merge?.x || 0,
+        mergeY: merge?.y || 0,
+      };
+    });
+  }, [canShowHeatmap, elements, housesData, heatmapMode, heatmapStyle, heatmapStats]);
+
+  const getHeatHoverInfo = useCallback((el: MapElement) => {
+    const blob = heatmapBlobs.find((item) => item.members.some((member) => member.id === el.id));
+    if (!blob) return null;
+
+    const dateDetail = blob.oldest && blob.latest
+      ? (blob.oldest === blob.latest
+        ? `تاريخ البيع في المنطقة: ${formatHeatDate(blob.latest)}`
+        : `من ${formatHeatDate(blob.oldest)} إلى ${formatHeatDate(blob.latest)}`)
+      : "لا يوجد تاريخ بيع في هذه المنطقة";
+
+    return {
+      title: blob.regionTitle,
+      subtitle: blob.regionSubtitle,
+      meaning: describeHeatMeaning(blob.heatT, heatmapMode === "off" ? "volume" : heatmapMode),
+      detail: heatmapMode === "saleDate"
+        ? dateDetail
+        : `${blob.soldCount} عملية بيع من أصل ${blob.unitCount} وحدة في المنطقة`,
+      extra: heatmapMode === "saleDate"
+        ? `${blob.soldCount} مباعة من أصل ${blob.unitCount} وحدة`
+        : null,
+      color: blob.heatT === null ? HEAT_MUTED : heatRgb(blob.heatT),
+    };
+  }, [heatmapBlobs, heatmapMode]);
 
   const [hoveredElement, setHoveredElement] = useState<MapElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -490,9 +871,33 @@ const InteractiveMap = ({
     if (el.type === 'road') return { fill: mapPalette.road, stroke: el.hasBorder ? (el.borderColor || mapPalette.roadStroke) : mapPalette.road, opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
     if (el.type === 'green') return { fill: mapPalette.green, stroke: el.hasBorder ? (el.borderColor || mapPalette.greenStroke) : mapPalette.green, opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
     if (el.type === 'pitch') return { fill: mapPalette.pitch, stroke: el.hasBorder ? (el.borderColor || mapPalette.pitchStroke) : mapPalette.pitchStroke, opacity: 1, strokeWidth: 2 };
-    if (el.type === 'tower') return { fill: el.color || palette.accent, stroke: el.hasBorder ? (el.borderColor || palette.fg) : palette.fg, opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
+    if (el.type === 'tower' && heatmapMode === 'off') return { fill: el.color || palette.accent, stroke: el.hasBorder ? (el.borderColor || palette.fg) : palette.fg, opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
     if (el.type === 'amenity') return { fill: el.color || mapPalette.amenity, stroke: el.hasBorder ? (el.borderColor || mapPalette.amenityStroke) : (el.color || mapPalette.amenityStroke), opacity: 1, strokeWidth: 2 };
     if (el.type === 'text') return { fill: 'none', stroke: 'none', opacity: 1, strokeWidth: 0 };
+
+    if (canShowHeatmap && heatmapMode !== 'off' && heatmapStyle === 'units' && (el.type === 'house' || el.type === 'tower')) {
+      const heatStroke = el.hasBorder ? (el.borderColor || palette.lineStrong) : palette.lineStrong;
+      if (heatmapMode === 'saleDate') {
+        const time = el.type === 'tower'
+          ? countTowerSales(el, housesData).latest
+          : (housesData[el.id]?.status === 'sold' ? parseSaleTime(housesData[el.id]?.saleDate) : null);
+        if (time === null) {
+          return { fill: HEAT_MUTED, stroke: heatStroke, opacity: 1, strokeWidth: 2 };
+        }
+        const span = heatmapStats.maxTime - heatmapStats.minTime;
+        const t = span > 0 ? (time - heatmapStats.minTime) / span : 1;
+        return { fill: heatRgb(t), stroke: heatStroke, opacity: 1, strokeWidth: 2 };
+      }
+
+      const soldCount = el.type === 'tower'
+        ? (heatmapStats.towerSold.get(el.id) || 0)
+        : (heatmapStats.zoneSold.get(getHouseZone(el)) || 0);
+      const maxSold = el.type === 'tower' ? heatmapStats.maxTowerSold : heatmapStats.maxZoneSold;
+      if (maxSold <= 0 || soldCount <= 0) {
+        return { fill: HEAT_MUTED, stroke: heatStroke, opacity: 1, strokeWidth: 2 };
+      }
+      return { fill: heatRgb(soldCount / maxSold), stroke: heatStroke, opacity: 1, strokeWidth: 2 };
+    }
     
     if (el.type === 'house') {
       const baseStroke = el.hasBorder ? (el.borderColor || palette.lineStrong) : palette.lineStrong;
@@ -519,7 +924,7 @@ const InteractiveMap = ({
     }
     
     return { fill: el.color || palette.surface, stroke: el.hasBorder ? (el.borderColor || palette.lineStrong) : palette.lineStrong, opacity: 1, strokeWidth: 2 };
-  }, [housesData, permissions]);
+  }, [housesData, permissions, canShowHeatmap, heatmapMode, heatmapStyle, heatmapStats]);
 
   // ترتيب العناصر
   const sortedElements = useMemo(() => {
@@ -607,8 +1012,12 @@ const InteractiveMap = ({
     }
 
     // رسم كل العناصر بعد جاهزية صورة Site plan
+    const showHeatOverlay = canShowHeatmap && heatmapMode !== "off" && heatmapStyle !== "units";
     if (areReferenceImagesReady) {
     sortedElements.forEach((el) => {
+      if (showHeatOverlay && (el.type === "house" || el.type === "tower")) {
+        return;
+      }
       const styles = getElementStyles(el);
       const isSelected = selectedHouseId === el.id;
       const pts = getElementPoints(el);
@@ -784,6 +1193,52 @@ const InteractiveMap = ({
 
       ctx.restore();
     });
+
+    if (showHeatOverlay) {
+      heatmapBlobs.forEach((blob) => {
+        const dimmed = isAnyFilterActive && !blob.members.some((member) => matchesFilter(member));
+        ctx.save();
+        ctx.globalAlpha = dimmed ? 0.35 : 1;
+
+        if (blob.clothCanvas) {
+          ctx.drawImage(blob.clothCanvas, blob.clothX, blob.clothY);
+        }
+
+        if (heatmapStyle === "kernel") {
+          blob.kernels.forEach((kernel) => {
+            const gradient = ctx.createRadialGradient(kernel.x, kernel.y, 0, kernel.x, kernel.y, kernel.r);
+            gradient.addColorStop(0, kernel.color);
+            gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(kernel.x, kernel.y, kernel.r, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        } else if (heatmapStyle === "hull") {
+          const path2d = new Path2D();
+          if (blob.hull.length >= 3) {
+            path2d.moveTo(blob.hull[0].x, blob.hull[0].y);
+            for (let i = 1; i < blob.hull.length; i += 1) {
+              path2d.lineTo(blob.hull[i].x, blob.hull[i].y);
+            }
+            path2d.closePath();
+          } else {
+            path2d.arc(blob.cx, blob.cy, Math.max(blob.maxR, 12), 0, Math.PI * 2);
+          }
+          ctx.fillStyle = dimmed ? "rgba(180, 180, 176, 0.45)" : blob.fill;
+          ctx.fill(path2d);
+          const glow = ctx.createRadialGradient(blob.cx, blob.cy, 0, blob.cx, blob.cy, blob.maxR);
+          glow.addColorStop(0, dimmed ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.22)");
+          glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+          ctx.fillStyle = glow;
+          ctx.fill(path2d);
+        } else if (heatmapStyle === "merge" && blob.mergeCanvas) {
+          ctx.drawImage(blob.mergeCanvas, blob.mergeX, blob.mergeY);
+        }
+
+        ctx.restore();
+      });
+    }
     }
 
     ctx.restore();
@@ -791,7 +1246,8 @@ const InteractiveMap = ({
   }, [
     position, scale, mapWidth, mapHeight, backgroundColor, showGrid, 
     sortedElements, selectedHouseId, housesData, isAnyFilterActive, 
-    matchesFilter, getElementStyles, areReferenceImagesReady
+    matchesFilter, getElementStyles, areReferenceImagesReady,
+    heatmapMode, heatmapStyle, heatmapBlobs
   ]);
 
   // فحص النقر المباشر والدقيق Hit Testing (تتجاهل الوحدات المظللة بالرمادي إذا كان هناك فلتر نشط)
@@ -876,7 +1332,7 @@ const InteractiveMap = ({
         hasDragged.current = true;
       }
       setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-    } else if (showTooltips && canShowQuickPreview && isQuickPreviewEnabled) {
+    } else if ((canShowHeatmap && heatmapMode !== "off") || (showTooltips && canShowQuickPreview && isQuickPreviewEnabled)) {
       const targetEl = getElementAtCoords(e.clientX, e.clientY);
       setHoveredElement(targetEl);
       if (targetEl && containerRef.current) {
@@ -1002,10 +1458,109 @@ const InteractiveMap = ({
         onClick={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
       >
+        {canShowHeatmap && (!isHeatmapPanelOpen ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(false); setIsHeatmapPanelOpen(true); }}
+            className="relative flex h-9 w-9 items-center justify-center rounded-md border border-line bg-card/90 text-fg-secondary backdrop-blur-sm transition-colors hover:bg-surface-sunken hover:text-fg"
+            title="الخريطة الحرارية"
+          >
+            <Flame size={16} />
+            {heatmapMode !== "off" && (
+              <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-status-reserved ring-2 ring-card" />
+            )}
+          </button>
+        ) : (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-64 space-y-4 rounded-md border border-line bg-card/95 p-4 text-right shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200"
+          >
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <div className="flex items-center gap-2 text-[13px] font-medium text-fg">
+                <Flame size={14} className="text-fg-muted" />
+                <span>الخريطة الحرارية</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsHeatmapPanelOpen(false); }}
+                className="rounded-sm p-1 text-fg-faint transition-colors hover:bg-surface-sunken hover:text-fg"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <span className="eyebrow">المقياس</span>
+                <button
+                  type="button"
+                  onClick={() => setHeatmapMode("saleDate")}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md border px-3 py-2 text-[12px] transition-colors",
+                    heatmapMode === "saleDate"
+                      ? "border-line-strong bg-surface-sunken text-fg"
+                      : "border-line bg-transparent text-fg-secondary hover:bg-surface-sunken hover:text-fg"
+                  )}
+                >
+                  <span>حسب تاريخ البيع</span>
+                  {heatmapMode === "saleDate" && <span className="h-1.5 w-1.5 rounded-full bg-status-reserved" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeatmapMode("volume")}
+                  className={cn(
+                    "mt-1.5 flex w-full items-center justify-between rounded-md border px-3 py-2 text-[12px] transition-colors",
+                    heatmapMode === "volume"
+                      ? "border-line-strong bg-surface-sunken text-fg"
+                      : "border-line bg-transparent text-fg-secondary hover:bg-surface-sunken hover:text-fg"
+                  )}
+                >
+                  <span>حسب حجم المبيعات</span>
+                  {heatmapMode === "volume" && <span className="h-1.5 w-1.5 rounded-full bg-status-reserved" />}
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="eyebrow">شكل التلوين</span>
+                {HEATMAP_STYLES.map((style) => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    onClick={() => {
+                      setHeatmapStyle(style.id);
+                      if (heatmapMode === "off") setHeatmapMode("saleDate");
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md border px-3 py-2 text-[12px] transition-colors",
+                      heatmapMode !== "off" && heatmapStyle === style.id
+                        ? "border-line-strong bg-surface-sunken text-fg"
+                        : "border-line bg-transparent text-fg-secondary hover:bg-surface-sunken hover:text-fg"
+                    )}
+                  >
+                    <span>{style.label}</span>
+                    {heatmapMode !== "off" && heatmapStyle === style.id && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-status-reserved" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {heatmapMode !== "off" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setHeatmapMode("off")}
+                  className="w-full"
+                >
+                  إيقاف التلوين الحراري
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+
         {permissions?.showSearchBox !== false && (
           !isFilterPanelOpen ? (
             <button
-              onClick={(e) => { e.stopPropagation(); setIsFilterPanelOpen(true); }}
+              onClick={(e) => { e.stopPropagation(); setIsHeatmapPanelOpen(false); setIsFilterPanelOpen(true); }}
               className="relative flex h-9 w-9 items-center justify-center rounded-md border border-line bg-card/90 text-fg-secondary backdrop-blur-sm transition-colors hover:bg-surface-sunken hover:text-fg"
               title="تصفية الخريطة وتوهج الوحدات"
             >
@@ -1136,44 +1691,72 @@ const InteractiveMap = ({
         )}
       </div>
 
-      {/* بطاقة المعاينة السريعة العائمة عند التمرير */}
-      {showTooltips && canShowQuickPreview && isQuickPreviewEnabled && hoveredElement && !isDragging && (
+      {/* بطاقة المنطقة الحرارية أو المعاينة السريعة */}
+      {hoveredElement && !isDragging && (hoveredElement.type === "house" || hoveredElement.type === "tower") && (
+        (canShowHeatmap && heatmapMode !== "off") || (showTooltips && canShowQuickPreview && isQuickPreviewEnabled)
+      ) && (
         (() => {
           const isHouse = hoveredElement.type === 'house';
           const isTower = hoveredElement.type === 'tower';
           const unitData = housesData[hoveredElement.id];
-
           const area = getHouseArea(hoveredElement);
+          const showHeatTip = canShowHeatmap && heatmapMode !== "off";
+          const showQuick = !showHeatTip && showTooltips && canShowQuickPreview && isQuickPreviewEnabled;
+          const heatInfo = showHeatTip ? getHeatHoverInfo(hoveredElement) : null;
+
+          if (showHeatTip && !heatInfo) return null;
 
           return (
             <div 
-              className="pointer-events-none absolute z-50 w-60 rounded-md border border-line bg-card/95 text-right shadow-2xl backdrop-blur-md animate-in fade-in duration-150"
+              className="pointer-events-none absolute z-50 w-64 rounded-md border border-line bg-card/95 text-right shadow-2xl backdrop-blur-md animate-in fade-in duration-150"
               style={{
-                left: `${Math.min(tooltipPos.x + 15, (containerRef.current?.getBoundingClientRect().width || 600) - 270)}px`,
-                top: `${Math.min(tooltipPos.y + 15, (containerRef.current?.getBoundingClientRect().height || 500) - 180)}px`
+                left: `${Math.min(tooltipPos.x + 15, (containerRef.current?.getBoundingClientRect().width || 600) - 280)}px`,
+                top: `${Math.min(tooltipPos.y + 15, (containerRef.current?.getBoundingClientRect().height || 500) - 220)}px`
               }}
             >
               <div className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
                 <span className="text-fg-muted">
-                  {isTower ? <Building2 size={14} /> : <Home size={14} />}
+                  {heatInfo ? <Flame size={14} /> : (isTower ? <Building2 size={14} /> : <Home size={14} />)}
                 </span>
                 <span className="truncate text-[13px] font-medium text-fg">
-                  {hoveredElement.label}
+                  {heatInfo ? heatInfo.title : hoveredElement.label}
                 </span>
-                <span className="eyebrow ms-auto">{isTower ? 'عمارة' : 'منزل'}</span>
+                <span className="eyebrow ms-auto">
+                  {heatInfo ? heatInfo.subtitle : (isTower ? 'عمارة' : 'منزل')}
+                </span>
               </div>
 
               <div className="divide-y divide-line">
-                <div className="flex items-center justify-between px-3.5 py-2.5">
-                  <span className="text-[11px] text-fg-muted">الحالة</span>
-                  <StatusBadge status={unitData?.status || 'available'} />
-                </div>
-
-                {area > 0 && (
-                  <div className="flex items-center justify-between px-3.5 py-2.5">
-                    <span className="text-[11px] text-fg-muted">المساحة</span>
-                    <span className="text-[13px] tabular text-fg">{area} م²</span>
+                {heatInfo && (
+                  <div className="space-y-1.5 px-3.5 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: heatInfo.color }}
+                      />
+                      <span className="text-[13px] font-medium text-fg">{heatInfo.meaning}</span>
+                    </div>
+                    <div className="text-[12px] text-fg-secondary">{heatInfo.detail}</div>
+                    {heatInfo.extra && (
+                      <div className="text-[11px] text-fg-muted">{heatInfo.extra}</div>
+                    )}
                   </div>
+                )}
+
+                {showQuick && (
+                  <>
+                    <div className="flex items-center justify-between px-3.5 py-2.5">
+                      <span className="text-[11px] text-fg-muted">الحالة</span>
+                      <StatusBadge status={unitData?.status || 'available'} />
+                    </div>
+
+                    {area > 0 && (
+                      <div className="flex items-center justify-between px-3.5 py-2.5">
+                        <span className="text-[11px] text-fg-muted">المساحة</span>
+                        <span className="text-[13px] tabular text-fg">{area} م²</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1182,7 +1765,25 @@ const InteractiveMap = ({
       )}
 
       {/* Status legend */}
-      {permissions?.colorMode !== 'tabo' && permissions?.colorMode !== 'handover' && (
+      {canShowHeatmap && heatmapMode !== "off" ? (
+        <div className="pointer-events-none absolute bottom-4 left-4 z-10 w-[min(22rem,calc(100%-2rem))] space-y-2 rounded-md border border-line bg-card/90 px-3 py-2.5 text-right backdrop-blur-sm">
+          <div className="text-[11px] font-medium text-fg">
+            {heatmapMode === "saleDate" ? "شرح الألوان حسب تاريخ البيع في المنطقة" : "شرح الألوان حسب حجم المبيعات في المنطقة"}
+          </div>
+          <div
+            className="h-2.5 w-full rounded-full"
+            style={{ background: "linear-gradient(to left, #1d4ed8, #eab308, #dc2626)" }}
+          />
+          <div className="flex items-center justify-between text-[10px] text-fg-secondary">
+            <span>{heatmapMode === "saleDate" ? "أقدم بيع" : "أقل مبيعاً"}</span>
+            <span>متوسط</span>
+            <span>{heatmapMode === "saleDate" ? "أحدث بيع" : "أكثر مبيعاً"}</span>
+          </div>
+          <div className="text-[10px] leading-relaxed text-fg-muted">
+            الأزرق: أقدم أو أقل مبيعاً · الأصفر: متوسط · الأحمر: أحدث أو أكثر مبيعاً · الرمادي: منطقة بلا مبيعات
+          </div>
+        </div>
+      ) : permissions?.colorMode !== 'tabo' && permissions?.colorMode !== 'handover' && (
         <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-line bg-card/85 px-3 py-2 backdrop-blur-sm">
           {PRIMARY_STATUSES.map((key) => (
             <span key={key} className="flex items-center gap-1.5 text-[11px] text-fg-secondary">
