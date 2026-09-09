@@ -22,8 +22,15 @@ import {
   ChartTooltip, ChartLegend, ChartEmpty, Meter,
 } from '@/components/charts/chart-kit';
 import { formatNumber, parsePrice, getCurrencyType } from '@/lib/format';
+import { palette } from "@/lib/theme";
 import { STATUS_META, PRIMARY_STATUSES } from '@/lib/unit-status';
 import { validateCenterSession } from '@/lib/center-auth';
+import {
+  fetchWithRetry,
+  fetchNativeSupabase,
+  fetchProjectUnitsParallel,
+  formatLightweightUnits,
+} from "@/lib/supabase-rest";
 
 interface ReportsProps {
   projects: Project[];
@@ -98,99 +105,88 @@ const Reports = ({ projects }: ReportsProps) => {
       return;
     }
 
+    let cancelled = false;
+
+    const slimReportElements = (
+      elements: MapElement[] | undefined,
+      projectId: string,
+      projectName: string,
+    ): MapElement[] => {
+      if (!Array.isArray(elements)) return [];
+      return elements
+        .filter((el) => el?.type === "house" || el?.type === "tower")
+        .map((el) => ({
+          id: el.id,
+          type: el.type,
+          label: el.label || "",
+          points: [],
+          rotation: 0,
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          floors: el.floors,
+          apartmentsPerFloor: el.apartmentsPerFloor,
+          groundFloorSizes: el.groundFloorSizes,
+          typicalFloorSizes: el.typicalFloorSizes,
+          customArea: el.customArea,
+          _projectName: projectName,
+          _projectId: projectId,
+        }));
+    };
+
+    const fetchProjectRow = async (projectId: string, projectName: string) => {
+      const rows = await fetchWithRetry(() =>
+        fetchNativeSupabase(
+          `projects?select=id,name,elements&id=eq.${encodeURIComponent(projectId)}`,
+        ),
+      );
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      return slimReportElements(
+        row?.elements,
+        row?.id || projectId,
+        row?.name || projectName,
+      );
+    };
+
     const fetchReportsData = async () => {
       setLoading(true);
       setFetchedElements([]);
       setHousesData({});
       try {
-        // 1. جلب عناصر المخطط (elements) كاملة من جدول المشاريع
-        let elementsList: MapElement[] = [];
-        if (selectedProjectId === 'all') {
-          const { data: projData, error: projErr } = await supabase
-            .from('projects')
-            .select('id, name, elements');
-          if (projErr) throw projErr;
-          if (projData) {
-            projData.forEach(p => {
-              if (p.elements && Array.isArray(p.elements)) {
-                // نقوم بحقن اسم المشروع ومعرفه داخل العناصر لتسهيل التحليل المدمج لاحقاً
-                const elementsWithProjectInfo = (p.elements as MapElement[]).map(el => ({
-                  ...el,
-                  _projectName: p.name,
-                  _projectId: p.id
-                }));
-                elementsList = [...elementsList, ...elementsWithProjectInfo];
-              }
-            });
-          }
-        } else {
-          const { data: projData, error: projErr } = await supabase
-            .from('projects')
-            .select('id, name, elements')
-            .eq('id', selectedProjectId)
-            .single();
-          if (projErr) throw projErr;
-          if (projData && projData.elements && Array.isArray(projData.elements)) {
-            const elementsWithProjectInfo = (projData.elements as MapElement[]).map(el => ({
-              ...el,
-              _projectName: projData.name,
-              _projectId: projData.id
-            }));
-            elementsList = elementsWithProjectInfo;
-          }
-        }
-        setFetchedElements(elementsList);
+        const targets =
+          selectedProjectId === "all"
+            ? projects
+            : projects.filter((project) => project.id === selectedProjectId);
 
-        // 2. جلب حقول محددة من جدول المبيعات وتجنب جلب كائن الـ data بالكامل لاستبعاد الملاحظات المتراكمة تماماً
-        let allUnits: any[] = [];
-        let from = 0;
-        const step = 1000;
-        let hasMore = true;
+        const packs = await Promise.all(
+          targets.map(async (project) => {
+            const [elements, units] = await Promise.all([
+              fetchProjectRow(project.id, project.name),
+              fetchProjectUnitsParallel(project.id),
+            ]);
+            return { elements, units };
+          }),
+        );
 
-        while (hasMore) {
-          let query = supabase
-            .from('houses_data')
-            .select('unit_key, project_id, status:data->>status, taboStatus:data->>taboStatus, handoverDate:data->>handoverDate, price:data->>price, currency:data->>currency, saleDate:data->>saleDate')
-            .range(from, from + step - 1);
-          
-          if (selectedProjectId !== 'all') {
-            query = query.eq('project_id', selectedProjectId);
-          }
+        if (cancelled) return;
 
-          const { data, error } = await query;
-          if (error) throw error;
-
-          if (!data || data.length === 0) {
-            hasMore = false;
-          } else {
-            allUnits = [...allUnits, ...data];
-            from += step;
-            if (data.length < step) hasMore = false;
-          }
-        }
-
-        const formatted: Record<string, any> = {};
-        allUnits.forEach((u: any) => {
-          formatted[u.unit_key] = {
-            status: u.status || 'available',
-            taboStatus: u.taboStatus || 'غير مروج',
-            handoverDate: u.handoverDate || '',
-            price: u.price || '',
-            currency: u.currency || 'IQD',
-            saleDate: u.saleDate || ''
-          };
-        });
-        setHousesData(formatted);
+        setFetchedElements(packs.flatMap((pack) => pack.elements));
+        setHousesData(formatLightweightUnits(packs.flatMap((pack) => pack.units)));
       } catch (err) {
+        if (cancelled) return;
         console.error("Error fetching reports data:", err);
         showError("فشل الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت وإعادة المحاولة.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchReportsData();
-  }, [selectedProjectId, hasAccess, retryTrigger]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, hasAccess, retryTrigger, projects]);
 
   // استخراج الزونات والأصناف والعمارات والمساحات المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
   const { availableZones, availableClasses, availableTowers, availableSizes } = useMemo(() => {
