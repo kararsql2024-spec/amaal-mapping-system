@@ -1186,6 +1186,9 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
               <Button variant="ghost" size="sm" className="px-2">التقارير</Button>
             </Link>
           )}
+          <Link to="/explore">
+            <Button variant="ghost" size="sm" className="px-2">استكشاف</Button>
+          </Link>
 
           {canAccessPaymentArchive(permissions) && (
             <Link to="/sales/archive">

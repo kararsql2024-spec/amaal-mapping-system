@@ -32,6 +32,9 @@ export const mapPalette = {
   road: "#E4E3DF",
   roadStroke: "#CFCDC7",
 
+  sidewalk: "#F3F2EE",
+  sidewalkStroke: "#D2D0CA",
+
   green: "#CBD9C9",
   greenStroke: "#A8BCA5",
 

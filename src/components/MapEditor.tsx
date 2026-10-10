@@ -11,7 +11,7 @@ import {
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
-  Frame, Ruler, Plus
+  Frame, Ruler, Plus, Undo2, Route
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -22,6 +22,9 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { showSuccess, showError } from '@/utils/toast';
 import { palette, mapPalette, canvasFont } from '@/lib/theme';
+import { buildCorridor, connectPaths, extendPath, networkShape, pathAxis, projectOntoPath, rayHitOnPath, roadMarkings, snapDirection, type PathHit } from '@/lib/road-geometry';
+import { generateStreetNetwork, streetMostlyInside, type StreetPiece } from '@/lib/street-generate';
+import { Checkbox } from '@/components/ui/checkbox';
 import { STATUS_META } from '@/lib/unit-status';
 import {
   getReferenceImageSrc,
@@ -47,6 +50,8 @@ interface MapEditorProps {
 
 const GRID_SIZE = 10;
 
+type PathAnchor = PathHit & { branchIndex: number | null };
+
 const FONT_FAMILIES = [
   { id: canvasFont, label: 'خط النظام (IBM Plex Arabic)' },
   { id: '"IBM Plex Mono", ui-monospace, monospace', label: 'خط أحادي المسافة' },
@@ -66,6 +71,18 @@ const TEXTURE_TYPES = [
   { id: 'crosshatch', label: 'تظليل متقاطع' },
 ];
 
+const repairGeneratedPaths = (list: MapElement[]): MapElement[] =>
+  list.map((el) => {
+    if ((el.type !== "road" && el.type !== "sidewalk") || !el.centerline || el.centerline.length < 2 || !el.pathWidth) return el;
+    const shape = networkShape(el.centerline, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
+    if (shape.outline.length < 3) return el;
+    return {
+      ...el,
+      points: shape.outline,
+      pathHoles: shape.holes.length > 0 ? shape.holes : undefined,
+    };
+  });
+
 const AMENITY_TYPES = [
   { id: 'shop', label: 'محل تجاري', icon: Store },
   { id: 'school', label: 'مدرسة', icon: GraduationCap },
@@ -81,6 +98,7 @@ const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; swa
   { type: 'house', label: 'منزل', icon: Home, swatch: STATUS_META.available.fill },
   { type: 'tower', label: 'برج', icon: Building2, swatch: palette.accent },
   { type: 'road', label: 'طريق', icon: Waypoints, swatch: mapPalette.roadStroke },
+  { type: 'sidewalk', label: 'رصيف', icon: Footprints, swatch: mapPalette.sidewalkStroke },
   { type: 'green', label: 'مساحة خضراء', icon: Leaf, swatch: mapPalette.green },
   { type: 'pitch', label: 'ملعب', icon: Trophy, swatch: mapPalette.pitch },
   { type: 'amenity', label: 'مرفق', icon: MapPin, swatch: mapPalette.amenity },
@@ -103,14 +121,84 @@ const MapEditor = ({
   storageScope,
   storageScopeId,
 }: MapEditorProps) => {
-  const [elements, setElements] = useState<MapElement[]>(initialElements);
+  const [elements, setElements] = useState<MapElement[]>(() => repairGeneratedPaths(initialElements));
+  const [undoCount, setUndoCount] = useState(0);
+  const pastRef = useRef<MapElement[][]>([]);
+  const futureRef = useRef<MapElement[][]>([]);
+  const elementsRef = useRef(elements);
+  const skipHistoryRef = useRef(false);
+  const dragPushedRef = useRef(false);
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | null>(null);
+  const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | 'street_auto' | null>(null);
   const [isBrushMode, setIsBrushMode] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
   const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush' | 'boundary', startPos?: Point, index?: number } | null>(null);
   const [tempPoints, setTempPoints] = useState<Point[]>([]);
+  const [plotPoints, setPlotPoints] = useState<Point[]>([]);
+  const [plotWidth, setPlotWidth] = useState(40);
+  const [roadGenWidth, setRoadGenWidth] = useState(20);
+  const [walkGenWidth, setWalkGenWidth] = useState(8);
+  const [plotClosed, setPlotClosed] = useState(false);
+  const [plotCursor, setPlotCursor] = useState<Point | null>(null);
+  const [directionLock, setDirectionLock] = useState(true);
+  const [directionMode, setDirectionMode] = useState<'global' | 'local'>('global');
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [linkAnchor, setLinkAnchor] = useState<PathAnchor | null>(null);
+  const [extendId, setExtendId] = useState<string | null>(null);
+  const [extendAnchor, setExtendAnchor] = useState<PathAnchor | null>(null);
+  const extendBoot = useRef(false);
+  const plotRef = useRef({ active: false, count: 0, closed: false });
+  const linkingRef = useRef<string | null>(null);
+  plotRef.current = {
+    active: activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto',
+    count: plotPoints.length,
+    closed: plotClosed,
+  };
+
+  useEffect(() => {
+    if (skipHistoryRef.current) {
+      skipHistoryRef.current = false;
+      elementsRef.current = elements;
+      setUndoCount(pastRef.current.length);
+      return;
+    }
+    if (elementsRef.current === elements) return;
+    const kind = dragMode?.type;
+    const coalesced = kind === 'move' || kind === 'vertex' || kind === 'edge' || kind === 'rotate';
+    if (coalesced) {
+      if (!dragPushedRef.current) {
+        pastRef.current.push(elementsRef.current);
+        if (pastRef.current.length > 80) pastRef.current.shift();
+        futureRef.current = [];
+        dragPushedRef.current = true;
+      }
+    } else {
+      pastRef.current.push(elementsRef.current);
+      if (pastRef.current.length > 80) pastRef.current.shift();
+      futureRef.current = [];
+    }
+    elementsRef.current = elements;
+    setUndoCount(pastRef.current.length);
+  }, [elements, dragMode]);
+
+  undoRef.current = () => {
+    const prev = pastRef.current.pop();
+    if (!prev) return;
+    futureRef.current.push(elementsRef.current);
+    skipHistoryRef.current = true;
+    setElements(prev);
+  };
+  redoRef.current = () => {
+    const next = futureRef.current.pop();
+    if (!next) return;
+    pastRef.current.push(elementsRef.current);
+    skipHistoryRef.current = true;
+    setElements(next);
+  };
+  linkingRef.current = linkingId;
   const [gridLock, setGridLock] = useState(true);
   const [dims, setDims] = useState({ w: Math.round(mapWidth), h: Math.round(mapHeight) });
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -131,6 +219,19 @@ const MapEditor = ({
 
   const snap = (val: number) => gridLock ? Math.round(val / GRID_SIZE) * GRID_SIZE : Math.round(val);
 
+  const quantizeLocked = (previous: Point, point: Point) => {
+    const dx = point.x - previous.x;
+    const dy = point.y - previous.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return { ...previous };
+    if (!gridLock) return { x: Math.round(point.x), y: Math.round(point.y) };
+    const steps = Math.max(1, Math.round(len / GRID_SIZE));
+    return {
+      x: previous.x + (dx / len) * steps * GRID_SIZE,
+      y: previous.y + (dy / len) * steps * GRID_SIZE,
+    };
+  };
+
   const getElementPoints = (el: MapElement): Point[] => {
     if (el.points && el.points.length > 0) return el.points;
     return [
@@ -150,6 +251,29 @@ const MapEditor = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const typing = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA';
+      if ((e.ctrlKey || e.metaKey) && !typing && ['z', 'Z', 'y', 'Y'].includes(e.key)) {
+        e.preventDefault();
+        const redo = e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey);
+        const plot = plotRef.current;
+        if (!redo && plot.active && (plot.closed || plot.count > 0)) {
+          if (plot.closed) setPlotClosed(false);
+          else {
+            setPlotPoints((prev) => prev.slice(0, -1));
+            if (plot.count <= 1) setExtendAnchor(null);
+          }
+          return;
+        }
+        if (redo) redoRef.current();
+        else undoRef.current();
+        return;
+      }
+      if (e.key === 'Escape' && linkingRef.current) {
+        setLinkingId(null);
+        setLinkAnchor(null);
+        return;
+      }
+      if (plotRef.current.active && plotRef.current.count > 0 && (e.key === 'Backspace' || e.key === 'Enter' || e.key === 'Escape')) return;
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
       
       const step = gridLock ? GRID_SIZE : 1;
@@ -214,9 +338,115 @@ const MapEditor = ({
     setScale(prev => Math.min(Math.max(prev * delta, 0.1), 10));
   };
 
+  const alignmentAnchors = (previous?: Point) => {
+    const list: Point[] = [];
+    plotPoints.forEach((point, index) => {
+      if (index < plotPoints.length - 1) list.push(point);
+    });
+    elements.forEach((el) => {
+      if ((el.type !== 'road' && el.type !== 'sidewalk') || el.isStroke) return;
+      if (extendId && el.id === extendId) return;
+      const paths = worldPaths(el);
+      list.push(...paths.centerline);
+      paths.branches.forEach((branch) => list.push(...branch));
+    });
+    return list.filter((point) => !previous || Math.hypot(point.x - previous.x, point.y - previous.y) > 0.8);
+  };
+
+  const plotTarget = (pos: Point) => {
+    const previous = plotPoints[plotPoints.length - 1];
+    const anchors = alignmentAnchors(previous);
+    const canLock = !!(previous && directionLock && (directionMode === 'global' || pathAxis(plotPoints) != null));
+    const locked = canLock ? snapDirection(previous, pos, directionMode, pathAxis(plotPoints)) : null;
+    const base = locked ?? pos;
+    const horizontal = !!(previous && locked && Math.abs(locked.y - previous.y) <= 0.6 && Math.abs(locked.x - previous.x) > 0.6);
+    const vertical = !!(previous && locked && Math.abs(locked.x - previous.x) <= 0.6 && Math.abs(locked.y - previous.y) > 0.6);
+    let bestX: { d: number; v: number } | null = null;
+    let bestY: { d: number; v: number } | null = null;
+    const hinted: { d: number; x: number; y: number; ax: number; ay: number }[] = [];
+    anchors.forEach((anchor) => {
+      const dx = Math.abs(anchor.x - base.x);
+      const dy = Math.abs(anchor.y - base.y);
+      if (!vertical && dx <= 46) {
+        hinted.push({ d: dx, x: anchor.x, y: base.y, ax: anchor.x, ay: anchor.y });
+        if (dx <= 18 && (!bestX || dx < bestX.d)) bestX = { d: dx, v: anchor.x };
+      }
+      if (!horizontal && dy <= 46) {
+        hinted.push({ d: dy, x: base.x, y: anchor.y, ax: anchor.x, ay: anchor.y });
+        if (dy <= 18 && (!bestY || dy < bestY.d)) bestY = { d: dy, v: anchor.y };
+      }
+    });
+    let point: Point;
+    if (horizontal && previous) {
+      point = { x: bestX ? bestX.v : (locked ? quantizeLocked(previous, locked).x : snap(base.x)), y: previous.y };
+    } else if (vertical && previous) {
+      point = { x: previous.x, y: bestY ? bestY.v : (locked ? quantizeLocked(previous, locked).y : snap(base.y)) };
+    } else if (bestX || bestY) {
+      point = { x: bestX ? bestX.v : snap(base.x), y: bestY ? bestY.v : snap(base.y) };
+    } else if (locked && previous) {
+      point = quantizeLocked(previous, locked);
+    } else {
+      point = { x: snap(pos.x), y: snap(pos.y) };
+    }
+    return {
+      point,
+      guides: hinted.sort((a, b) => a.d - b.d).slice(0, 8),
+    };
+  };
+
+  const resolvePlotPoint = (pos: Point) => plotTarget(pos).point;
+
+  const closesPlot = (point: Point) => {
+    if (plotPoints.length < 3) return false;
+    const first = plotPoints[0];
+    return Math.hypot(point.x - first.x, point.y - first.y) <= Math.max(plotWidth * 0.65, 16);
+  };
+
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (dragMode || !activeTool || isBrushMode || activeTool === 'map_boundary') return;
     const pos = getMousePos(e);
+    if (linkingId) {
+      const current = elements.find((el) => el.id === linkingId);
+      const own = current ? pickOnPaths(current, pos) : null;
+      const otherHit = current ? elements.some((el) => el.id !== current.id && el.type === current.type && !el.isStroke && (() => {
+        const hit = pickOnPaths(el, pos);
+        return !!hit && (!own || hit.distance + 4 < own.distance);
+      })()) : false;
+      if (own && !otherHit) {
+        setLinkAnchor(own);
+        return;
+      }
+      if (!linkAnchor) {
+        showError('انقر موضعاً على هذا الشارع أولاً');
+        return;
+      }
+      linkAt(pos);
+      return;
+    }
+    if (dragMode || !activeTool || isBrushMode || activeTool === 'map_boundary') return;
+    if (activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto') {
+      if (activeTool !== 'street_auto' && extendId && !extendAnchor) {
+        const el = elements.find((item) => item.id === extendId);
+        const pick = el ? pickOnPaths(el, pos) : null;
+        if (!pick) {
+          showError('انقر الموضع الذي تريد الاستكمال منه');
+          return;
+        }
+        setExtendAnchor(pick);
+        setPlotPoints([pick.point]);
+        setPlotClosed(false);
+        return;
+      }
+      if (plotClosed) return;
+      const point = resolvePlotPoint(pos);
+      const previous = plotPoints[plotPoints.length - 1];
+      if (closesPlot(point)) {
+        setPlotClosed(true);
+        return;
+      }
+      if (previous && previous.x === point.x && previous.y === point.y) return;
+      setPlotPoints((prev) => [...prev, point]);
+      return;
+    }
     const w = activeTool === 'road' ? 200 : 80;
     const h = activeTool === 'road' ? 40 : 80;
     const newPoints = [
@@ -228,7 +458,7 @@ const MapEditor = ({
     createElement(activeTool as ElementType, newPoints);
   };
 
-  const createElement = (type: ElementType, pts: Point[], isStroke = false, customLabel?: string) => {
+  const createElement = (type: ElementType, pts: Point[], isStroke = false, customLabel?: string, extras?: Partial<MapElement>) => {
     checkAndExpandMap(pts);
     const newElement: MapElement = {
       id: Math.random().toString(36).substr(2, 9),
@@ -259,13 +489,342 @@ const MapEditor = ({
       hasTexture: false,
       textureType: 'glass',
       textureColor: 'white',
-      textureSize: 1
+      textureSize: 1,
+      ...extras,
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
   };
 
+  useEffect(() => {
+    if (extendBoot.current) {
+      extendBoot.current = false;
+      return;
+    }
+    setPlotPoints([]);
+    setPlotClosed(false);
+    setPlotCursor(null);
+    setExtendId(null);
+    setExtendAnchor(null);
+  }, [activeTool, isBrushMode]);
+
+  useEffect(() => {
+    if (activeTool !== 'road' && activeTool !== 'sidewalk' && activeTool !== 'street_auto') return;
+    const handlePlotKeys = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+      if (e.key === 'Escape') {
+        setPlotPoints([]);
+        setPlotClosed(false);
+        setExtendId(null);
+        setExtendAnchor(null);
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        if (plotClosed) {
+          setPlotClosed(false);
+          return;
+        }
+        setPlotPoints((prev) => prev.slice(0, -1));
+        if (plotPoints.length <= 1) setExtendAnchor(null);
+        return;
+      }
+      if (e.key === 'Enter' && activeTool === 'street_auto' && plotPoints.length >= 3) {
+        e.preventDefault();
+        generateRegionStreets();
+        return;
+      }
+      if (e.key === 'Enter' && plotPoints.length >= 2) {
+        e.preventDefault();
+        generateFromPlot();
+      }
+    };
+    window.addEventListener('keydown', handlePlotKeys);
+    return () => window.removeEventListener('keydown', handlePlotKeys);
+  }, [activeTool, plotPoints, plotWidth, plotClosed, directionLock, directionMode, extendId, roadGenWidth, walkGenWidth, elements]);
+
+  const generateFromPlot = () => {
+    if ((activeTool !== 'road' && activeTool !== 'sidewalk') || plotWidth < 4) return;
+    if (extendId) {
+      const el = elements.find((item) => item.id === extendId);
+      if (!el || !extendAnchor || plotPoints.length < 2) {
+        showError('اختر موضع الاستكمال ثم أضف نقطة');
+        return;
+      }
+      const paths = worldPaths(el);
+      const sourcePath = extendAnchor.branchIndex == null ? paths.centerline : paths.branches[extendAnchor.branchIndex];
+      if (!sourcePath || sourcePath.length < 2) return;
+      const asBranch = !!el.pathClosed || (!extendAnchor.atStart && !extendAnchor.atEnd);
+      const extended = extendPath(sourcePath, extendAnchor, plotPoints, asBranch);
+      let centerline = paths.centerline;
+      let branches = paths.branches.map((branch) => branch.map((point) => ({ ...point })));
+      if (extendAnchor.branchIndex == null) {
+        centerline = extended.path;
+        if (extended.branch) branches = [...branches, extended.branch];
+      } else {
+        branches[extendAnchor.branchIndex] = extended.path;
+        if (extended.branch) branches = [...branches, extended.branch];
+      }
+      const closed = asBranch ? !!el.pathClosed : plotClosed || !!el.pathClosed;
+      const shape = networkShape(centerline, branches, plotWidth, closed);
+      if (shape.outline.length < 3) {
+        showError('تعذر توليد الشكل من هذا المسار');
+        return;
+      }
+      const axis = pathAxis(centerline);
+      setElements((prev) => prev.map((item) => item.id === extendId ? {
+        ...item,
+        points: shape.outline,
+        centerline,
+        centerlineBranches: branches.length > 0 ? branches : undefined,
+        pathWidth: plotWidth,
+        pathAngle: axis == null ? undefined : Math.round((axis * 180) / Math.PI),
+        pathClosed: closed || undefined,
+        pathHoles: shape.holes.length > 0 ? shape.holes : undefined,
+        rotation: 0,
+        x: shape.outline[0].x,
+        y: shape.outline[0].y,
+      } : item));
+      setSelectedId(extendId);
+      setExtendId(null);
+      setExtendAnchor(null);
+      setPlotPoints([]);
+      setPlotClosed(false);
+      return;
+    }
+    if (plotPoints.length < 2) return;
+    const shape = networkShape(plotPoints, [], plotWidth, plotClosed);
+    if (shape.outline.length < 3) {
+      showError('تعذر توليد الشكل من هذا المسار');
+      return;
+    }
+    const axis = pathAxis(plotPoints);
+    const extras = {
+      points: shape.outline,
+      centerline: plotPoints,
+      pathWidth: plotWidth,
+      pathAngle: axis == null ? undefined : Math.round((axis * 180) / Math.PI),
+      pathClosed: plotClosed || undefined,
+      pathHoles: shape.holes.length > 0 ? shape.holes : undefined,
+      rotation: 0,
+      x: shape.outline[0].x,
+      y: shape.outline[0].y,
+    };
+    if (extendId) {
+      setElements((prev) => prev.map((el) => el.id === extendId ? { ...el, ...extras } : el));
+      setSelectedId(extendId);
+      setExtendId(null);
+    } else {
+      createElement(activeTool, shape.outline, false, undefined, extras);
+    }
+    setPlotPoints([]);
+    setPlotClosed(false);
+  };
+
+  const generateRegionStreets = () => {
+    if (activeTool !== 'street_auto' || plotPoints.length < 3) {
+      showError('حدد المنطقة بثلاث نقاط على الأقل');
+      return;
+    }
+    const region = plotPoints;
+    const network = generateStreetNetwork(region, elements, roadGenWidth, walkGenWidth);
+    if (!network) {
+      showError('لا توجد منازل أو مرافق أو حدائق داخل التحديد');
+      return;
+    }
+    const makePiece = (type: 'road' | 'sidewalk', piece: StreetPiece): MapElement => {
+      const pts = piece.shape.outline;
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        type,
+        label: '',
+        points: pts,
+        rotation: 0,
+        orientation: 'horizontal',
+        opacity: 1,
+        hideIcon: false,
+        x: pts[0].x,
+        y: pts[0].y,
+        width: 0,
+        height: 0,
+        locked: false,
+        showInMain: false,
+        centerline: piece.centerline,
+        centerlineBranches: piece.branches.length > 0 ? piece.branches : undefined,
+        pathLoops: piece.loops.length > 0 ? piece.loops : undefined,
+        pathWidth: piece.width,
+        pathClosed: piece.closed || undefined,
+        pathHoles: piece.shape.holes.length > 0 ? piece.shape.holes : undefined,
+        pathGenerated: true,
+      };
+    };
+    const created = [
+      ...network.sidewalks.map((piece) => makePiece('sidewalk', piece)),
+      ...network.roads.map((piece) => makePiece('road', piece)),
+    ];
+    checkAndExpandMap(created.flatMap((el) => el.points));
+    setElements((prev) => [...prev.filter((el) => !streetMostlyInside(el, region)), ...created]);
+    setSelectedId(created[created.length - 1]?.id || null);
+    setPlotPoints([]);
+    setPlotClosed(false);
+    showSuccess(`تولّد ${network.blocks} بلوك: ${network.roads.length} شارع و${network.sidewalks.length} رصيف`);
+  };
+
+  const localToWorld = (el: MapElement, pts: Point[]) => {
+    const base = getElementPoints(el);
+    if (!el.rotation || base.length === 0) return pts;
+    const cx = base.reduce((sum, point) => sum + point.x, 0) / base.length;
+    const cy = base.reduce((sum, point) => sum + point.y, 0) / base.length;
+    const rad = (el.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    return pts.map((point) => ({
+      x: cx + (point.x - cx) * cos - (point.y - cy) * sin,
+      y: cy + (point.x - cx) * sin + (point.y - cy) * cos,
+    }));
+  };
+
+  const worldPaths = (el: MapElement) => {
+    if (el.centerline && el.centerline.length >= 2) {
+      return {
+        centerline: localToWorld(el, el.centerline),
+        branches: (el.centerlineBranches || []).filter((path) => path.length >= 2).map((path) => localToWorld(el, path)),
+      };
+    }
+    return { centerline: localToWorld(el, roadMarkings(getElementPoints(el)).center), branches: [] as Point[][] };
+  };
+
+  const pickOnPaths = (el: MapElement, pos: Point): PathAnchor | null => {
+    const paths = worldPaths(el);
+    const width = el.pathWidth || (el.type === 'road' ? 40 : 16);
+    const limit = Math.max(width * 0.7, 22);
+    const candidates = [
+      { path: paths.centerline, branchIndex: null as number | null },
+      ...paths.branches.map((path, index) => ({ path, branchIndex: index })),
+    ];
+    let best: PathAnchor | null = null;
+    candidates.forEach((candidate) => {
+      if (candidate.path.length < 2) return;
+      const hit = projectOntoPath(candidate.path, pos, Math.max(width * 0.35, 12));
+      if (!hit || hit.distance > limit) return;
+      if (!best || hit.distance < best.distance) best = { ...hit, branchIndex: candidate.branchIndex };
+    });
+    return best;
+  };
+
+  const planLink = (pos: Point) => {
+    const current = elements.find((el) => el.id === linkingId);
+    if (!current || (current.type !== 'road' && current.type !== 'sidewalk') || !linkAnchor) return null;
+    const currentPaths = worldPaths(current);
+    const sourcePath = linkAnchor.branchIndex == null ? currentPaths.centerline : currentPaths.branches[linkAnchor.branchIndex];
+    if (!sourcePath || sourcePath.length < 2) return null;
+    const source = linkAnchor.point;
+    const axis = current.pathAngle != null
+      ? (current.pathAngle * Math.PI) / 180
+      : pathAxis(currentPaths.centerline);
+    const aim = directionLock ? snapDirection(source, pos, directionMode, directionMode === 'local' ? axis : null) : pos;
+    let best: { el: MapElement; hit: ReturnType<typeof projectOntoPath>; paths: ReturnType<typeof worldPaths> } | null = null;
+    for (const el of elements) {
+      if (el.id === current.id || el.type !== current.type || el.isStroke) continue;
+      const paths = worldPaths(el);
+      if (paths.centerline.length < 2) continue;
+      const width = Math.max(el.pathWidth || 0, current.pathWidth || 0) || 40;
+      const slop = Math.max(width * 0.45, 12);
+      const hit = directionLock
+        ? rayHitOnPath(source, aim, paths.centerline, slop)
+        : projectOntoPath(paths.centerline, pos, slop);
+      if (!hit) continue;
+      if (!directionLock && hit.distance > Math.max(width * 0.75, 20)) continue;
+      const rank = directionLock ? Math.hypot(hit.point.x - source.x, hit.point.y - source.y) : hit.distance;
+      const bestRank = best?.hit ? (directionLock ? Math.hypot(best.hit.point.x - source.x, best.hit.point.y - source.y) : best.hit.distance) : Infinity;
+      if (!best || rank < bestRank) best = { el, hit, paths };
+    }
+    if (!best?.hit) return null;
+    const otherBranches = linkAnchor.branchIndex == null
+      ? currentPaths.branches
+      : currentPaths.branches.filter((_, index) => index !== linkAnchor.branchIndex);
+    const joined = connectPaths(
+      sourcePath,
+      linkAnchor,
+      best.paths.centerline,
+      best.hit,
+      otherBranches,
+      best.paths.branches,
+      linkAnchor.branchIndex == null && !!current.pathClosed,
+    );
+    const width = Math.max(current.pathWidth || 0, best.el.pathWidth || 0) || (current.type === 'road' ? 40 : 16);
+    let line = linkAnchor.branchIndex == null ? joined.centerline : currentPaths.centerline;
+    let branches = linkAnchor.branchIndex == null
+      ? joined.branches
+      : [
+        ...currentPaths.branches.map((branch, index) => index === linkAnchor.branchIndex ? joined.centerline : branch),
+        ...joined.branches,
+      ];
+    let closed = !!current.pathClosed;
+    if (!closed && line.length >= 4 && Math.hypot(line[0].x - line[line.length - 1].x, line[0].y - line[line.length - 1].y) <= Math.max(width * 0.65, 12)) {
+      closed = true;
+      line = line.slice(0, -1);
+    }
+    const shape = networkShape(line, branches, width, closed);
+    if (shape.outline.length < 3) return null;
+    return { current, shape, line, branches, width, closed, otherId: best.el.id };
+  };
+
+  const linkAt = (pos: Point) => {
+    const current = elements.find((el) => el.id === linkingId);
+    if (!current || (current.type !== 'road' && current.type !== 'sidewalk')) {
+      setLinkingId(null);
+      return;
+    }
+    if (worldPaths(current).centerline.length < 2) {
+      showError('هذا العنصر ليس له مسار يمكن ربطه');
+      return;
+    }
+    const plan = planLink(pos);
+    if (!plan) {
+      showError(current.type === 'road' ? 'انقر على طريق آخر' : 'انقر على رصيف آخر');
+      return;
+    }
+    const axis = pathAxis(plan.line);
+    setElements((prev) => prev.filter((el) => el.id !== plan.otherId).map((el) => el.id === plan.current.id ? {
+      ...el,
+      points: plan.shape.outline,
+      centerline: plan.line,
+      centerlineBranches: plan.branches.length > 0 ? plan.branches : undefined,
+      pathWidth: plan.width,
+      pathAngle: axis == null ? undefined : Math.round((axis * 180) / Math.PI),
+      pathClosed: plan.closed || undefined,
+      pathHoles: plan.shape.holes.length > 0 ? plan.shape.holes : undefined,
+      rotation: 0,
+      x: plan.shape.outline[0].x,
+      y: plan.shape.outline[0].y,
+    } : el));
+    setLinkingId(null);
+    setLinkAnchor(null);
+    setPlotCursor(null);
+    showSuccess(current.type === 'road' ? 'أصبح الطريقان طريقاً واحداً' : 'أصبح الرصيفان رصيفاً واحداً');
+  };
+
+  const beginExtend = (el: MapElement) => {
+    const line = worldPaths(el).centerline;
+    if (line.length < 2) {
+      showError('هذا العنصر ليس له مسار يمكن تكملته');
+      return;
+    }
+    if (activeTool !== el.type || isBrushMode) extendBoot.current = true;
+    setExtendId(el.id);
+    setExtendAnchor(null);
+    setPlotPoints([]);
+    setPlotClosed(false);
+    setPlotWidth(el.pathWidth || (el.type === 'road' ? 40 : 16));
+    setLinkingId(null);
+    setLinkAnchor(null);
+    setActiveTool(el.type);
+    setIsBrushMode(false);
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (linkingId || extendId) return;
     const pos = getMousePos(e);
     if (activeTool === 'map_boundary') {
       setDragMode({ type: 'boundary', startPos: pos });
@@ -283,6 +842,10 @@ const MapEditor = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if ((activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || linkingId) && !isBrushMode) {
+      const next = getMousePos(e);
+      setPlotCursor((prev) => (prev && Math.abs(prev.x - next.x) < 0.4 && Math.abs(prev.y - next.y) < 0.4 ? prev : next));
+    }
     if (!dragMode) return;
     const pos = getMousePos(e);
     
@@ -360,6 +923,7 @@ const MapEditor = ({
   };
 
   const handleMouseUp = () => {
+    dragPushedRef.current = false;
     if (dragMode?.type === 'boundary' && tempPoints.length === 4) {
       const minX = Math.min(...tempPoints.map(p => p.x));
       const minY = Math.min(...tempPoints.map(p => p.y));
@@ -479,6 +1043,7 @@ const MapEditor = ({
     }
     switch (el.type) {
       case 'road': return mapPalette.road;
+      case 'sidewalk': return mapPalette.sidewalk;
       case 'green': return 'url(#green-pattern)';
       case 'pitch': return mapPalette.pitch;
       case 'text': return 'none';
@@ -495,6 +1060,7 @@ const MapEditor = ({
       case 'house': return STATUS_META.available.stroke;
       case 'tower': return palette.fg;
       case 'road': return mapPalette.roadStroke;
+      case 'sidewalk': return mapPalette.sidewalkStroke;
       case 'green': return mapPalette.greenStroke;
       case 'pitch': return mapPalette.pitchStroke;
       case 'text': return isSelected(el.id) ? mapPalette.selection : 'none';
@@ -504,7 +1070,7 @@ const MapEditor = ({
 
   const isSelected = (id: string) => selectedId === id;
   const selectedElement = elements.find(el => el.id === selectedId);
-  const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
+  const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'sidewalk': 0.5, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
   const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
 
   const updateSelectedElement = (updates: Partial<MapElement>) => {
@@ -723,6 +1289,7 @@ const MapEditor = ({
           </div>
           <span className="font-mono text-[11px] tabular-nums text-fg-faint">{Math.round(scale * 100)}%</span>
           <Button variant={gridLock ? "default" : "outline"} size="icon" className="size-8" onClick={() => setGridLock(!gridLock)}><Grid3X3 size={15} /></Button>
+          <Button variant="outline" size="icon" className="size-8" disabled={undoCount === 0} onClick={() => undoRef.current()} title="تراجع (Ctrl+Z)"><Undo2 size={15} /></Button>
           <Button variant="outline" size="icon" className="size-8" onClick={() => setIsFullScreen(!isFullScreen)}>
             {isFullScreen ? <Minimize size={15} /> : <Maximize size={15} />}
           </Button>
@@ -750,12 +1317,17 @@ const MapEditor = ({
 
       <div className="flex flex-1 gap-3 overflow-hidden">
         <div className="flex w-16 flex-col overflow-y-auto border border-line bg-surface no-scrollbar">
-          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); }} className={cn("flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", !activeTool && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
+          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); setLinkingId(null); }} className={cn("flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", !activeTool && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
             <MousePointer2 size={16} />
             <span className="text-[9px]">تصفح</span>
           </button>
+          <button onClick={() => { setActiveTool('street_auto'); setIsBrushMode(false); setLinkingId(null); }} className={cn("relative flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", activeTool === 'street_auto' && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
+            <span className="absolute inset-x-0 top-0 h-[2px]" style={{ backgroundColor: mapPalette.roadStroke }} />
+            <Route size={16} />
+            <span className="text-[9px] leading-tight">توليد</span>
+          </button>
           {TOOLS.map((tool) => (
-            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); }} className={cn("relative flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", activeTool === tool.type && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
+            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); setLinkingId(null); if (tool.type === 'road') setPlotWidth(40); if (tool.type === 'sidewalk') setPlotWidth(16); }} className={cn("relative flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", activeTool === tool.type && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
               <span className="absolute inset-x-0 top-0 h-[2px]" style={{ backgroundColor: tool.swatch }} />
               <tool.icon size={16} />
               <span className="text-[9px] leading-tight">{tool.label}</span>
@@ -773,7 +1345,7 @@ const MapEditor = ({
         </div>
 
         <div className="relative flex-1 touch-none overflow-hidden border border-line" style={{ backgroundColor: backgroundColor }}>
-          <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel} style={{ backgroundColor: backgroundColor }}>
+          <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={() => setPlotCursor(null)} onWheel={handleWheel} style={{ backgroundColor: backgroundColor }}>
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
               <defs>
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke={mapPalette.gridStrong} strokeWidth="1" opacity="0.6"/></pattern>
@@ -856,15 +1428,17 @@ const MapEditor = ({
                     {el.type !== 'text' ? (
                       <>
                         <path 
-                          d={pathD} 
+                          d={`${pathD}${(el.pathHoles || []).map((hole) => ` ${pointsToPath(hole, true)}`).join('')}`}
+                          fillRule={el.pathHoles?.length ? 'evenodd' : undefined}
                           fill={el.isStroke ? "none" : getElementColor(el)} 
                           stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
                           fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
-                          strokeWidth={el.isStroke ? el.strokeWidth : (['road', 'green'].includes(el.type) ? 10 : (isSelectedEl ? 3 : (el.hasBorder ? 4 : 2)))} 
+                          strokeWidth={el.isStroke ? el.strokeWidth : ((el.type === 'green' || (el.type === 'road' && !el.pathWidth)) ? 10 : (isSelectedEl ? 3 : (el.hasBorder ? 4 : 2)))} 
                           strokeLinejoin="round"
                           strokeLinecap="round"
                           className={cn("transition-all cursor-move", isSelectedEl && "stroke-fg")} 
                           onMouseDown={(e) => { 
+                            if (linkingId || extendId) return;
                             setSelectedId(el.id); 
                             if (!el.locked) {
                               e.stopPropagation(); 
@@ -915,14 +1489,40 @@ const MapEditor = ({
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? palette.accentFg : palette.fg)} strokeWidth={2.5}/></div></foreignObject>}
                     
                     {el.type === 'road' && !el.isStroke && (
-                      el.orientation === 'vertical' ? 
-                      <line x1={centerX} y1={minY} x2={centerX} y2={maxY} stroke={palette.surface} strokeWidth="2" strokeDasharray="10,10" opacity="0.6" /> :
-                      <line x1={minX} y1={centerY} x2={maxX} y2={centerY} stroke={palette.surface} strokeWidth="2" strokeDasharray="10,10" opacity="0.6" />
+                      <g pointerEvents="none">
+                        {el.centerline && el.centerline.length >= 2 && el.pathWidth
+                          ? [el.centerline, ...(el.centerlineBranches || [])].map((line, index) => {
+                            const guide = buildCorridor(line, Math.max(el.pathWidth * 0.66, 4));
+                            const attr = (linePoints: Point[]) => linePoints.map((p) => `${p.x},${p.y}`).join(' ');
+                            const drawn = el.pathClosed && line.length >= 3 ? [...line, line[0]] : line;
+                            return (
+                              <g key={`lane-${index}`}>
+                                {guide.left.length > 1 && <polyline points={attr(guide.left)} fill="none" stroke={palette.surface} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />}
+                                {guide.right.length > 1 && <polyline points={attr(guide.right)} fill="none" stroke={palette.surface} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />}
+                                <polyline points={attr(drawn)} fill="none" stroke={palette.surface} strokeWidth="2" strokeDasharray="10,10" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+                              </g>
+                            );
+                          })
+                          : (() => {
+                            const marks = roadMarkings(pts);
+                            const attr = (line: Point[]) => line.map((p) => `${p.x},${p.y}`).join(' ');
+                            return (
+                              <>
+                                {marks.edges.map((edge, index) => (
+                                  <polyline key={`edge-${index}`} points={attr(edge)} fill="none" stroke={palette.surface} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                                ))}
+                                {marks.center.length > 1 && (
+                                  <polyline points={attr(marks.center)} fill="none" stroke={palette.surface} strokeWidth="2" strokeDasharray="10,10" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+                                )}
+                              </>
+                            );
+                          })()}
+                      </g>
                     )}
 
                     {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || palette.fg} style={{ fontSize: `${el.fontSize || 10}px`, fontFamily: canvasFont, fontWeight: 600 }} className="pointer-events-none select-none">{el.label.split('-').pop()}</text>}
                     
-                    {isSelectedEl && (
+                    {isSelectedEl && el.type !== 'road' && el.type !== 'sidewalk' && (
                       <>
                         {pts.map((p, i) => {
                           const nextP = pts[(i + 1) % pts.length];
@@ -956,6 +1556,132 @@ const MapEditor = ({
                 );
               })}
 
+              {activeTool === 'street_auto' && (plotPoints.length > 0 || plotCursor) && (() => {
+                const target = !plotClosed && plotCursor ? plotTarget(plotCursor) : null;
+                const pending = target?.point ?? null;
+                const closing = pending ? closesPlot(pending) : false;
+                const line = !pending || plotPoints.length === 0
+                  ? plotPoints
+                  : (closing ? plotPoints : [...plotPoints, pending]);
+                return (
+                  <g pointerEvents="none">
+                    {line.length >= 2 && (
+                      <path
+                        d={pointsToPath(plotClosed || closing ? [...line, line[0]] : line, false)}
+                        fill={plotClosed || closing ? mapPalette.road : "none"}
+                        fillOpacity={0.18}
+                        stroke={mapPalette.highlight}
+                        strokeWidth={2}
+                        strokeDasharray={plotClosed || closing ? undefined : "6,4"}
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {line.map((point, index) => (
+                      <circle key={`region-${index}`} cx={point.x} cy={point.y} r={4} fill={mapPalette.highlight} />
+                    ))}
+                  </g>
+                );
+              })()}
+
+              {(activeTool === 'road' || activeTool === 'sidewalk') && !(extendId && !extendAnchor) && (plotPoints.length > 0 || plotCursor) && (() => {
+                const target = !plotClosed && plotCursor ? plotTarget(plotCursor) : null;
+                const pending = target?.point ?? null;
+                const closing = pending ? closesPlot(pending) : false;
+                const line = !pending || plotPoints.length === 0
+                  ? plotPoints
+                  : (closing ? plotPoints : [...plotPoints, pending]);
+                const preview = line.length >= 2 ? networkShape(line, [], plotWidth, closing || plotClosed) : null;
+                const fill = activeTool === 'road' ? mapPalette.road : mapPalette.sidewalk;
+                const stroke = activeTool === 'road' ? mapPalette.roadStroke : mapPalette.sidewalkStroke;
+                return (
+                  <g pointerEvents="none">
+                    {pending && plotPoints.length === 0 && (
+                      <circle cx={pending.x} cy={pending.y} r={plotWidth / 2} fill={fill} fillOpacity={0.45} stroke={stroke} strokeWidth={2} />
+                    )}
+                    {preview && preview.outline.length >= 3 && (
+                      <path
+                        d={`${pointsToPath(preview.outline, true)}${preview.holes.map((hole) => ` ${pointsToPath(hole, true)}`).join('')}`}
+                        fill={fill}
+                        fillOpacity={0.5}
+                        fillRule={preview.holes.length ? 'evenodd' : undefined}
+                        stroke={stroke}
+                        strokeWidth={2}
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {plotPoints.length > 0 && (
+                      <path
+                        d={pointsToPath(plotClosed && plotPoints.length >= 3 ? [...plotPoints, plotPoints[0]] : plotPoints, false)}
+                        fill="none"
+                        stroke={palette.fg}
+                        strokeWidth={1.5}
+                        strokeDasharray="6,4"
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                    )}
+                    {plotPoints.map((point, index) => (
+                      <circle key={`plot-${index}`} cx={point.x} cy={point.y} r={index === 0 ? 7 : 4} fill={index === 0 ? mapPalette.highlight : palette.surface} stroke={palette.fg} strokeWidth="1.5" />
+                    ))}
+                    {target?.guides.map((guide, index) => (
+                      <g key={`guide-${index}`}>
+                        {Math.hypot(guide.ax - guide.x, guide.ay - guide.y) > 2 && (
+                          <line x1={guide.ax} y1={guide.ay} x2={guide.x} y2={guide.y} stroke={mapPalette.highlight} strokeWidth={1} strokeDasharray="3,3" opacity={0.85} />
+                        )}
+                        <line x1={guide.x - 5} y1={guide.y} x2={guide.x + 5} y2={guide.y} stroke={mapPalette.highlight} strokeWidth={1.4} />
+                        <line x1={guide.x} y1={guide.y - 5} x2={guide.x} y2={guide.y + 5} stroke={mapPalette.highlight} strokeWidth={1.4} />
+                      </g>
+                    ))}
+                    {pending && (
+                      <circle cx={pending.x} cy={pending.y} r={5} fill={mapPalette.highlight} stroke={palette.surface} strokeWidth={1.5} />
+                    )}
+                  </g>
+                );
+              })()}
+
+              {(linkingId || (extendId && !extendAnchor)) && plotCursor && (() => {
+                const current = elements.find((el) => el.id === (linkingId || extendId));
+                if (!current) return null;
+                const hover = pickOnPaths(current, plotCursor);
+                const anchor = linkAnchor?.point ?? null;
+                const axis = current.pathAngle != null ? (current.pathAngle * Math.PI) / 180 : pathAxis(worldPaths(current).centerline);
+                const aim = linkingId && anchor && directionLock
+                  ? snapDirection(anchor, plotCursor, directionMode, directionMode === 'local' ? axis : null)
+                  : null;
+                return (
+                  <g pointerEvents="none">
+                    {hover && (
+                      <circle cx={hover.point.x} cy={hover.point.y} r={6} fill={palette.surface} stroke={mapPalette.highlight} strokeWidth={2} />
+                    )}
+                    {anchor && (
+                      <circle cx={anchor.x} cy={anchor.y} r={7} fill={mapPalette.highlight} stroke={palette.surface} strokeWidth={1.5} />
+                    )}
+                    {anchor && aim && Math.hypot(aim.x - anchor.x, aim.y - anchor.y) > 1 && (
+                      <line x1={anchor.x} y1={anchor.y} x2={aim.x} y2={aim.y} stroke={mapPalette.highlight} strokeWidth={1.5} strokeDasharray="5,4" />
+                    )}
+                  </g>
+                );
+              })()}
+
+              {linkingId && plotCursor && (() => {
+                const plan = planLink(plotCursor);
+                if (!plan) return null;
+                const fill = plan.current.type === 'road' ? mapPalette.road : mapPalette.sidewalk;
+                return (
+                  <path
+                    pointerEvents="none"
+                    d={`${pointsToPath(plan.shape.outline, true)}${plan.shape.holes.map((hole) => ` ${pointsToPath(hole, true)}`).join('')}`}
+                    fill={fill}
+                    fillOpacity={0.55}
+                    fillRule={plan.shape.holes.length ? 'evenodd' : undefined}
+                    stroke={mapPalette.highlight}
+                    strokeWidth={2}
+                    strokeDasharray="7,4"
+                    strokeLinejoin="round"
+                  />
+                );
+              })()}
+
               {tempPoints.length > 1 && (isBrushMode || activeTool === 'map_boundary') && (
                 <path
                   d={pointsToPath(tempPoints, activeTool === 'map_boundary')}
@@ -971,6 +1697,65 @@ const MapEditor = ({
               )}
             </g>
           </svg>
+          {activeTool === 'street_auto' && (
+            <div className="absolute bottom-3 start-3 z-10 flex max-w-md flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              <span>ضع نقاطاً حول البلوكات والحدائق ثم أغلق الشكل. يُرسم شارع حول شكل كل بلوك، وشارع واحد بين البلوكات المتقابلة، ثم رصيف. الحديقة يجب أن تكون مرسومة قبل التوليد.</span>
+              <div className="flex items-center gap-2">
+                <Checkbox id="street-direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
+                <Label htmlFor="street-direction-lock" className="text-[11px] text-fg">قفل الاتجاه</Label>
+                {directionLock && (
+                  <div className="flex border border-line">
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>عام</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>محلي</button>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-[11px] text-fg-muted">الشارع</Label>
+                <Input type="number" min={4} value={roadGenWidth} onChange={(e) => setRoadGenWidth(Math.max(4, Number(e.target.value) || 4))} className="h-8 w-16 font-mono text-[12px]" />
+                <Label className="text-[11px] text-fg-muted">الرصيف</Label>
+                <Input type="number" min={0} value={walkGenWidth} onChange={(e) => setWalkGenWidth(Math.max(0, Number(e.target.value) || 0))} className="h-8 w-16 font-mono text-[12px]" />
+                <Button size="sm" disabled={plotPoints.length < 3} onClick={generateRegionStreets}>توليد الشوارع</Button>
+              </div>
+            </div>
+          )}
+          {(activeTool === 'road' || activeTool === 'sidewalk') && (
+            <div className="absolute bottom-3 start-3 z-10 flex flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              <span>{extendId ? (extendAnchor ? 'أضف نقاط التكملة من الموضع الذي اخترته ثم احفظ.' : 'انقر أي موضع على الشارع لتحديد مكان الاستكمال.') : 'ضع نقطة ثم نقطة. علامة + تعني محاذاة مع نقطة شارع أو مع نقطة من المسار نفسه. النقطة الأولى تغلق الحلقة.'} Backspace يتراجع، Escape يلغي.</span>
+              <div className="flex items-center gap-2">
+                <Checkbox id="direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
+                <Label htmlFor="direction-lock" className="text-[11px] text-fg">قفل الاتجاه</Label>
+                {directionLock && (
+                  <div className="flex border border-line">
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>عام</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>محلي</button>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-[11px] text-fg-muted">العرض</Label>
+                <Input type="number" min={4} value={plotWidth} onChange={(e) => setPlotWidth(Math.max(4, Number(e.target.value) || 4))} className="h-8 w-20 font-mono text-[12px]" />
+                <Button size="sm" disabled={!extendAnchor && plotPoints.length < 2 || (extendId && plotPoints.length < 2)} onClick={generateFromPlot}>
+                  {extendId ? 'حفظ التكملة' : (activeTool === 'road' ? 'توليد طريق' : 'توليد رصيف')}
+                </Button>
+              </div>
+            </div>
+          )}
+          {linkingId && (
+            <div className="absolute bottom-3 start-3 z-10 flex flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              <span>{linkAnchor == null ? 'انقر أي موضع على الشارع، لا يشترط أن يكون زاوية.' : 'الموضع محدد. وجّه المؤشر نحو الشارع الآخر ثم انقر. نقرة على هذا الشارع تنقل موضع الربط.'} Escape يلغي.</span>
+              <div className="flex items-center gap-2">
+                <Checkbox id="link-direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
+                <Label htmlFor="link-direction-lock" className="text-[11px] text-fg">قفل الاتجاه</Label>
+                {directionLock && (
+                  <div className="flex border border-line">
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>عام</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>محلي</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="w-80 flex flex-col gap-4 overflow-y-auto no-scrollbar h-full pb-10">
@@ -1322,6 +2107,59 @@ const MapEditor = ({
                           <SelectItem value="vertical">عمودي</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+
+                  {(selectedElement.type === 'road' || selectedElement.type === 'sidewalk') && (
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label className="text-[11px] text-fg-muted">العرض (px)</Label>
+                        <Input
+                          type="number"
+                          min={4}
+                          value={selectedElement.pathWidth || (selectedElement.type === 'road' ? 40 : 16)}
+                          onChange={(e) => {
+                            const width = Number(e.target.value);
+                            if (!Number.isFinite(width) || width < 4) return;
+                            const line = selectedElement.centerline;
+                            if (!line || line.length < 2) {
+                              updateSelectedElement({ pathWidth: width });
+                              return;
+                            }
+                            const shape = networkShape(line, selectedElement.centerlineBranches || [], width, !!selectedElement.pathClosed, selectedElement.pathLoops || []);
+                            if (shape.outline.length < 3) return;
+                            updateSelectedElement({
+                              pathWidth: width,
+                              points: shape.outline,
+                              pathHoles: shape.holes.length > 0 ? shape.holes : undefined,
+                              x: shape.outline[0].x,
+                              y: shape.outline[0].y,
+                            });
+                          }}
+                          className="font-mono text-[12px]"
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => beginExtend(selectedElement)}
+                      >
+                        تكملة المسار
+                      </Button>
+                      <Button
+                        variant={linkingId === selectedElement.id ? "default" : "outline"}
+                        className="w-full"
+                        onClick={() => {
+                          setActiveTool(null);
+                          setIsBrushMode(false);
+                          setExtendId(null);
+                          setPlotPoints([]);
+                          setLinkAnchor(null);
+                          setLinkingId(selectedElement.id);
+                        }}
+                      >
+                        {selectedElement.type === 'road' ? 'ربط بطريق' : 'ربط برصيف'}
+                      </Button>
                     </div>
                   )}
 

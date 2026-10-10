@@ -1,4 +1,4 @@
-export type ElementType = 'house' | 'tower' | 'road' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'text' | 'reference_image';
+export type ElementType = 'house' | 'tower' | 'road' | 'sidewalk' | 'green' | 'amenity' | 'label_area' | 'pitch' | 'text' | 'reference_image';
 
 export interface Point {
   y: number;
@@ -42,6 +42,22 @@ export interface MapElement {
   textureColor?: string;
   textureSize?: number;
   linkProjectId?: string; // معرف المشروع السكني المرتبط بهذا العنصر كزر انتقال
+  /** مسار وسط الطريق أو الرصيف. التوليد يبني العرض حوله */
+  centerline?: Point[];
+  /** تفرعات تبدأ من نقطة على المسار بعد الربط */
+  centerlineBranches?: Point[][];
+  /** عرض الشريط بالبكسل */
+  pathWidth?: number;
+  /** اتجاه الضلع الأول بالدرجات. لا يدوّر الشكل، بل يحدد القفل المحلي */
+  pathAngle?: number;
+  /** المسار مغلق على نقطة البداية */
+  pathClosed?: boolean;
+  /** فراغات داخل الطريق المغلق أو المتداخل */
+  pathHoles?: Point[][];
+  /** حلقات مغلقة إضافية، مثل شارع يحيط ببلوك ولم يُدمج ضلعه */
+  pathLoops?: Point[][];
+  /** نُتج من توليد الشوارع داخل منطقة، لا من رسم المسار يدوياً */
+  pathGenerated?: boolean;
 
   /**
    * حقول مؤقتة تُضاف أثناء دمج عناصر عدة مشاريع في قائمة واحدة (لوحة التقارير).

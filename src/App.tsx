@@ -19,6 +19,7 @@ const SalesForm = lazy(() => import("./pages/SalesForm"));
 const SalesPrint = lazy(() => import("./pages/SalesPrint"));
 const SalesArchive = lazy(() => import("./pages/SalesArchive"));
 const IncentiveApp = lazy(() => import("./incentives/IncentiveApp"));
+const Explore = lazy(() => import("./pages/Explore"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const RouteFallback = () => (
@@ -98,6 +99,7 @@ const SalesApp = () => {
         path="/reports"
         element={<Reports projects={projects} housesData={housesData} />}
       />
+      <Route path="/explore" element={<Explore projects={projects} />} />
       <Route path="/brochure/:projectId/:unitId" element={<Brochure />} />
       <Route path="/sales/new/:projectId/:unitId" element={<SalesForm />} />
       <Route path="/sales/print/:id" element={<SalesPrint />} />
