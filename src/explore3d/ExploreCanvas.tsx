@@ -225,6 +225,87 @@ const toPick = (item: PlacedInstance): ExplorePick => ({
   unitKey: item.unitKey,
 });
 
+const labelParts = (label: string) => label.split("-").map((part) => part.trim()).filter(Boolean);
+
+const shortCode = (label: string) => {
+  const parts = labelParts(label);
+  return (parts[parts.length - 1] || label.trim()).slice(0, 12);
+};
+
+const blockTitle = (label: string) => {
+  const parts = labelParts(label);
+  const houseParts = parts[0]?.toUpperCase() === "G" && /^Z/i.test(parts[1] || "") ? parts.slice(1) : parts;
+  if (houseParts.length < 3) return "";
+  if (!/^Z/i.test(houseParts[0]) || !/^B/i.test(houseParts[1])) return "";
+  return `${houseParts[0].toUpperCase()} · ${houseParts[1].toUpperCase()}`;
+};
+
+const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+};
+
+const createSkySprite = (role: "mark" | "unit") => {
+  const width = role === "mark" ? 640 : 440;
+  const height = 188;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    depthTest: role !== "unit",
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.center.set(0.5, 0.08);
+  sprite.renderOrder = role === "unit" ? 30 : 20;
+  sprite.frustumCulled = false;
+  const paint = (text: string) => {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "rgba(36, 32, 28, 0.13)";
+    roundRect(ctx, 34, 34, width - 68, 112, 30);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 252, 247, 0.96)";
+    roundRect(ctx, 26, 20, width - 68, 112, 30);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(36, 32, 28, 0.16)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(width / 2 - 12, 132);
+    ctx.lineTo(width / 2, 176);
+    ctx.lineTo(width / 2 + 12, 132);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255, 252, 247, 0.96)";
+    ctx.fill();
+    ctx.fillStyle = "#241f1c";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = role === "mark" ? "600 62px Tahoma, sans-serif" : "700 76px Tahoma, sans-serif";
+    const measured = Math.max(ctx.measureText(text).width, 1);
+    const scale = Math.min((width - 110) / measured, 1);
+    ctx.save();
+    ctx.translate(width / 2 - 6, 76);
+    ctx.scale(scale, 1);
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+    texture.needsUpdate = true;
+  };
+  return { sprite, paint, aspect: width / height };
+};
+
 const makeLabel = (text: string) => {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -327,8 +408,8 @@ export const ExploreCanvas = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.09;
     controls.rotateSpeed = 0.22;
-    controls.zoomSpeed = 0.32;
-    controls.panSpeed = 0.28;
+    controls.zoomSpeed = 1.15;
+    controls.panSpeed = 1.2;
     controls.screenSpacePanning = false;
     controls.minPolarAngle = 0.22;
     controls.maxPolarAngle = 1.18;
@@ -336,19 +417,19 @@ export const ExploreCanvas = ({
     controls.maxDistance = span * 2.8;
     controls.update();
 
-    scene.add(new THREE.AmbientLight(0xfff8ef, 0.58));
-    scene.add(new THREE.HemisphereLight(0xd7f1ff, 0xc6e3a4, 0.72));
-    const sun = new THREE.DirectionalLight(0xfff6d4, 0.9);
+    scene.add(new THREE.AmbientLight(0xfffaf4, 0.78));
+    scene.add(new THREE.HemisphereLight(0xf7f4ee, 0xe8e2d6, 0.5));
+    const sun = new THREE.DirectionalLight(0xfffaf2, 0.38);
     sun.position.set(span * 0.62, span * 0.74, span * 0.28);
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xf4fbff, 0.42);
+    const fill = new THREE.DirectionalLight(0xf7f4ee, 0.28);
     fill.position.set(-span * 0.35, span * 0.5, span * 0.55);
     scene.add(fill);
 
     const halfSiteW = Math.max(world.siteWidthM, 24) / 2;
     const halfSiteD = Math.max(world.siteDepthM, 24) / 2;
-    const fogPad = 24;
-    const fogSpan = 64;
+    const fogPad = 14;
+    const fogSpan = 46;
     const edgeUniforms = {
       uEdge: {
         value: new THREE.Vector4(
@@ -360,7 +441,7 @@ export const ExploreCanvas = ({
       },
       uEdgeColor: { value: horizon.clone() },
     };
-    const veil = (material: THREE.MeshLambertMaterial, fadeAlpha = false) => {
+    const veil = (material: THREE.MeshLambertMaterial | THREE.MeshBasicMaterial, fadeAlpha = false) => {
       material.customProgramCacheKey = () => (fadeAlpha ? "site-edge-rect-alpha" : "site-edge-rect");
       if (fadeAlpha) material.transparent = true;
       material.onBeforeCompile = (shader) => {
@@ -433,7 +514,9 @@ gl_FragColor.a *= 1.0 - edgeFog;`
         y,
       );
       if (!geometry) return;
-      const material = solid(color);
+      const material = new THREE.MeshBasicMaterial({ color });
+      veil(material);
+      ownedMaterials.push(material);
       material.polygonOffset = true;
       material.polygonOffsetFactor = -2;
       material.polygonOffsetUnits = -2;
@@ -445,7 +528,7 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     const siteW = Math.max((halfSiteW + fogPad + fogSpan + 8) * 2, 48);
     const siteD = Math.max((halfSiteD + fogPad + fogSpan + 8) * 2, 48);
     const baseGeometry = new THREE.PlaneGeometry(siteW, siteD);
-    const baseMaterial = new THREE.MeshLambertMaterial({ color: COLORS.ground });
+    const baseMaterial = new THREE.MeshBasicMaterial({ color: COLORS.ground });
     veil(baseMaterial, true);
     baseMaterial.polygonOffset = true;
     baseMaterial.polygonOffsetFactor = 4;
@@ -496,7 +579,8 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     ownedMaterials.push(shadedMaterial);
 
     if (world.houses.length > 0) {
-      const colored: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
+      const stone: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
+      const decks: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
       const seams: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
       const crowns: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
       const pads: THREE.BufferGeometry[] = [];
@@ -521,13 +605,10 @@ gl_FragColor.a *= 1.0 - edgeFog;`
         const shell = insetPoly(ring, 0.08);
         const pad = extrudeRing(shell, 0.12, 0);
         if (pad) pads.push(pad);
-        pushPart(colored, extrudeRing(wall, HOUSE_STORY_M - 0.06, 0.12), house, house.color, true);
-        pushPart(
-          colored,
-          extrudeRing(wall, HOUSE_STORY_M - 0.06, 0.12 + HOUSE_STORY_M),
-          house,
-          house.color,
-        );
+        pushPart(stone, extrudeRing(wall, HOUSE_STORY_M - 0.06, 0.12), house);
+        pushPart(stone, extrudeRing(wall, HOUSE_STORY_M - 0.06, 0.12 + HOUSE_STORY_M), house);
+        const roofY = 0.12 + HOUSE_WALL_M + HOUSE_PARAPET_M - 0.16;
+        pushPart(decks, extrudeRing(insetPoly(wall, 0.18), 0.14, roofY), house, house.color);
         pushPart(seams, extrudeRing(band, 0.2, 0.12 + HOUSE_STORY_M - 0.1), house);
         pushPart(
           crowns,
@@ -575,7 +656,7 @@ gl_FragColor.a *= 1.0 - edgeFog;`
           sx: Math.min(1.15, Math.max(0.7, bestLen * 0.12)),
           sy: 2.35,
           sz: 0.12,
-          color: 0x3a312c,
+          color: 0xc8c0b4,
         });
         const spots = bestLen > 7 ? [0.24, 0.76] : [0.5];
         [1.2, 1.2 + HOUSE_STORY_M].forEach((winY) => {
@@ -591,7 +672,7 @@ gl_FragColor.a *= 1.0 - edgeFog;`
               sx: Math.min(1.15, Math.max(0.55, bestLen * 0.1)),
               sy: 1.05,
               sz: 0.1,
-              color: Math.abs(Math.round(winAt.x * 4 + winAt.z * 9 + winY)) % 3 === 0 ? 0xffe3b0 : 0xc9e0ea,
+              color: 0xd5ddd8,
             });
           });
         });
@@ -614,20 +695,23 @@ gl_FragColor.a *= 1.0 - edgeFog;`
         if (pads.length > 1) pads.forEach((geometry) => geometry.dispose());
         if (padGeometry) {
           remember(padGeometry);
-          scene.add(new THREE.Mesh(padGeometry, solid(0xcfc6ba)));
+          scene.add(new THREE.Mesh(padGeometry, solid(0xe7e2d6)));
         }
       }
-      const coloredMaterial = new THREE.MeshLambertMaterial({
+      const deckMaterial = new THREE.MeshLambertMaterial({
         vertexColors: true,
         side: THREE.DoubleSide,
       });
-      veil(coloredMaterial);
-      ownedMaterials.push(coloredMaterial);
-      const seamMaterial = solid(0xd4cbbd);
-      const crownMaterial = solid(0xd4cbbd);
+      veil(deckMaterial);
+      ownedMaterials.push(deckMaterial);
+      const stoneMaterial = solid(COLORS.houseBody);
+      const seamMaterial = solid(0xe6e1d6);
+      const crownMaterial = solid(0xe6e1d6);
+      stoneMaterial.side = THREE.DoubleSide;
       seamMaterial.side = THREE.DoubleSide;
       crownMaterial.side = THREE.DoubleSide;
-      addVolumes(colored, coloredMaterial);
+      addVolumes(stone, stoneMaterial);
+      addVolumes(decks, deckMaterial);
       addVolumes(seams, seamMaterial);
       addVolumes(crowns, crownMaterial);
       addMesh(scene, box, solid(0xffffff), doors, (item) => item.y || 0, true, pickables, false);
@@ -668,7 +752,7 @@ gl_FragColor.a *= 1.0 - edgeFog;`
             sx: roof.sx,
             sy: 0.2,
             sz: lip,
-            color: 0xc4b8a4,
+            color: 0xe4dfd4,
           });
         }
         for (const localX of [-hx + lip / 2, hx - lip / 2]) {
@@ -681,11 +765,11 @@ gl_FragColor.a *= 1.0 - edgeFog;`
             sx: lip,
             sy: 0.2,
             sz: Math.max(roof.sz - lip * 2, lip),
-            color: 0xc4b8a4,
+            color: 0xe4dfd4,
           });
         }
       });
-      addMesh(scene, box, solid(0xb7b1a6), plinths, () => 0, false, pickables, false);
+      addMesh(scene, box, solid(0xe4dfd4), plinths, () => 0, false, pickables, false);
     }
 
     if (world.apartments.length > 0) {
@@ -715,7 +799,44 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     }
 
     addMesh(scene, box, solid(COLORS.towerRoof), roofs, (item) => item.y || 0, false, pickables, true);
-    addMesh(scene, box, solid(0xc4b8a4), lips, (item) => item.y || 0, false, pickables, true);
+    addMesh(scene, box, solid(0xe4dfd4), lips, (item) => item.y || 0, false, pickables, true);
+
+    type SkyAnchor = { sprite: THREE.Sprite; x: number; y: number; z: number; w: number; h: number };
+    const skyAnchors: SkyAnchor[] = [];
+    const placeSkyMark = (text: string, x: number, y: number, z: number, height: number) => {
+      const mark = createSkySprite("mark");
+      mark.paint(text);
+      mark.sprite.position.set(x, y, z);
+      mark.sprite.visible = false;
+      scene.add(mark.sprite);
+      ownedMaterials.push(mark.sprite.material);
+      skyAnchors.push({ sprite: mark.sprite, x, y, z, w: height * mark.aspect, h: height });
+    };
+    const blockGroups = new Map<string, { x: number; z: number; n: number }>();
+    world.houses.forEach((house) => {
+      const title = blockTitle(house.label);
+      if (!title) return;
+      const group = blockGroups.get(title) || { x: 0, z: 0, n: 0 };
+      group.x += house.x;
+      group.z += house.z;
+      group.n += 1;
+      blockGroups.set(title, group);
+    });
+    blockGroups.forEach((group, title) => {
+      if (group.n < 1) return;
+      placeSkyMark(title, group.x / group.n, 24, group.z / group.n, 7.2);
+    });
+    world.towers.forEach((tower) => {
+      const code = shortCode(tower.label);
+      if (!code) return;
+      placeSkyMark(code, tower.x, tower.sy + 10, tower.z, 6.4);
+    });
+    const unitSign = createSkySprite("unit");
+    unitSign.sprite.visible = false;
+    scene.add(unitSign.sprite);
+    ownedMaterials.push(unitSign.sprite.material);
+    let unitText = "";
+    const unitAnchor = { x: 0, y: 14, z: 0, w: 4.6 * unitSign.aspect, h: 4.6 };
 
     if (world.trees.length > 0) {
       const trunk = new THREE.CylinderGeometry(0.18, 0.34, 3.4, 8);
@@ -790,6 +911,66 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       fromTarget: THREE.Vector3;
       toTarget: THREE.Vector3;
     } | null = null;
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let downX = 0;
+    let downY = 0;
+    let pointerInside = false;
+
+    const itemFromHit = (hit: THREE.Intersection): PlacedInstance | null => {
+      const instanceId = hit.instanceId;
+      const picks = hit.object.userData?.picks as PlacedInstance[] | undefined;
+      if (instanceId != null && picks?.[instanceId]) return picks[instanceId];
+      const ranges = hit.object.userData?.ranges as FaceRange[] | undefined;
+      if (!ranges || hit.faceIndex == null) return null;
+      let lo = 0;
+      let hi = ranges.length - 1;
+      while (lo <= hi) {
+        const midIndex = (lo + hi) >> 1;
+        const range = ranges[midIndex];
+        if (hit.faceIndex < range.start) hi = midIndex - 1;
+        else if (hit.faceIndex >= range.end) lo = midIndex + 1;
+        else return range.item;
+      }
+      return null;
+    };
+
+    const skyPresence = (x: number, z: number) => {
+      const flat = Math.hypot(camera.position.x - x, camera.position.z - z);
+      const byDistance = 1 - THREE.MathUtils.smoothstep(flat, 280, 640);
+      const byHeight = 1 - THREE.MathUtils.smoothstep(camera.position.y, 210, 500);
+      return byDistance * byHeight;
+    };
+
+    const placeFloat = (
+      sprite: THREE.Sprite,
+      x: number,
+      y: number,
+      z: number,
+      w: number,
+      h: number,
+      presence: number,
+    ) => {
+      const material = sprite.material as THREE.SpriteMaterial;
+      if (presence <= 0.04) {
+        sprite.visible = false;
+        material.opacity = 0;
+        return;
+      }
+      const dist = Math.hypot(camera.position.x - x, camera.position.y - y, camera.position.z - z);
+      const fit = THREE.MathUtils.clamp(dist / 120, 0.52, 1.35);
+      sprite.visible = true;
+      sprite.position.set(x, y, z);
+      sprite.scale.set(w * fit, h * fit, 1);
+      material.opacity = presence;
+    };
+
+    const unitFloatText = (item: PlacedInstance) => {
+      if (item.kind === "house") return shortCode(item.label);
+      if (item.kind === "apartment" && item.floor != null && item.apt != null) return `F${item.floor} · P${item.apt}`;
+      return "";
+    };
+
     const tick = () => {
       if (flight) {
         const k = easeInOut(Math.min(1, (performance.now() - flight.start) / flight.duration));
@@ -799,15 +980,45 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       }
       controls.target.y = 0;
       controls.update();
+      skyAnchors.forEach((anchor) => {
+        placeFloat(anchor.sprite, anchor.x, anchor.y, anchor.z, anchor.w, anchor.h, skyPresence(anchor.x, anchor.z));
+      });
+      if (pointerInside) {
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(pickables, false)[0];
+        const item = hit ? itemFromHit(hit) : null;
+        const text = item ? unitFloatText(item) : "";
+        if (item && text) {
+          if (text !== unitText) {
+            unitText = text;
+            unitSign.paint(text);
+          }
+          let x = item.x;
+          let z = item.z;
+          let y = 17;
+          if (item.kind === "apartment") {
+            const dx = camera.position.x - item.x;
+            const dz = camera.position.z - item.z;
+            const len = Math.hypot(dx, dz) || 1;
+            x += (dx / len) * 1.6;
+            z += (dz / len) * 1.6;
+            y = (item.y || 0) + Math.max(item.sy, 1.6) + 2.2;
+          }
+          placeFloat(unitSign.sprite, x, y, z, unitAnchor.w, unitAnchor.h, 1);
+          renderer.domElement.style.cursor = "pointer";
+        } else {
+          unitSign.sprite.visible = false;
+          unitText = "";
+          renderer.domElement.style.cursor = "";
+        }
+      } else if (unitSign.sprite.visible) {
+        unitSign.sprite.visible = false;
+        unitText = "";
+        renderer.domElement.style.cursor = "";
+      }
       renderer.render(scene, camera);
       frame = requestAnimationFrame(tick);
     };
-    tick();
-
-    const raycaster = new THREE.Raycaster();
-    const pointer = new THREE.Vector2();
-    let downX = 0;
-    let downY = 0;
 
     const onPointerDown = (event: PointerEvent) => {
       flight = null;
@@ -822,27 +1033,17 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObjects(pickables, false)[0];
-      if (!hit) return;
-      const instanceId = hit.instanceId;
-      const picks = hit.object.userData?.picks as PlacedInstance[] | undefined;
-      if (instanceId != null && picks?.[instanceId]) {
-        onPickRef.current(toPick(picks[instanceId]));
-        return;
-      }
-      const ranges = hit.object.userData?.ranges as FaceRange[] | undefined;
-      if (!ranges || hit.faceIndex == null) return;
-      let lo = 0;
-      let hi = ranges.length - 1;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        const range = ranges[mid];
-        if (hit.faceIndex < range.start) hi = mid - 1;
-        else if (hit.faceIndex >= range.end) lo = mid + 1;
-        else {
-          onPickRef.current(toPick(range.item));
-          return;
-        }
-      }
+      const item = hit ? itemFromHit(hit) : null;
+      if (item) onPickRef.current(toPick(item));
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      pointerInside = true;
+    };
+    const onPointerLeave = () => {
+      pointerInside = false;
     };
 
     const onDoubleClick = (event: MouseEvent) => {
@@ -881,8 +1082,11 @@ gl_FragColor.a *= 1.0 - edgeFog;`
 
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerleave", onPointerLeave);
     renderer.domElement.addEventListener("dblclick", onDoubleClick);
     renderer.domElement.addEventListener("wheel", onWheel);
+    tick();
 
     const resize = () => {
       const width = host.clientWidth;
@@ -910,6 +1114,8 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       controls.dispose();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
       renderer.domElement.removeEventListener("dblclick", onDoubleClick);
       renderer.domElement.removeEventListener("wheel", onWheel);
       ownedGeometries.forEach((geometry) => geometry.dispose());

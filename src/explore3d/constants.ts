@@ -29,22 +29,22 @@ export const TREE_SPACING_M = 11;
 export const SHRUB_SPACING_M = 6.5;
 
 export const COLORS = {
-  sky: 0x4eb6ee,
-  horizon: 0xd7f0fc,
-  ground: 0x9c967e,
-  road: 0x8c8f96,
-  sidewalk: 0xddd6cb,
-  green: 0x6aaa58,
-  pitch: 0x5c9854,
-  treeTrunk: 0x6b4b34,
-  treeFoliage: 0x3e8c46,
-  shrub: 0x8fbf5c,
-  houseBody: 0xe8e0d4,
-  houseRoof: 0x8a5a4a,
-  towerBody: 0xc9cdd4,
-  towerJoint: 0x3a3836,
-  towerRoof: 0xd7cbb8,
-  amenity: 0xd4c4a8,
+  sky: 0xe7eef2,
+  horizon: 0xf6f4ef,
+  ground: 0xf4f1ea,
+  road: 0xe6e2d8,
+  sidewalk: 0xeeeae2,
+  green: 0xc9d4bc,
+  pitch: 0xb7c6a8,
+  treeTrunk: 0x8a7560,
+  treeFoliage: 0x9aaf86,
+  shrub: 0xa8b992,
+  houseBody: 0xf7f4ee,
+  houseRoof: 0xf7f4ee,
+  towerBody: 0xf3f0e8,
+  towerJoint: 0xe4dfd4,
+  towerRoof: 0xf7f4ee,
+  amenity: 0xe7e1d4,
 } as const;
 
 export const AMENITY_COLORS: Record<string, number> = {

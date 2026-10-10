@@ -26,6 +26,7 @@ import { buildCorridor, connectPaths, extendPath, networkShape, pathAxis, projec
 import { generateStreetNetwork, streetMostlyInside, type StreetPiece } from '@/lib/street-generate';
 import { Checkbox } from '@/components/ui/checkbox';
 import { STATUS_META } from '@/lib/unit-status';
+import { towerPlanCells } from '@/lib/tower-plan';
 import {
   getReferenceImageSrc,
   uploadMapImageFile,
@@ -1487,6 +1488,47 @@ const MapEditor = ({
                     
                     {el.type === 'pitch' && renderPitchLines(pts)}
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? palette.accentFg : palette.fg)} strokeWidth={2.5}/></div></foreignObject>}
+                    {el.type === 'tower' && (
+                      <g pointerEvents="none" clipPath={`url(#clip-editor-${el.id})`}>
+                        {towerPlanCells(el, pts).map((cell) => {
+                          const pad = Math.min(2.2, cell.w * 0.07, cell.h * 0.07);
+                          const x = cell.x + pad;
+                          const y = cell.y + pad;
+                          const w = Math.max(cell.w - pad * 2, 0.5);
+                          const h = Math.max(cell.h - pad * 2, 0.5);
+                          return (
+                            <g key={`plan-${cell.apt}`}>
+                              <rect
+                                x={x}
+                                y={y}
+                                width={w}
+                                height={h}
+                                fill={palette.surface}
+                                fillOpacity={isSelectedEl ? 0.78 : 0.4}
+                                stroke={palette.fg}
+                                strokeOpacity={isSelectedEl ? 0.95 : 0.5}
+                                strokeWidth={isSelectedEl ? 1.6 : 1}
+                              />
+                              <text
+                                x={x + w / 2}
+                                y={y + h / 2}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill={palette.fg}
+                                fillOpacity={isSelectedEl ? 1 : 0.72}
+                                style={{
+                                  fontSize: `${Math.max(8, Math.min(w, h) * (isSelectedEl ? 0.46 : 0.36))}px`,
+                                  fontFamily: canvasFont,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {cell.apt}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </g>
+                    )}
                     
                     {el.type === 'road' && !el.isStroke && (
                       <g pointerEvents="none">
@@ -2165,6 +2207,26 @@ const MapEditor = ({
 
                   {selectedElement.type === 'tower' && (
                     <div className="space-y-6">
+                      <div className="space-y-2 border border-line bg-surface-sunken p-4">
+                        <Label className="text-[12px] font-medium">اتجاه الشقق داخل البصمة</Label>
+                        <p className="text-[11px] text-fg-secondary">صف 1 و3 هو الواجهة. حرّك الخطة حتى تطل على الشارع.</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => updateSelectedElement({ planQuarter: ((selectedElement.planQuarter || 0) + 1) % 4 })}
+                          >
+                            تدوير الخطة
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={selectedElement.planFlip ? "default" : "outline"}
+                            onClick={() => updateSelectedElement({ planFlip: !selectedElement.planFlip })}
+                          >
+                            قلب الواجهة
+                          </Button>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2"><Label className="text-[11px] text-fg-muted">عدد الطوابق</Label><Input type="number" value={selectedElement.floors} onChange={(e) => updateSelectedElement({ floors: parseInt(e.target.value) })} className="" /></div>
                         <div className="space-y-2"><Label className="text-[11px] text-fg-muted">شقق/طابق</Label><Input type="number" value={selectedElement.apartmentsPerFloor} onChange={(e) => handleApartmentsCountChange(parseInt(e.target.value))} className="" /></div>

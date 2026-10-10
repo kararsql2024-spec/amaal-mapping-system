@@ -227,6 +227,7 @@ interface InteractiveMapProps {
 
 // كاش الأيقونات والصور المرجعية والـ Patterns للـ Canvas
 const iconImageCache = new Map<string, HTMLImageElement>();
+const iconLoadHooks = new WeakSet<HTMLImageElement>();
 const referenceImageCache = new Map<string, HTMLImageElement>();
 const texturePatternCache = new Map<string, CanvasPattern>();
 
@@ -291,7 +292,7 @@ const getIconSvgUri = (type: string, color: string) => {
     svgContent = `<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>`;
   }
 
-  const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${svgContent}</svg>`;
+  const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${svgContent}</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svgString)}`;
 };
 
@@ -453,6 +454,7 @@ const InteractiveMap = ({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [areReferenceImagesReady, setAreReferenceImagesReady] = useState(true);
+  const [iconRevision, setIconRevision] = useState(0);
 
   // حالة التحكم في المعاينة السريعة (تكون مفعّلة افتراضياً)
   const [isQuickPreviewEnabled, setIsQuickPreviewEnabled] = useState(true);
@@ -703,6 +705,8 @@ const InteractiveMap = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cityCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cityDepsRef = useRef<unknown[]>([]);
 
   const canShowQuickPreview = permissions?.showQuickPreview !== false;
 
@@ -938,6 +942,44 @@ const InteractiveMap = ({
       });
   }, [elements]);
 
+  const preparedRoads = useMemo(() => {
+    const prepared = new Map<string, {
+      points: Point[];
+      holes?: Point[][];
+      guides?: { left: Point[]; right: Point[]; center: Point[] }[];
+    }>();
+    for (const el of sortedElements) {
+      if ((el.type !== "road" && el.type !== "sidewalk") || !el.centerline || el.centerline.length < 2 || !el.pathWidth) continue;
+      const shape = networkShape(el.centerline, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
+      const points = shape.outline.length >= 3
+        ? shape.outline
+        : (el.points && el.points.length > 0
+          ? el.points
+          : [
+            { x: el.x, y: el.y },
+            { x: el.x + el.width, y: el.y },
+            { x: el.x + el.width, y: el.y + el.height },
+            { x: el.x, y: el.y + el.height },
+          ]);
+      const guides = el.type === "road" && !el.isStroke
+        ? [el.centerline, ...(el.centerlineBranches || [])].map((line) => {
+          const guide = buildCorridor(line, Math.max(el.pathWidth! * 0.66, 4));
+          return {
+            left: guide.left,
+            right: guide.right,
+            center: el.pathClosed && line.length >= 3 ? [...line, line[0]] : line,
+          };
+        })
+        : undefined;
+      prepared.set(el.id, {
+        points,
+        holes: shape.outline.length >= 3 ? shape.holes : el.pathHoles,
+        guides,
+      });
+    }
+    return prepared;
+  }, [sortedElements]);
+
   const referenceImageUrls = useMemo(() => {
     return sortedElements
       .filter((el) => el.type === 'reference_image')
@@ -968,7 +1010,7 @@ const InteractiveMap = ({
     };
   }, [referenceImageUrls.join('|')]);
 
-  // دورة الرسم الفائقة على HTML5 Canvas بـ 60 FPS
+  // المدينة تُرسم مرة في لوحة مخفية، والسحب والتكبير يعرضانها فقط.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !containerRef.current) return;
@@ -977,22 +1019,18 @@ const InteractiveMap = ({
 
     const rect = containerRef.current.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const bitmapW = Math.max(1, Math.round(rect.width * dpr));
+    const bitmapH = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== bitmapW || canvas.height !== bitmapH) {
+      canvas.width = bitmapW;
+      canvas.height = bitmapH;
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+    }
 
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
-
-    ctx.save();
-    ctx.scale(dpr, dpr);
-
-    // خلفية المخطط
-    ctx.fillStyle = backgroundColor;
-    ctx.fillRect(0, 0, rect.width, rect.height);
-
-    ctx.save();
-    ctx.translate(position.x, position.y);
-    ctx.scale(scale, scale);
+    const showHeatOverlay = canShowHeatmap && heatmapMode !== "off" && heatmapStyle !== "units";
+    const paintCity = (target: CanvasRenderingContext2D) => {
+    const ctx = target;
 
     // رسم الشبكة إذا كانت مفعلة
     if (showGrid) {
@@ -1014,7 +1052,6 @@ const InteractiveMap = ({
     }
 
     // رسم كل العناصر بعد جاهزية صورة Site plan
-    const showHeatOverlay = canShowHeatmap && heatmapMode !== "off" && heatmapStyle !== "units";
     if (areReferenceImagesReady) {
     sortedElements.forEach((el) => {
       if (showHeatOverlay && (el.type === "house" || el.type === "tower")) {
@@ -1022,15 +1059,9 @@ const InteractiveMap = ({
       }
       const styles = getElementStyles(el);
       const isSelected = selectedHouseId === el.id;
-      let pts = getElementPoints(el);
-      let roadHoles = el.pathHoles;
-      if ((el.type === "road" || el.type === "sidewalk") && el.centerline && el.centerline.length >= 2 && el.pathWidth) {
-        const shape = networkShape(el.centerline, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
-        if (shape.outline.length >= 3) {
-          pts = shape.outline;
-          roadHoles = shape.holes;
-        }
-      }
+      const prepared = preparedRoads.get(el.id);
+      let pts = prepared ? prepared.points : getElementPoints(el);
+      let roadHoles = prepared ? prepared.holes : el.pathHoles;
       const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
       const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
       
@@ -1169,19 +1200,15 @@ const InteractiveMap = ({
         ctx.strokeStyle = palette.surface;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
-        const paths = el.centerline && el.centerline.length >= 2 && el.pathWidth
-          ? [el.centerline, ...(el.centerlineBranches || [])]
-          : [];
-        if (paths.length > 0) {
-          paths.forEach((line) => {
-            const guide = buildCorridor(line, Math.max((el.pathWidth || 0) * 0.66, 4));
+        if (prepared?.guides) {
+          prepared.guides.forEach((guide) => {
             ctx.setLineDash([]);
             ctx.lineWidth = 1.5;
             trace(guide.left);
             trace(guide.right);
             ctx.setLineDash([10, 10]);
             ctx.lineWidth = 2;
-            trace(el.pathClosed && line.length >= 3 ? [...line, line[0]] : line);
+            trace(guide.center);
           });
         } else {
           const marks = roadMarkings(pts);
@@ -1202,7 +1229,7 @@ const InteractiveMap = ({
 
       if (showIcon) {
         const img = getCachedIconImage(iconType, iconColor);
-        if (img.complete) {
+        if (img.complete && img.naturalWidth > 0) {
           const iconY = centerY - (dynamicIconSize * 0.45);
           ctx.drawImage(
             img,
@@ -1211,6 +1238,9 @@ const InteractiveMap = ({
             dynamicIconSize,
             dynamicIconSize
           );
+        } else if (!iconLoadHooks.has(img)) {
+          iconLoadHooks.add(img);
+          img.addEventListener("load", () => setIconRevision((value) => value + 1), { once: true });
         }
       }
 
@@ -1293,14 +1323,154 @@ const InteractiveMap = ({
       });
     }
     }
+    };
 
-    ctx.restore();
+    const cityDeps = [
+      mapWidth, mapHeight, showGrid, sortedElements, preparedRoads, selectedHouseId,
+      housesData, isAnyFilterActive, areReferenceImagesReady, heatmapMode, heatmapStyle,
+      heatmapBlobs, matchesFilter, getElementStyles, iconRevision,
+    ];
+    const previous = cityDepsRef.current;
+    const cityDirty = !cityCanvasRef.current
+      || previous.length !== cityDeps.length
+      || cityDeps.some((item, index) => item !== previous[index]);
+    if (cityDirty) {
+      let city = cityCanvasRef.current;
+      if (!city) {
+        city = document.createElement("canvas");
+        cityCanvasRef.current = city;
+      }
+      const cityW = Math.max(1, Math.round(mapWidth));
+      const cityH = Math.max(1, Math.round(mapHeight));
+      if (city.width !== cityW || city.height !== cityH) {
+        city.width = cityW;
+        city.height = cityH;
+      }
+      const cityCtx = city.getContext("2d");
+      if (cityCtx) {
+        cityCtx.setTransform(1, 0, 0, 1, 0, 0);
+        cityCtx.clearRect(0, 0, city.width, city.height);
+        paintCity(cityCtx);
+        cityDepsRef.current = cityDeps;
+      }
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.save();
+    ctx.translate(position.x, position.y);
+    ctx.scale(scale, scale);
+    const city = cityCanvasRef.current;
+    if (city && city.width > 0) ctx.drawImage(city, 0, 0);
+    if (scale * dpr > 1.05 && areReferenceImagesReady) {
+      const viewLeft = -position.x / scale;
+      const viewTop = -position.y / scale;
+      const viewRight = viewLeft + rect.width / scale;
+      const viewBottom = viewTop + rect.height / scale;
+      sortedElements.forEach((el) => {
+        if (el.type !== "house" && el.type !== "tower" && el.type !== "amenity") return;
+        if (showHeatOverlay && (el.type === "house" || el.type === "tower")) return;
+        const pts = getElementPoints(el);
+        if (pts.length < 3) return;
+        let minX = pts[0].x;
+        let maxX = pts[0].x;
+        let minY = pts[0].y;
+        let maxY = pts[0].y;
+        let sumX = 0;
+        let sumY = 0;
+        for (const point of pts) {
+          sumX += point.x;
+          sumY += point.y;
+          if (point.x < minX) minX = point.x;
+          if (point.x > maxX) maxX = point.x;
+          if (point.y < minY) minY = point.y;
+          if (point.y > maxY) maxY = point.y;
+        }
+        const elWidth = maxX - minX;
+        const elHeight = maxY - minY;
+        const pad = Math.hypot(elWidth, elHeight);
+        if (maxX < viewLeft - pad || minX > viewRight + pad || maxY < viewTop - pad || minY > viewBottom + pad) return;
+        const centerX = sumX / pts.length;
+        const centerY = sumY / pts.length;
+        const minDim = Math.min(elWidth, elHeight);
+        const styles = getElementStyles(el);
+        const isSelected = selectedHouseId === el.id;
+        let isFilteredIn = false;
+        let isDimmed = false;
+        if (isAnyFilterActive && (el.type === "house" || el.type === "tower")) {
+          if (matchesFilter(el)) isFilteredIn = true;
+          else isDimmed = true;
+        }
+        const showIcon = !el.hideIcon;
+        const dynamicIconSize = showIcon ? minDim * 0.42 : 0;
+        const iconType = el.type === "house" ? "house" : el.type === "tower" ? "tower" : el.amenityType || "amenity";
+        const iconColor = isDimmed ? palette.fgMuted : (el.textColor || (el.type === "tower" || (el.type === "house" && housesData[el.id]) ? palette.surface : palette.fg));
+        const path2d = new Path2D();
+        path2d.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) path2d.lineTo(pts[i].x, pts[i].y);
+        path2d.closePath();
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        if (el.rotation) ctx.rotate((el.rotation * Math.PI) / 180);
+        ctx.translate(-centerX, -centerY);
+        ctx.globalAlpha = el.opacity ?? styles.opacity ?? 1;
+        ctx.fillStyle = isDimmed ? mapPalette.gridStrong : styles.fill;
+        ctx.fill(path2d);
+        if (el.hasTexture && !isDimmed) {
+          ctx.save();
+          ctx.clip(path2d);
+          const texturePattern = getCanvasTexturePattern(ctx, el.textureType || "glass", el.textureColor || "#ffffff");
+          if (texturePattern) {
+            ctx.fillStyle = texturePattern;
+            ctx.fill(path2d);
+          }
+          ctx.restore();
+        }
+        const strokeColor = isFilteredIn ? mapPalette.highlight : (isDimmed ? palette.lineStrong : (isSelected ? mapPalette.selection : (el.hasBorder && el.borderColor ? el.borderColor : styles.stroke)));
+        const strokeWidth = isFilteredIn ? 3.5 : (isSelected ? 3.5 : (el.hasBorder ? 3 : styles.strokeWidth));
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
+        ctx.stroke(path2d);
+        if (isFilteredIn) {
+          ctx.shadowColor = mapPalette.highlight;
+          ctx.shadowBlur = 12;
+          ctx.stroke(path2d);
+          ctx.shadowBlur = 0;
+        }
+        if (showIcon) {
+          const img = getCachedIconImage(iconType, iconColor);
+          if (img.complete && img.naturalWidth > 0) {
+            const iconY = centerY - dynamicIconSize * 0.45;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, centerX - dynamicIconSize / 2, iconY - dynamicIconSize / 2, dynamicIconSize, dynamicIconSize);
+          }
+        }
+        if (el.label) {
+          drawBoundedText(
+            ctx,
+            el.label.split("-").pop() || "",
+            centerX,
+            showIcon ? centerY + dynamicIconSize * 0.45 : centerY,
+            elWidth * 0.82,
+            showIcon ? elHeight * 0.45 : elHeight * 0.8,
+            canvasFont,
+            true,
+            iconColor,
+            minDim * 0.28,
+          );
+        }
+        ctx.restore();
+      });
+    }
     ctx.restore();
   }, [
     position, scale, mapWidth, mapHeight, backgroundColor, showGrid, 
-    sortedElements, selectedHouseId, housesData, isAnyFilterActive, 
+    sortedElements, preparedRoads, selectedHouseId, housesData, isAnyFilterActive, 
     matchesFilter, getElementStyles, areReferenceImagesReady,
-    heatmapMode, heatmapStyle, heatmapBlobs
+    heatmapMode, heatmapStyle, heatmapBlobs, iconRevision
   ]);
 
   // فحص النقر المباشر والدقيق Hit Testing (تتجاهل الوحدات المظللة بالرمادي إذا كان هناك فلتر نشط)
