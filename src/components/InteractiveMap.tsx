@@ -17,6 +17,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { canvasFont, mapPalette, palette } from "@/lib/theme";
+import { buildCorridor, networkShape, roadMarkings } from "@/lib/road-geometry";
 import { getReferenceImageSrc } from "@/lib/map-image-storage";
 import { PRIMARY_STATUSES, STATUS_META } from "@/lib/unit-status";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -868,7 +869,8 @@ const InteractiveMap = ({
     if (el.type === 'label_area') return { fill: el.color || mapPalette.labelArea, stroke: el.hasBorder ? (el.borderColor || mapPalette.labelAreaStroke) : (el.color || mapPalette.labelArea), opacity: el.opacity || 0.2, strokeWidth: el.hasBorder ? 3 : 2 };
     
     const data = housesData[el.id];
-    if (el.type === 'road') return { fill: mapPalette.road, stroke: el.hasBorder ? (el.borderColor || mapPalette.roadStroke) : mapPalette.road, opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
+    if (el.type === 'road') return { fill: mapPalette.road, stroke: el.hasBorder ? (el.borderColor || mapPalette.roadStroke) : mapPalette.roadStroke, opacity: 1, strokeWidth: el.pathWidth ? 2 : (el.hasBorder ? 12 : 10) };
+    if (el.type === 'sidewalk') return { fill: mapPalette.sidewalk, stroke: el.hasBorder ? (el.borderColor || mapPalette.sidewalkStroke) : mapPalette.sidewalkStroke, opacity: 1, strokeWidth: 2 };
     if (el.type === 'green') return { fill: mapPalette.green, stroke: el.hasBorder ? (el.borderColor || mapPalette.greenStroke) : mapPalette.green, opacity: 1, strokeWidth: el.hasBorder ? 12 : 10 };
     if (el.type === 'pitch') return { fill: mapPalette.pitch, stroke: el.hasBorder ? (el.borderColor || mapPalette.pitchStroke) : mapPalette.pitchStroke, opacity: 1, strokeWidth: 2 };
     if (el.type === 'tower' && heatmapMode === 'off') return { fill: el.color || palette.accent, stroke: el.hasBorder ? (el.borderColor || palette.fg) : palette.fg, opacity: 1, strokeWidth: el.hasBorder ? 4 : 2 };
@@ -931,7 +933,7 @@ const InteractiveMap = ({
     return [...elements]
       .filter(el => el.type !== 'reference_image' || el.showInMain)
       .sort((a, b) => {
-        const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
+        const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'sidewalk': 0.5, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
         return (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0);
       });
   }, [elements]);
@@ -1020,7 +1022,15 @@ const InteractiveMap = ({
       }
       const styles = getElementStyles(el);
       const isSelected = selectedHouseId === el.id;
-      const pts = getElementPoints(el);
+      let pts = getElementPoints(el);
+      let roadHoles = el.pathHoles;
+      if ((el.type === "road" || el.type === "sidewalk") && el.centerline && el.centerline.length >= 2 && el.pathWidth) {
+        const shape = networkShape(el.centerline, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
+        if (shape.outline.length >= 3) {
+          pts = shape.outline;
+          roadHoles = shape.holes;
+        }
+      }
       const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
       const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
       
@@ -1091,11 +1101,17 @@ const InteractiveMap = ({
         path2d.lineTo(pts[i].x, pts[i].y);
       }
       path2d.closePath();
+      (roadHoles || []).forEach((hole) => {
+        if (hole.length < 3) return;
+        path2d.moveTo(hole[0].x, hole[0].y);
+        for (let i = 1; i < hole.length; i++) path2d.lineTo(hole[i].x, hole[i].y);
+        path2d.closePath();
+      });
 
       if (el.type !== 'text') {
         // التعبئة الأساسية (Fill) - إذا كانت الوحدة خارج الفلتر تلوّن بالرمادي
         ctx.fillStyle = isDimmed ? mapPalette.gridStrong : styles.fill;
-        ctx.fill(path2d);
+        ctx.fill(path2d, roadHoles?.length ? 'evenodd' : 'nonzero');
 
         // رسم الـ Texture والمظاهر إذا كانت مفعلة للعنصر (فقط للوحدات المشمولة بالفلتر)
         if (el.hasTexture && !isDimmed) {
@@ -1139,6 +1155,43 @@ const InteractiveMap = ({
         ctx.beginPath();
         ctx.arc(midX, midY, Math.min(elWidth, elHeight) / 6, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      if (el.type === 'road' && !el.isStroke) {
+        const trace = (line: Point[]) => {
+          if (line.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(line[0].x, line[0].y);
+          for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
+          ctx.stroke();
+        };
+        ctx.save();
+        ctx.strokeStyle = palette.surface;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        const paths = el.centerline && el.centerline.length >= 2 && el.pathWidth
+          ? [el.centerline, ...(el.centerlineBranches || [])]
+          : [];
+        if (paths.length > 0) {
+          paths.forEach((line) => {
+            const guide = buildCorridor(line, Math.max((el.pathWidth || 0) * 0.66, 4));
+            ctx.setLineDash([]);
+            ctx.lineWidth = 1.5;
+            trace(guide.left);
+            trace(guide.right);
+            ctx.setLineDash([10, 10]);
+            ctx.lineWidth = 2;
+            trace(el.pathClosed && line.length >= 3 ? [...line, line[0]] : line);
+          });
+        } else {
+          const marks = roadMarkings(pts);
+          ctx.lineWidth = 1.5;
+          marks.edges.forEach(trace);
+          ctx.setLineDash([10, 10]);
+          ctx.lineWidth = 2;
+          trace(marks.center);
+        }
+        ctx.restore();
       }
 
       // حساب أبعاد المكان المتاح للأيقونة والنص بفصل تام وبدون أي التصاق
