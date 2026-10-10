@@ -20,6 +20,10 @@ export interface MapElement {
   hideIcon?: boolean;
   floors?: number;
   apartmentsPerFloor?: number;
+  /** تدوير خطة الشقق داخل البصمة، بخطوات 90 درجة. لا يغيّر زاوية قطعة الأرض. */
+  planQuarter?: number;
+  /** قلب واجهة العمارة داخل البصمة حتى يطل الصف الأمامي على الجهة الأخرى. */
+  planFlip?: boolean;
   groundFloorSizes?: number[]; // مساحات شقق الطابق الأرضي
   typicalFloorSizes?: number[]; // مساحات شقق الطابق المتكرر
   customArea?: number; // المساحة المخصصة للمنزل يدوياً (تتجاوز المساحة القياسية للصنف)
