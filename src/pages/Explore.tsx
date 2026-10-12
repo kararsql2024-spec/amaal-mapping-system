@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCenterSession } from "@/lib/center-auth";
+import { canAccessExplore } from "@/lib/dept-permissions";
 import { getStatusLabel, getStatusMeta, PRIMARY_STATUSES } from "@/lib/unit-status";
 import { getHouseArea } from "@/lib/units";
 import {
@@ -39,6 +40,7 @@ const DEFAULT_PERMISSIONS = {
   canEditUnitData: false,
   showBrochureButton: true,
   canAccessPaymentForm: true,
+  canAccessExplore: true,
 };
 
 const slimCatalog = (elements: MapElement[] | undefined): MapElement[] => {
@@ -65,6 +67,7 @@ const slimCatalog = (elements: MapElement[] | undefined): MapElement[] => {
 
 const Explore = ({ projects }: { projects: Project[] }) => {
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [permitted, setPermitted] = useState(true);
   const [permissions, setPermissions] = useState<any>(DEFAULT_PERMISSIONS);
   const [houseTypeAreas, setHouseTypeAreas] = useState<Record<string, Record<string, number>>>({});
   const [projectId, setProjectId] = useState("");
@@ -96,7 +99,9 @@ const Explore = ({ projects }: { projects: Project[] }) => {
       const permsRow = settings.find((row) => row.key === "dept_permissions");
       const configRow = settings.find((row) => row.key === "project_configs");
       const deptPerms = (permsRow?.value as Record<string, Record<string, boolean>> | undefined)?.[session.type];
-      if (deptPerms) setPermissions({ ...DEFAULT_PERMISSIONS, ...deptPerms });
+      const merged = { ...DEFAULT_PERMISSIONS, ...(deptPerms || {}) };
+      setPermissions(merged);
+      setPermitted(canAccessExplore(merged));
       const configs = (configRow?.value || {}) as Record<string, { houseTypeAreas?: Record<string, number> }>;
       const areas: Record<string, Record<string, number>> = {};
       Object.entries(configs).forEach(([id, config]) => {
@@ -257,6 +262,17 @@ const Explore = ({ projects }: { projects: Project[] }) => {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-fg">
         <p className="text-[14px]">يلزم تسجيل الدخول لفتح الاستكشاف الثلاثي.</p>
+        <Link to="/">
+          <Button variant="outline">العودة للرئيسية</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  if (!permitted) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-fg" dir="rtl">
+        <p className="text-[14px]">لا تملك صلاحية نظام الاستكشاف.</p>
         <Link to="/">
           <Button variant="outline">العودة للرئيسية</Button>
         </Link>

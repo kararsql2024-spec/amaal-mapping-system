@@ -38,6 +38,8 @@ export interface PlacedInstance {
   floor?: number;
   /** رقم الشقة في الطابق، من 1. */
   apt?: number;
+  /** رمز الوحدة كما في بقية النظام، مثل A19-F1-P7. الطابق الأرضي FG. */
+  code?: string;
 }
 
 export interface ExplorePick {

@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { canAccessPaymentArchive } from "@/lib/dept-permissions";
+import { canAccessExplore, canAccessPaymentArchive } from "@/lib/dept-permissions";
 import { getHouseArea as getHouseAreaFor } from "@/lib/units";
 import {
   collectProjectBookingActivity,
@@ -169,6 +169,8 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     canAccessPaymentForm: true,
     showPaymentPlanButton: true,
     canAccessPaymentArchive: true,
+    canAccessExplore: true,
+    canAccessTour: true,
   });
 
   const activeUnitsData = React.useMemo(() => {
@@ -1186,9 +1188,11 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
               <Button variant="ghost" size="sm" className="px-2">التقارير</Button>
             </Link>
           )}
-          <Link to="/explore">
-            <Button variant="ghost" size="sm" className="px-2">استكشاف</Button>
-          </Link>
+          {canAccessExplore(permissions) && (
+            <Link to="/explore">
+              <Button variant="ghost" size="sm" className="px-2">استكشاف</Button>
+            </Link>
+          )}
 
           {canAccessPaymentArchive(permissions) && (
             <Link to="/sales/archive">
