@@ -30,9 +30,13 @@ export const subscribeTours = (listener: (tours: TourTemplate[]) => void) => {
   return () => listeners.delete(listener);
 };
 
-const normalize = (tour: TourTemplate): TourTemplate => ({
+const normalize = (tour: TourTemplate): TourTemplate => {
+  const listed = Array.isArray(tour.projectIds) ? tour.projectIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
+  const projectIds = Array.from(new Set(listed.length ? listed : tour.projectId ? [tour.projectId] : []));
+  return {
   ...tour,
-  projectId: tour.projectId || "",
+  projectId: projectIds[0] || "",
+  projectIds,
   unitKey: tour.unitKey || "",
   unitLabel: tour.unitLabel || "",
   grid: tour.grid !== false,
@@ -46,7 +50,8 @@ const normalize = (tour: TourTemplate): TourTemplate => ({
       const rot = typeof item.rot === "number" ? item.rot : typeof legacy.turn === "number" ? legacy.turn * 90 : 0;
       return { ...item, rot, scale: item.scale || 1, note: item.note || "" };
     }),
-});
+  };
+};
 
 const readLocal = (): TourTemplate[] => {
   try {

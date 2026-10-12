@@ -4,7 +4,13 @@ import type { TourTemplate } from "./types";
 
 const isApartment = (unitId?: string | null) => Boolean(unitId && unitId.includes("_F") && unitId.includes("_A"));
 
-/** الجولة لصنف داخل مشروع: Type C أو شقة 192، لا لوحدة واحدة ولا لمدينة أخرى. */
+export const projectIdsOf = (tour: Pick<TourTemplate, "projectId" | "projectIds">) => {
+  const listed = (tour.projectIds || []).map((id) => id.trim()).filter(Boolean);
+  if (listed.length) return Array.from(new Set(listed));
+  return tour.projectId ? [tour.projectId] : [];
+};
+
+/** الجولة لصنف واحد يمكن أن تغطي أكثر من مشروع. */
 export const findTourForUnit = (
   unit: {
     unitId?: string | null;
@@ -17,7 +23,7 @@ export const findTourForUnit = (
   const apartment = isApartment(unit.unitId);
   return (
     tours
-      .filter((tour) => tour.projectId && tour.unitKey && (!unit.projectId || tour.projectId === unit.projectId))
+      .filter((tour) => tour.unitKey && (!unit.projectId || projectIdsOf(tour).includes(unit.projectId)))
       .filter((tour) => tour.walls.length + tour.openings.length + tour.items.length > 0)
       .filter((tour) => {
         if (apartment) return tour.kind === "apartment" && Math.abs(Number(tour.unitKey) - Number(unit.unitSize || 0)) < 0.6;

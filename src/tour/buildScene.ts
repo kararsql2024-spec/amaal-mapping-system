@@ -120,13 +120,13 @@ const roomLabel = (text: string) => {
 };
 
 const segmentParts = (wall: TourWall) => {
-  const parts: { ax: number; ay: number; bx: number; by: number; start: number; len: number }[] = [];
+  const parts: { ax: number; ay: number; bx: number; by: number; start: number; len: number; index: number }[] = [];
   let cursor = 0;
   for (let index = 1; index < wall.points.length; index++) {
     const start = wall.points[index - 1];
     const end = wall.points[index];
     const len = Math.hypot(end.x - start.x, end.y - start.y);
-    if (len > 0.02) parts.push({ ax: start.x, ay: start.y, bx: end.x, by: end.y, start: cursor, len });
+    if (len > 0.02) parts.push({ ax: start.x, ay: start.y, bx: end.x, by: end.y, start: cursor, len, index: index - 1 });
     cursor += len;
   }
   return parts;
@@ -183,7 +183,89 @@ const plasterMaterial = () => {
     ctx.putImageData(image, 0, 0);
     texture.needsUpdate = true;
   }
-  return new THREE.MeshBasicMaterial({ map: texture });
+  return new THREE.MeshLambertMaterial({
+    map: texture,
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveMap: texture,
+    emissiveIntensity: 0.72,
+    side: THREE.DoubleSide,
+  });
+};
+
+const wallEdges = (points: { x: number; y: number }[], half: number) => {
+  const left: { x: number; y: number }[] = [];
+  const right: { x: number; y: number }[] = [];
+  const direction = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+    return { x: (to.x - from.x) / len, y: (to.y - from.y) / len };
+  };
+  points.forEach((point, index) => {
+    const prev = index > 0 ? direction(points[index - 1], point) : null;
+    const next = index < points.length - 1 ? direction(point, points[index + 1]) : null;
+    const n1 = prev ? { x: -prev.y, y: prev.x } : { x: -(next?.y || 0), y: next?.x || 1 };
+    const n2 = next ? { x: -next.y, y: next.x } : n1;
+    let mx = n1.x + n2.x;
+    let my = n1.y + n2.y;
+    const span = Math.hypot(mx, my);
+    if (span < 0.001) {
+      mx = n1.x;
+      my = n1.y;
+    } else {
+      mx /= span;
+      my /= span;
+    }
+    const denom = mx * n1.x + my * n1.y;
+    const scale = Math.max(-half * 4, Math.min(half * 4, half / (Math.abs(denom) < 0.25 ? 0.25 : denom)));
+    left.push({ x: point.x + mx * scale, y: point.y + my * scale });
+    right.push({ x: point.x - mx * scale, y: point.y - my * scale });
+  });
+  return { left, right };
+};
+
+const addPrism = (
+  parent: THREE.Object3D,
+  aL: { x: number; y: number },
+  aR: { x: number; y: number },
+  bR: { x: number; y: number },
+  bL: { x: number; y: number },
+  y: number,
+  height: number,
+  material: THREE.Material,
+  edges?: THREE.Material,
+  capStart = true,
+  capEnd = true,
+) => {
+  const y0 = y;
+  const y1 = y + height;
+  const data: number[] = [];
+  const corner = (point: { x: number; y: number }, yy: number) => [point.x, yy, point.y] as const;
+  const face = (a: readonly [number, number, number], b: readonly [number, number, number], c: readonly [number, number, number], d: readonly [number, number, number]) => {
+    data.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2]);
+  };
+  const topL = corner(aL, y1);
+  const topR = corner(aR, y1);
+  const endR = corner(bR, y1);
+  const endL = corner(bL, y1);
+  face(topL, endL, endR, topR);
+  face(corner(aL, y0), corner(bL, y0), endL, topL);
+  face(topR, endR, corner(bR, y0), corner(aR, y0));
+  if (capStart) face(corner(aR, y0), topR, topL, corner(aL, y0));
+  if (capEnd) face(corner(bL, y0), endL, endR, corner(bR, y0));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(data, 3));
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, material);
+  parent.add(mesh);
+  if (!edges) return;
+  const source = new THREE.EdgesGeometry(geometry, 25);
+  const lines = new LineSegmentsGeometry();
+  lines.fromEdgesGeometry(source);
+  source.dispose();
+  const outline = new LineSegments2(lines, edges as LineMaterial);
+  outline.renderOrder = 2;
+  outline.raycast = () => undefined;
+  mesh.add(outline);
 };
 
 const cutWall = (
@@ -194,6 +276,7 @@ const cutWall = (
   plaster: THREE.Material,
   wallEdge: THREE.Material,
 ) => {
+  const outline = wallEdges(wall.points, WALL_THICKNESS / 2);
   const wood = woodDoor();
   const metal = solid(0xb7bcc2);
   const glass = new THREE.MeshLambertMaterial({ color: 0xd5dee6, transparent: true, opacity: 0.42 });
@@ -260,11 +343,29 @@ const cutWall = (
       return { x: segment.ax + (segment.bx - segment.ax) * t, y: segment.ay + (segment.by - segment.ay) * t };
     };
     let cursor = segment.start;
+    const mix = (from: { x: number; y: number }, to: { x: number; y: number }, t: number) => ({
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+    });
     const emitSolid = (from: number, to: number) => {
       if (to - from < 0.05) return;
-      const a = pointAt(from);
-      const b = pointAt(to);
-      placeRun(parent, a.x, a.y, b.x, b.y, base, WALL_HEIGHT, plaster, 0, wallEdge);
+      const t0 = (from - segment.start) / segment.len;
+      const t1 = (to - segment.start) / segment.len;
+      const capStart = !(Math.abs(from - segment.start) < 0.02 && segment.index > 0);
+      const capEnd = !(Math.abs(to - end) < 0.02 && segment.index < wall.points.length - 2);
+      addPrism(
+        parent,
+        mix(outline.left[segment.index], outline.left[segment.index + 1], t0),
+        mix(outline.right[segment.index], outline.right[segment.index + 1], t0),
+        mix(outline.right[segment.index], outline.right[segment.index + 1], t1),
+        mix(outline.left[segment.index], outline.left[segment.index + 1], t1),
+        base,
+        WALL_HEIGHT,
+        plaster,
+        wallEdge,
+        capStart,
+        capEnd,
+      );
     };
     cuts.forEach((cut) => {
       const from = Math.max(cut.from, segment.start);
@@ -296,6 +397,32 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
   });
   wallEdge.resolution.set(window.innerWidth, window.innerHeight);
   root.userData.wallEdge = wallEdge;
+  let focusMinX = Infinity;
+  let focusMaxX = -Infinity;
+  let focusMinY = Infinity;
+  let focusMaxY = -Infinity;
+
+  const footprint = (level: number) => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    (tour.walls || []).filter((wall) => wall.floor === level && wall.points.length > 1).forEach((wall) => wall.points.forEach((point) => {
+      xs.push(point.x);
+      ys.push(point.y);
+    }));
+    if (!xs.length) {
+      (tour.items || []).filter((item) => item.floor === level).forEach((item) => {
+        xs.push(item.x);
+        ys.push(item.y);
+      });
+    }
+    if (!xs.length) return null;
+    const pad = 0.7;
+    const minX = Math.min(...xs) - pad;
+    const maxX = Math.max(...xs) + pad;
+    const minY = Math.min(...ys) - pad;
+    const maxY = Math.max(...ys) + pad;
+    return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cz: (minY + maxY) / 2 };
+  };
 
   for (let level = 1; level <= tour.floors; level++) {
     if (!show(level)) continue;
@@ -304,15 +431,33 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
       (tour.items || []).some((item) => item.floor === level) ||
       (tour.openings || []).some((opening) => opening.floor === level);
     if (floor === "all" && level > 1 && !occupied) continue;
+    const box = footprint(level);
+    if (!box) continue;
+    focusMinX = Math.min(focusMinX, box.minX);
+    focusMaxX = Math.max(focusMaxX, box.maxX);
+    focusMinY = Math.min(focusMinY, box.minY);
+    focusMaxY = Math.max(focusMaxY, box.maxY);
     const slabMaterial = floor === "all" && level > 1 ? floorMaterial.clone() : floorMaterial;
     if (slabMaterial !== floorMaterial) {
       slabMaterial.transparent = true;
       slabMaterial.opacity = 0.22;
       slabMaterial.depthWrite = false;
     }
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(22.4, 0.08, 16.4), slabMaterial);
-    slab.position.set(11, (level - 1) * FLOOR_STEP - 0.04, 8);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(Math.max(box.maxX - box.minX, 1), 0.08, Math.max(box.maxY - box.minY, 1)), slabMaterial);
+    slab.position.set(box.cx, (level - 1) * FLOOR_STEP - 0.04, box.cz);
     root.add(slab);
+    const ceiling = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.max(box.maxX - box.minX, 1), 0.05, Math.max(box.maxY - box.minY, 1)),
+      new THREE.MeshBasicMaterial({ color: 0xe4e6e8 }),
+    );
+    ceiling.position.set(box.cx, (level - 1) * FLOOR_STEP + WALL_HEIGHT, box.cz);
+    ceiling.visible = false;
+    ceiling.userData.ceiling = true;
+    ceiling.userData.ceilingFloor = level;
+    root.add(ceiling);
+  }
+  if (Number.isFinite(focusMinX)) {
+    root.userData.focus = { x: (focusMinX + focusMaxX) / 2, z: (focusMinY + focusMaxY) / 2 };
   }
 
   (tour.walls || []).forEach((wall) => {
