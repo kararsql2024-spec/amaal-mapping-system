@@ -111,15 +111,29 @@ const pullGuide = (value: number, pool: number[], limit: number) => {
   return { value: best, hit: gap < limit };
 };
 
-/** يلتصق بركن، أو بحافة، أو بامتداد حافة قائمة، ثم بالشبكة إن كانت مفعّلة. */
+/** يلتصق بركن إن كان الخيار مفعّلاً، وإلا بحافة أو امتداد من دون القفز إلى الركن. */
 export const snapWallPoint = (
   raw: Pt,
   prev: Pt | null,
   guides: WallGuides,
-  options: { free: boolean; grid: boolean; lock?: "x" | "y" | null },
+  options: { free: boolean; grid: boolean; vertex?: boolean; lock?: "x" | "y" | null },
 ): Pt => {
-  const vertex = closestVertexPoint(guides.vertices, raw, SNAP_VERTEX);
-  if (vertex) return { x: vertex.x, y: vertex.y };
+  const vertexSnap = options.vertex !== false;
+  const onGrid = (value: number) => (options.grid ? Math.round(value / 0.25) * 0.25 : value);
+  const stealsVertex = (point: Pt) => {
+    if (vertexSnap) return false;
+    return guides.vertices.some((vertex) => {
+      const landed = Math.hypot(point.x - vertex.x, point.y - vertex.y) <= 0.07;
+      const aimed = Math.hypot(raw.x - vertex.x, raw.y - vertex.y) <= 0.08;
+      return landed && !aimed;
+    });
+  };
+  const keep = (point: Pt) => (stealsVertex(point) ? null : point);
+
+  if (vertexSnap) {
+    const vertex = closestVertexPoint(guides.vertices, raw, SNAP_VERTEX);
+    if (vertex) return { x: vertex.x, y: vertex.y };
+  }
 
   let edge: Pt | null = null;
   let edgeGap = SNAP_EDGE;
@@ -130,10 +144,13 @@ export const snapWallPoint = (
       edge = { x: hit.x, y: hit.y };
     }
   });
-  if (edge) return edge;
+  if (edge) {
+    const accepted = keep(edge);
+    if (accepted) return accepted;
+  }
 
-  const xs = guides.vertices.map((point) => point.x);
-  const ys = guides.vertices.map((point) => point.y);
+  const xs = vertexSnap ? guides.vertices.map((point) => point.x) : [];
+  const ys = vertexSnap ? guides.vertices.map((point) => point.y) : [];
   if (prev) {
     xs.push(prev.x);
     ys.push(prev.y);
@@ -143,7 +160,6 @@ export const snapWallPoint = (
     if (Math.abs(segment.a.x - segment.b.x) <= 0.05) xs.push((segment.a.x + segment.b.x) / 2);
   });
 
-  const onGrid = (value: number) => (options.grid ? Math.round(value / 0.25) * 0.25 : value);
   let lock = options.lock || null;
   if (!lock && prev && !options.free) {
     lock = Math.abs(raw.x - prev.x) >= Math.abs(raw.y - prev.y) ? "y" : "x";
@@ -151,11 +167,11 @@ export const snapWallPoint = (
 
   if (prev && lock === "y") {
     const x = pullGuide(raw.x, xs, SNAP_ALIGN);
-    return { x: x.hit ? x.value : onGrid(raw.x), y: prev.y };
+    return keep({ x: x.hit ? x.value : onGrid(raw.x), y: prev.y }) || { x: onGrid(raw.x), y: prev.y };
   }
   if (prev && lock === "x") {
     const y = pullGuide(raw.y, ys, SNAP_ALIGN);
-    return { x: prev.x, y: y.hit ? y.value : onGrid(raw.y) };
+    return keep({ x: prev.x, y: y.hit ? y.value : onGrid(raw.y) }) || { x: prev.x, y: onGrid(raw.y) };
   }
 
   let line: Pt | null = null;
@@ -175,9 +191,10 @@ export const snapWallPoint = (
   });
   const x = pullGuide(raw.x, xs, SNAP_ALIGN);
   const y = pullGuide(raw.y, ys, SNAP_ALIGN);
-  if (line && (!x.hit && !y.hit || lineGap < 0.16)) return line;
-  return {
-    x: x.hit ? x.value : onGrid(raw.x),
-    y: y.hit ? y.value : onGrid(raw.y),
-  };
+  const aligned = { x: x.hit ? x.value : onGrid(raw.x), y: y.hit ? y.value : onGrid(raw.y) };
+  if (line && (!x.hit && !y.hit || lineGap < 0.16)) {
+    const accepted = keep(line);
+    if (accepted) return accepted;
+  }
+  return keep(aligned) || { x: onGrid(raw.x), y: onGrid(raw.y) };
 };

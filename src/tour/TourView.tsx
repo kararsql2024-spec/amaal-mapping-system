@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { buildTourScene } from "./buildScene";
@@ -14,7 +14,7 @@ const lookOf = (rot: number) => {
   return new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
 };
 
-const TourStage = ({ tour }: { tour: TourTemplate }) => {
+const TourStage = ({ tour, showEditor }: { tour: TourTemplate; showEditor: boolean }) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<{
     goHotspot: (item: TourItem) => void;
@@ -25,6 +25,14 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
   const [active, setActive] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [tip, setTip] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [caption, setCaption] = useState<string | null>(null);
+  const captionTimer = useRef(0);
+  const showCaption = (label?: string) => {
+    const text = label || "نقطة";
+    setCaption(text);
+    window.clearTimeout(captionTimer.current);
+    captionTimer.current = window.setTimeout(() => setCaption((current) => (current === text ? null : current)), 2000);
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -48,11 +56,18 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
     scene.add(fill);
 
     const camera = new THREE.PerspectiveCamera(74, 1, 0.08, 140);
-    const homePos = new THREE.Vector3(11, 30, 8.35);
-    const homeTarget = new THREE.Vector3(11, 0, 8);
-    camera.position.copy(homePos);
+    let built = buildTourScene(tour, tour.floors > 1 ? "all" : 1);
+    scene.add(built.root);
+    const focus = built.root.userData.focus as { x: number; z: number } | undefined;
+    const fx = focus?.x ?? 11;
+    const fz = focus?.z ?? 8;
+    const homePos = new THREE.Vector3(fx, 26, fz + 0.45);
+    const homeTarget = new THREE.Vector3(fx, 0, fz);
+    const introPos = new THREE.Vector3(fx + 1.6, 12.5, fz + 10.2);
+    const introTarget = new THREE.Vector3(fx, 0.6, fz);
+    camera.position.copy(introPos);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.copy(homeTarget);
+    controls.target.copy(introTarget);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.minDistance = 4;
@@ -61,8 +76,6 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
     controls.maxPolarAngle = 1.15;
     controls.update();
 
-    let built = buildTourScene(tour, tour.floors > 1 ? "all" : 1);
-    scene.add(built.root);
     const disposeRoot = (root: THREE.Object3D) => {
       const seen = new Set<THREE.Material | THREE.Texture>();
       root.traverse((object) => {
@@ -108,6 +121,7 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
     resize();
 
     let pinned = false;
+    let standingFloor: number | null = null;
     const eye = new THREE.Vector3();
     let yaw = 0;
     let pitch = 0;
@@ -147,7 +161,16 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
     };
     tick();
 
+    const showCeiling = (level: number | null) => {
+      built.root.traverse((object) => {
+        if (!object.userData.ceiling) return;
+        object.visible = level != null && object.userData.ceilingFloor === level;
+      });
+    };
     const standAt = (item: TourItem) => {
+      standingFloor = item.floor;
+      showCeiling(item.floor);
+      showCaption(item.label);
       eye.set(item.x, (item.floor - 1) * FLOOR_STEP + 1.55, item.y);
       const look = lookOf(item.rot);
       yaw = Math.atan2(look.x, look.z);
@@ -168,6 +191,8 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
       goHotspot: standAt,
       goHome: () => {
         pinned = false;
+        standingFloor = null;
+        showCeiling(null);
         lookDrag = false;
         controls.enabled = false;
         controls.enablePan = true;
@@ -190,6 +215,7 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
         disposeRoot(built.root);
         built = buildTourScene(tour, next);
         scene.add(built.root);
+        if (pinned && standingFloor) showCeiling(standingFloor);
       },
     };
 
@@ -284,9 +310,11 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
   return (
     <div className="flex h-screen flex-col bg-[#f6f4ef] text-[#1c1917]" dir="rtl">
       <header className="flex items-center gap-3 border-b border-black/10 bg-white/80 px-4 py-2">
-        <Link to="/toureditor" className="text-[13px] text-[#6b645c]">
-          المحرر
-        </Link>
+        {showEditor && (
+          <Link to="/toureditor" className="text-[13px] text-[#6b645c]">
+            المحرر
+          </Link>
+        )}
         <p className="text-[14px]">{tour.name}</p>
         <div className="ms-auto flex flex-wrap items-center gap-2">
           {tour.floors > 1 && (
@@ -330,6 +358,11 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
       </header>
       <div className="relative min-h-0 flex-1">
         <div ref={hostRef} className="h-full w-full" />
+        {caption && (
+          <div className="pointer-events-none absolute inset-x-0 top-5 flex justify-center">
+            <p className="border border-black/10 bg-white/90 px-3 py-1.5 text-[13px] shadow-sm">{caption}</p>
+          </div>
+        )}
         {tip && (() => {
           const item = tour.items.find((entry) => entry.id === tip.id);
           if (!item) return null;
@@ -352,6 +385,7 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
               onMouseLeave={() => setHovered((current) => (current === item.id ? null : current))}
               onDoubleClick={() => {
                 setActive(item.id);
+                showCaption(item.label);
                 apiRef.current?.goHotspot(item);
               }}
             >
@@ -369,6 +403,8 @@ const TourStage = ({ tour }: { tour: TourTemplate }) => {
 
 const TourView = () => {
   const { tourId } = useParams();
+  const [searchParams] = useSearchParams();
+  const showEditor = searchParams.get("from") === "editor";
   const allowed = useCenterAllowed();
   const [tourAllowed, setTourAllowed] = useState<boolean | null>(null);
   const [tour, setTour] = useState<TourTemplate | null | undefined>(undefined);
@@ -416,7 +452,7 @@ const TourView = () => {
       </div>
     );
   }
-  return <TourStage key={tour.updatedAt} tour={tour} />;
+  return <TourStage key={tour.updatedAt} tour={tour} showEditor={showEditor} />;
 };
 
 export default TourView;

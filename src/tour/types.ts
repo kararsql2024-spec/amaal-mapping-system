@@ -76,6 +76,8 @@ export interface TourTemplate {
   kind: TourKind;
   floors: number;
   projectId: string;
+  /** كل المشاريع التي تستخدم هذا القالب. projectId يبقى أولها للتوافق. */
+  projectIds: string[];
   unitKey: string;
   unitLabel: string;
   grid: boolean;

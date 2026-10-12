@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import type { MapElement } from "@/types/project";
-import { hitItem, itemFoot, OPENING_WIDTH, PIECES, pieceOf, PLACE_SIZE } from "./catalog";
+import { hitItem, itemFoot, OPENING_WIDTH, pieceOf, PLACE_SIZE } from "./catalog";
 import { TourDenied, TourLoading, useCenterAllowed } from "./gate";
 import { ensureTours, saveTours, shrinkPlanImage } from "./storage";
 import { SHEET_H, SHEET_W, type ItemKind, type OpeningKind, type PieceId, type TourItem, type TourKind, type TourTemplate } from "./types";
+import { projectIdsOf } from "./match";
 import { discoverSpecs, type TourSpec } from "./specs";
 import { closestOnPath, nearestVertex, pathLength, poseAt, snapPoint, snapWallPoint, WALL_THICKNESS, type Pt, type WallGuides } from "./walls";
 
@@ -27,6 +28,7 @@ const blankTour = (kind: TourKind): TourTemplate => ({
   kind,
   floors: kind === "house" ? 2 : 1,
   projectId: "",
+  projectIds: [],
   unitKey: "",
   unitLabel: "",
   grid: true,
@@ -76,6 +78,30 @@ const cornerOf = (item: TourItem): Pt => {
   };
 };
 
+const FURNITURE_GROUPS: { title: string; ids: PieceId[] }[] = [
+  { title: "جلوس", ids: ["sofa", "armchair", "coffee", "dining", "rug"] },
+  { title: "نوم", ids: ["doubleBed", "singleBed", "wardrobe", "nightstand", "dresser", "kidsBed", "toyBox", "kidsShelf"] },
+  { title: "مطبخ وعمل", ids: ["kitchen", "bathroom", "desk", "officeChair", "bookshelf"] },
+  { title: "إضاءة", ids: ["tv", "curtain", "plant", "lamp"] },
+  { title: "خارج المنزل", ids: ["car", "garden"] },
+];
+
+const FULL_VIEW = { x: 0, y: 0, w: SHEET_W, h: SHEET_H };
+
+const zoomView = (current: typeof FULL_VIEW, focalX: number, focalY: number, factor: number) => {
+  const w = Math.min(SHEET_W, Math.max(2, current.w * factor));
+  const h = w * (SHEET_H / SHEET_W);
+  if (w >= SHEET_W - 0.05) return { ...FULL_VIEW };
+  const kx = (focalX - current.x) / current.w;
+  const ky = (focalY - current.y) / current.h;
+  return {
+    x: Math.min(SHEET_W - w * 0.2, Math.max(w * -0.2, focalX - kx * w)),
+    y: Math.min(SHEET_H - h * 0.2, Math.max(h * -0.2, focalY - ky * h)),
+    w,
+    h,
+  };
+};
+
 const Editor = () => {
   const [tours, setTours] = useState<TourTemplate[]>([]);
   const [booting, setBooting] = useState(true);
@@ -88,6 +114,8 @@ const Editor = () => {
   const [selection, setSelection] = useState<Selection>(null);
   const [draft, setDraft] = useState<Pt[]>([]);
   const [wallFree, setWallFree] = useState(false);
+  const [snapVertex, setSnapVertex] = useState(true);
+  const [view, setView] = useState({ x: 0, y: 0, w: SHEET_W, h: SHEET_H });
   const [notice, setNotice] = useState("");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [specs, setSpecs] = useState<{ houses: TourSpec[]; apartments: TourSpec[] }>({ houses: [], apartments: [] });
@@ -95,10 +123,13 @@ const Editor = () => {
   const [unitQuery, setUnitQuery] = useState("");
   const [ghost, setGhost] = useState<Pt | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [bindOpen, setBindOpen] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
   const toursRef = useRef(tours);
   const editedRef = useRef(false);
   const past = useRef<string[]>([]);
+  const spaceRef = useRef(false);
+  const panRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<
     | { type: "point"; wallId: string; index: number; lockPrev: "x" | "y" | null; lockNext: "x" | "y" | null }
     | { type: "item"; id: string; dx: number; dy: number }
@@ -115,8 +146,39 @@ const Editor = () => {
     });
   }, []);
 
+  const linkedKey = tour ? projectIdsOf(tour).join(",") : "";
+
   useEffect(() => {
-    if (!tour?.projectId) {
+    const down = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (event.code !== "Space") return;
+      event.preventDefault();
+      spaceRef.current = true;
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code === "Space") spaceRef.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
+  useEffect(() => {
+    const current = toursRef.current.find((entry) => entry.id === activeId);
+    setBindOpen(!(current && projectIdsOf(current).length > 0 && current.unitKey));
+  }, [activeId]);
+
+  useEffect(() => {
+    setView({ x: 0, y: 0, w: SHEET_W, h: SHEET_H });
+  }, [activeId]);
+
+  useEffect(() => {
+    const ids = linkedKey ? linkedKey.split(",") : [];
+    if (!ids.length) {
       setSpecs({ houses: [], apartments: [] });
       setUnitsReady(false);
       return;
@@ -126,17 +188,43 @@ const Editor = () => {
     supabase
       .from("projects")
       .select("elements")
-      .eq("id", tour.projectId)
-      .single()
+      .in("id", ids)
       .then(({ data }) => {
         if (cancel) return;
-        setSpecs(discoverSpecs((data?.elements || []) as MapElement[]));
+        const houses = new Map<string, TourSpec>();
+        const apartments = new Map<string, TourSpec>();
+        (data || []).forEach((row) => {
+          const found = discoverSpecs((row.elements || []) as MapElement[]);
+          found.houses.forEach((spec) => houses.set(spec.key, spec));
+          found.apartments.forEach((spec) => apartments.set(spec.key, spec));
+        });
+        setSpecs({
+          houses: Array.from(houses.values()).sort((a, b) => a.key.localeCompare(b.key)),
+          apartments: Array.from(apartments.values()).sort((a, b) => Number(a.key) - Number(b.key)),
+        });
         setUnitsReady(true);
       });
     return () => {
       cancel = true;
     };
-  }, [tour?.projectId, tour?.kind]);
+  }, [linkedKey]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const point = svg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      const matrix = svg.getScreenCTM();
+      if (!matrix) return;
+      const local = point.matrixTransform(matrix.inverse());
+      setView((current) => zoomView(current, local.x, local.y, event.deltaY > 0 ? 1.12 : 0.88));
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [activeId]);
 
   const stage = (next: TourTemplate[]) => {
     editedRef.current = true;
@@ -273,11 +361,16 @@ const Editor = () => {
   };
 
   const onPointerDown = (event: React.PointerEvent) => {
+    if (event.button === 1 || (event.button === 0 && spaceRef.current)) {
+      panRef.current = { x: event.clientX, y: event.clientY };
+      event.preventDefault();
+      return;
+    }
     const raw = toMeter(event);
     if (!raw || !tour) return;
     if (tool === "wall") {
       const prev = draft.length ? draft[draft.length - 1] : null;
-      const point = snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: wallFree || !prev, grid: tour.grid });
+      const point = snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: wallFree || !prev, grid: tour.grid, vertex: snapVertex });
       if (prev && Math.hypot(point.x - prev.x, point.y - prev.y) < 0.12) return;
       setDraft((points) => [...points, point]);
       setGhost(null);
@@ -420,10 +513,24 @@ const Editor = () => {
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
+    if (panRef.current && svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      const dx = event.clientX - panRef.current.x;
+      const dy = event.clientY - panRef.current.y;
+      panRef.current = { x: event.clientX, y: event.clientY };
+      if (rect.width > 2 && rect.height > 2) {
+        setView((current) => ({
+          ...current,
+          x: current.x - (dx * current.w) / rect.width,
+          y: current.y - (dy * current.h) / rect.height,
+        }));
+      }
+      return;
+    }
     const raw = toMeter(event);
     if (tool === "wall" && raw && tour) {
       const prev = draft.length ? draft[draft.length - 1] : null;
-      setGhost(snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: wallFree || !prev, grid: tour.grid }));
+      setGhost(snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: wallFree || !prev, grid: tour.grid, vertex: snapVertex }));
     } else if (ghost) setGhost(null);
     const drag = dragRef.current;
     const current = toursRef.current.find((entry) => entry.id === activeId);
@@ -436,11 +543,11 @@ const Editor = () => {
       let x = raw.x;
       let y = raw.y;
       if (!wallFree && previous && drag.lockPrev) {
-        const snapped = snapWallPoint(raw, previous, guides, { free: false, grid: current.grid, lock: drag.lockPrev });
+        const snapped = snapWallPoint(raw, previous, guides, { free: false, grid: current.grid, vertex: snapVertex, lock: drag.lockPrev });
         x = snapped.x;
         y = snapped.y;
       } else {
-        const snapped = snapWallPoint(raw, null, guides, { free: true, grid: current.grid });
+        const snapped = snapWallPoint(raw, null, guides, { free: true, grid: current.grid, vertex: snapVertex });
         x = snapped.x;
         y = snapped.y;
       }
@@ -489,7 +596,49 @@ const Editor = () => {
   };
 
   const onPointerUp = () => {
+    panRef.current = null;
     dragRef.current = null;
+  };
+
+  const duplicateTour = () => {
+    if (!tour) return;
+    const wallIds = new Map(tour.walls.map((wall) => [wall.id, newId()]));
+    const copy: TourTemplate = {
+      ...tour,
+      id: newId(),
+      name: `نسخة · ${tour.name}`,
+      walls: tour.walls.map((wall) => ({ ...wall, id: wallIds.get(wall.id) || newId(), points: wall.points.map((point) => ({ ...point })) })),
+      openings: tour.openings.map((opening) => ({ ...opening, id: newId(), wallId: wallIds.get(opening.wallId) || opening.wallId })),
+      items: tour.items.map((item) => ({ ...item, id: newId() })),
+      plans: { ...tour.plans },
+      projectIds: [...projectIdsOf(tour)],
+      updatedAt: new Date().toISOString(),
+    };
+    stage([copy, ...toursRef.current]);
+    setActiveId(copy.id);
+    setFloor(1);
+    setSelection(null);
+    setDraft([]);
+  };
+
+  const setSegmentLength = (wallId: string, index: number, length: number) => {
+    const current = toursRef.current.find((entry) => entry.id === activeId);
+    const wall = current?.walls.find((entry) => entry.id === wallId);
+    if (!current || !wall || index < 1 || length < 0.2) return;
+    const start = wall.points[index - 1];
+    const end = wall.points[index];
+    const span = Math.hypot(end.x - start.x, end.y - start.y);
+    if (span < 0.02) return;
+    const next = { x: start.x + ((end.x - start.x) / span) * length, y: start.y + ((end.y - start.y) / span) * length };
+    const dx = next.x - end.x;
+    const dy = next.y - end.y;
+    remember();
+    update({
+      walls: current.walls.map((entry) => (entry.id === wallId ? {
+        ...entry,
+        points: entry.points.map((point, pointIndex) => (pointIndex >= index ? { x: point.x + dx, y: point.y + dy } : point)),
+      } : entry)),
+    });
   };
 
   const generateWall = () => {
@@ -525,7 +674,7 @@ const Editor = () => {
             dirty ? (
               <button type="button" onClick={() => setNotice("احفظ الجولة قبل المعاينة.")} className="border border-black/15 px-2 py-1 text-[12px]">معاينة الجولة</button>
             ) : (
-              <Link to={`/tour/${tour.id}`} className="border border-black/15 px-2 py-1 text-[12px]">معاينة الجولة</Link>
+              <Link to={`/tour/${tour.id}?from=editor`} className="border border-black/15 px-2 py-1 text-[12px]">معاينة الجولة</Link>
             )
           )}
         </div>
@@ -544,10 +693,11 @@ const Editor = () => {
             </button>
           ))}
         </aside>
-        <main className="flex min-w-0 flex-col">
+        <main className="flex min-h-0 min-w-0">
           {tour ? (
             <>
-              <div className="flex flex-wrap items-center gap-1 border-b border-black/10 bg-white/70 p-2">
+              <aside className="flex w-[148px] shrink-0 flex-col gap-1 overflow-auto border-e border-black/10 bg-white/85 p-2">
+                <p className="px-1 pb-1 text-[11px] text-[#6b645c]">أدوات الرسم</p>
                 {([
                   ["select", "تحديد"],
                   ["wall", "مسار جدار"],
@@ -561,35 +711,33 @@ const Editor = () => {
                   ["text", "نص"],
                   ["stairs", "سلم"],
                 ] as [Tool, string][]).filter(([id]) => id !== "stairs" || tour.floors > 1).map(([id, label]) => (
-                  <button key={id} type="button" onClick={() => setTool(id)} className={`border px-2 py-1 text-[12px] ${tool === id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/15 bg-white"}`}>{label}</button>
+                  <button key={id} type="button" onClick={() => setTool(id)} className={`border px-2 py-1.5 text-start text-[12px] ${tool === id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>{label}</button>
                 ))}
-                <button type="button" onClick={() => setWallFree(false)} className={`border px-2 py-1 text-[12px] ${!wallFree ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/15 bg-white"}`}>زوايا قائمة</button>
-                <button type="button" onClick={() => setWallFree(true)} className={`border px-2 py-1 text-[12px] ${wallFree ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/15 bg-white"}`}>جدار حر</button>
-                <button type="button" onClick={() => update({ grid: !tour.grid })} className={`border px-2 py-1 text-[12px] ${tour.grid ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/15 bg-white"}`}>
-                  {tour.grid ? "الشبكة مقفلة" : "الشبكة حرة"}
-                </button>
-                <button type="button" onClick={undo} className="border border-black/15 bg-white px-2 py-1 text-[12px]">تراجع</button>
-                <button type="button" onClick={generateWall} className="border border-[#1c1917] bg-[#1c1917] px-2 py-1 text-[12px] text-white">توليد جدار ({draft.length})</button>
-                {draft.length > 0 && <button type="button" onClick={() => setDraft((points) => points.slice(0, -1))} className="border border-black/15 bg-white px-2 py-1 text-[12px]">تراجع نقطة</button>}
-                {draft.length > 0 && <button type="button" onClick={() => setDraft([])} className="border border-black/15 bg-white px-2 py-1 text-[12px]">مسح المسار</button>}
-              </div>
-              <div className="flex flex-wrap gap-1 border-b border-black/10 px-2 py-2">
-                {PIECES.filter((entry) => !entry.house || tour.kind === "house").map((entry) => (
-                  <button key={entry.id} type="button" onClick={() => { setTool("furniture"); setPiece(entry.id); }} className={`border px-2 py-1 text-[12px] ${tool === "furniture" && piece === entry.id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/15 bg-white"}`}>{entry.label}</button>
-                ))}
-              </div>
+                <p className="px-1 pb-1 pt-3 text-[11px] text-[#6b645c]">المسار</p>
+                <button type="button" onClick={generateWall} className="border border-[#1c1917] bg-[#1c1917] px-2 py-1.5 text-start text-[12px] text-white">توليد جدار ({draft.length})</button>
+                {draft.length > 0 && <button type="button" onClick={() => setDraft((points) => points.slice(0, -1))} className="border border-black/10 bg-white px-2 py-1.5 text-start text-[12px]">تراجع نقطة</button>}
+                {draft.length > 0 && <button type="button" onClick={() => setDraft([])} className="border border-black/10 bg-white px-2 py-1.5 text-start text-[12px]">مسح المسار</button>}
+                <p className="px-1 pb-1 pt-3 text-[11px] text-[#6b645c]">العرض</p>
+                <div className="grid grid-cols-3 gap-1">
+                  <button type="button" onClick={() => setView((current) => zoomView(current, current.x + current.w / 2, current.y + current.h / 2, 0.8))} className="border border-black/10 bg-white px-1 py-1.5 text-[11px]">تقريب</button>
+                  <button type="button" onClick={() => setView((current) => zoomView(current, current.x + current.w / 2, current.y + current.h / 2, 1.25))} className="border border-black/10 bg-white px-1 py-1.5 text-[11px]">تبعيد</button>
+                  <button type="button" onClick={() => setView({ ...FULL_VIEW })} className="border border-black/10 bg-white px-1 py-1.5 text-[11px]">الإطار</button>
+                </div>
+                <button type="button" onClick={undo} className="border border-black/10 bg-white px-2 py-1.5 text-start text-[12px]">تراجع</button>
+              </aside>
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 p-3">
-                <svg ref={svgRef} viewBox={`0 0 ${SHEET_W} ${SHEET_H}`} className="h-full w-full bg-[#fbfaf7]" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
+                <svg ref={svgRef} viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} className="h-full w-full bg-[#fbfaf7]" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onAuxClick={(event) => event.preventDefault()}>
                   {tour.grid && Array.from({ length: SHEET_W * 2 + 1 }, (_, index) => (
                     <line key={`v${index}`} x1={index / 2} y1={0} x2={index / 2} y2={SHEET_H} stroke="#ece7df" strokeWidth={index % 2 ? 0.015 : 0.03} />
                   ))}
                   {tour.grid && Array.from({ length: SHEET_H * 2 + 1 }, (_, index) => (
                     <line key={`h${index}`} x1={0} y1={index / 2} x2={SHEET_W} y2={index / 2} stroke="#ece7df" strokeWidth={index % 2 ? 0.015 : 0.03} />
                   ))}
-                  {plan && <image href={plan} x={0} y={0} width={SHEET_W} height={SHEET_H} opacity={0.42} />}
+                  {plan && <image href={plan} x={0} y={0} width={SHEET_W} height={SHEET_H} />}
                   {visibleWalls.map((wall) => (
                     <g key={wall.id}>
-                      <polyline points={wall.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={selection && ((selection.kind === "wall" && selection.id === wall.id) || (selection.kind === "point" && selection.wallId === wall.id)) ? "#2a2a28" : "#c8c8c6"} strokeWidth={WALL_THICKNESS} strokeLinejoin="miter" strokeLinecap="square" />
+                      <polyline points={wall.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={selection && ((selection.kind === "wall" && selection.id === wall.id) || (selection.kind === "point" && selection.wallId === wall.id)) ? "#1c1917" : "#4a5158"} strokeWidth={WALL_THICKNESS} strokeLinejoin="miter" strokeLinecap="square" />
                       {segmentLengths(wall.points).map((mark) => (
                         <text key={`${wall.id}-${mark.x}-${mark.y}`} x={mark.x} y={mark.y} textAnchor="middle" fontSize={0.28} fill="#6b645c">{mark.text}</text>
                       ))}
@@ -620,6 +768,12 @@ const Editor = () => {
                     return (
                       <g key={opening.id} transform={`translate(${pose.x} ${pose.y}) rotate(${pose.angle})`}>
                         <rect x={-opening.width / 2} y={-0.09} width={opening.width} height={0.18} fill={fill} stroke={selection?.kind === "opening" && selection.id === opening.id ? "#1c1917" : "transparent"} strokeWidth={0.04} />
+                        {(opening.kind === "door" || opening.kind === "mainDoor") && (
+                          <>
+                            <path d={`M ${opening.width / 2} 0 A ${opening.width} ${opening.width} 0 0 0 ${-opening.width / 2} ${-opening.width}`} fill="none" stroke="#1c1917" strokeWidth={0.025} />
+                            <line x1={-opening.width / 2} y1={0} x2={-opening.width / 2} y2={-opening.width} stroke="#1c1917" strokeWidth={0.025} />
+                          </>
+                        )}
                       </g>
                     );
                   })}
@@ -631,6 +785,34 @@ const Editor = () => {
                   {selectedItem && <circle cx={cornerOf(selectedItem).x} cy={cornerOf(selectedItem).y} r={0.12} fill="#fff" stroke="#1c1917" strokeWidth={0.04} />}
                 </svg>
               </div>
+              <div className="flex flex-wrap items-center gap-1 border-t border-black/10 bg-white/85 px-2 py-1.5">
+                <button type="button" onClick={() => setWallFree(false)} className={`border px-2 py-1 text-[12px] ${!wallFree ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>زوايا قائمة</button>
+                <button type="button" onClick={() => setWallFree(true)} className={`border px-2 py-1 text-[12px] ${wallFree ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>جدار حر</button>
+                <button type="button" onClick={() => update({ grid: !tour.grid })} className={`border px-2 py-1 text-[12px] ${tour.grid ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>
+                  {tour.grid ? "الشبكة مقفلة" : "الشبكة حرة"}
+                </button>
+                <button type="button" onClick={() => setSnapVertex((value) => !value)} className={`border px-2 py-1 text-[12px] ${snapVertex ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>
+                  {snapVertex ? "التصاق بالركن" : "الركن حر"}
+                </button>
+                <span className="ms-auto text-[11px] text-[#6b645c]">اسحب بالزر الأوسط، أو اضغط مسافة ثم اسحب</span>
+              </div>
+              </div>
+              <aside className="flex w-[168px] shrink-0 flex-col gap-1 overflow-auto border-s border-black/10 bg-white/85 p-2">
+                {FURNITURE_GROUPS.map((group) => {
+                  const pieces = group.ids.map((id) => pieceOf(id)).filter((entry): entry is NonNullable<ReturnType<typeof pieceOf>> => Boolean(entry) && (!entry?.house || tour.kind === "house"));
+                  if (!pieces.length) return null;
+                  return (
+                    <div key={group.title}>
+                      <p className="px-1 pb-1 pt-2 text-[11px] text-[#6b645c]">{group.title}</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {pieces.map((entry) => (
+                          <button key={entry.id} type="button" onClick={() => { setTool("furniture"); setPiece(entry.id); }} className={`border px-1 py-1 text-[11px] ${tool === "furniture" && piece === entry.id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>{entry.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </aside>
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-[14px] text-[#6b645c]">اختر قالباً أو أنشئ واحداً.</div>
@@ -639,12 +821,28 @@ const Editor = () => {
         {tour && (
           <aside className="overflow-auto border-s border-black/10 bg-white/80 p-4 text-[12px]">
             <label className="mb-3 block">الاسم<Input value={tour.name} onChange={(event) => update({ name: event.target.value })} className="mt-1" /></label>
-            <label className="mb-2 block">المشروع
-              <select className="mt-1 w-full border border-black/15 bg-white px-2 py-1.5" value={tour.projectId} onChange={(event) => { setUnitQuery(""); update({ projectId: event.target.value, unitKey: "", unitLabel: "" }); }}>
-                <option value="">اختر مشروعاً</option>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
-            </label>
+            {bindOpen ? (
+            <div className="mb-2">
+              <p className="mb-1">المشاريع المرتبطة</p>
+              <div className="max-h-36 overflow-auto border border-black/10">
+                {projects.map((project) => {
+                  const linked = projectIdsOf(tour).includes(project.id);
+                  return (
+                    <label key={project.id} className="flex items-center gap-2 px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={linked}
+                        onChange={() => {
+                          const next = linked ? projectIdsOf(tour).filter((id) => id !== project.id) : [...projectIdsOf(tour), project.id];
+                          setUnitQuery("");
+                          update({ projectIds: next, projectId: next[0] || "" });
+                        }}
+                      />
+                      <span>{project.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
             <label className="mb-2 block">{tour.kind === "house" ? "نوع المنزل" : "مساحة الشقة"}
               <Input value={unitQuery} onChange={(event) => setUnitQuery(event.target.value)} placeholder={tour.kind === "house" ? "C أو C+" : "192"} className="mt-1" />
             </label>
@@ -654,10 +852,21 @@ const Editor = () => {
                   {spec.label}
                 </button>
               ))}
-              {tour.projectId && !unitsReady && <p className="p-2 text-[#6b645c]">جارٍ قراءة الأصناف…</p>}
-              {tour.projectId && unitsReady && specList.length === 0 && <p className="p-2 text-[#6b645c]">لا يوجد هذا الصنف في المشروع.</p>}
+              {linkedKey && !unitsReady && <p className="p-2 text-[#6b645c]">جارٍ قراءة الأصناف…</p>}
+              {linkedKey && unitsReady && specList.length === 0 && <p className="p-2 text-[#6b645c]">لا يوجد هذا الصنف في المشاريع المحددة.</p>}
+              {!linkedKey && <p className="p-2 text-[#6b645c]">حدد مشروعاً أو أكثر.</p>}
             </div>
-            <p className="mb-3 text-[11px] leading-5 text-[#6b645c]">نفس أصناف البروشور داخل هذا المشروع. كل منازل Type C تستخدم هذا القالب، وشقة 192 في مدينة أخرى تبقى قالباً مستقلاً.</p>
+            <p className="mb-3 text-[11px] leading-5 text-[#6b645c]">قالب واحد يكفي لأكثر من مشروع إذا كانت المساحة أو النوع نفسه. مثال: شقة 190 في جوهرة البصرة وعين البصرة.</p>
+            {projectIdsOf(tour).length > 0 && tour.unitKey && (
+              <button type="button" onClick={() => setBindOpen(false)} className="mb-3 border border-black/15 px-2 py-1">إخفاء الربط</button>
+            )}
+            </div>
+            ) : (
+              <button type="button" onClick={() => setBindOpen(true)} className="mb-3 block w-full border border-black/10 px-2 py-2 text-start">
+                <span className="block">{projects.filter((project) => projectIdsOf(tour).includes(project.id)).map((project) => project.name).join(" · ") || "المشاريع"}</span>
+                <span className="text-[11px] text-[#6b645c]">{tour.unitLabel || "بلا صنف"} · تعديل الربط</span>
+              </button>
+            )}
             {tour.kind === "house" && (
               <label className="mb-3 block">عدد الطوابق
                 <Input type="number" min={2} max={4} value={tour.floors} onChange={(event) => update({ floors: Math.min(4, Math.max(2, Number(event.target.value) || 2)) })} className="mt-1" />
@@ -676,7 +885,7 @@ const Editor = () => {
                 catch { setNotice("تعذّر قراءة الصورة."); }
               }} />
             </label>
-            <p className="mb-3 text-[11px] leading-5 text-[#6b645c]">زوايا قائمة تُبقي الضلع أفقياً أو عمودياً. جدار حر يسمح بالانعطاف. النقطة تلتصق بأقرب ركن أو حافة أو امتداد قائم، والطول مكتوب بالمتر.</p>
+            <p className="mb-3 text-[11px] leading-5 text-[#6b645c]">عجلة الفأرة تقرّب. الزر الأوسط أو مسافة مع السحب يحرّك اللوحة. طول الضلع يُكتب بالمتر من خصائص الجدار.</p>
             {selectedItem && (
               <div className="space-y-2 border border-black/10 p-3">
                 <p>{itemName(selectedItem)}</p>
@@ -713,7 +922,18 @@ const Editor = () => {
             )}
             {(selection?.kind === "wall" || selection?.kind === "point") && (
               <div className="mt-3 border border-black/10 p-3">
-                <p className="mb-2">اسحب الزاوية ويبقى الضلع أفقياً أو عمودياً. الطول ظاهر على الخط.</p>
+                <p className="mb-2">طول كل ضلع بالمتر. تغييره يحرّك بقية الجدار معه.</p>
+                {tour.walls.find((wall) => wall.id === (selection.kind === "wall" ? selection.id : selection.wallId))?.points.slice(1).map((point, index) => {
+                  const wall = tour.walls.find((entry) => entry.id === (selection.kind === "wall" ? selection.id : selection.wallId));
+                  const start = wall?.points[index];
+                  if (!wall || !start) return null;
+                  const length = Math.hypot(point.x - start.x, point.y - start.y);
+                  return (
+                    <label key={`${wall.id}-${index}-${length.toFixed(2)}`} className="mb-2 block">ضلع {index + 1}
+                      <Input type="number" min={0.2} step={0.05} defaultValue={length.toFixed(2)} onBlur={(event) => { const next = Number(event.target.value); if (Number.isFinite(next) && Math.abs(next - length) >= 0.01) setSegmentLength(wall.id, index + 1, next); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} className="mt-1" />
+                    </label>
+                  );
+                })}
                 <Button type="button" size="sm" variant="outline" onClick={() => {
                   const wallId = selection.kind === "wall" ? selection.id : selection.wallId;
                   remember();
@@ -723,7 +943,10 @@ const Editor = () => {
               </div>
             )}
             {notice && <p className="mt-3 text-[#9a3b32]">{notice}</p>}
-            <Button type="button" size="sm" variant="outline" className="mt-4" onClick={() => { stage(tours.filter((entry) => entry.id !== tour.id)); setActiveId(null); }}>حذف القالب</Button>
+            <div className="mt-4 flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={duplicateTour}>نسخ القالب</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => { stage(tours.filter((entry) => entry.id !== tour.id)); setActiveId(null); }}>حذف القالب</Button>
+            </div>
           </aside>
         )}
       </div>
