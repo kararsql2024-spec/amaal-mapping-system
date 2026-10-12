@@ -1,5 +1,6 @@
 import type { MapElement, Point } from "@/types/project";
 import { getStatusMeta } from "@/lib/unit-status";
+import { getApartmentLabel } from "@/lib/units";
 import { floorPlan, orientPlanBox } from "@/lib/tower-plan";
 import {
   AMENITY_COLORS,
@@ -300,6 +301,7 @@ export const buildWorld = (
             {
               kind: "apartment",
               unitKey,
+              code: getApartmentLabel(el, floor, cell.apt, units),
               color: statusHex(status),
               status,
               floor,

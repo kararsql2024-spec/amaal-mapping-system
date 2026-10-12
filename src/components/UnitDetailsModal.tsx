@@ -20,9 +20,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, Clock, ShieldCheck, Store, Ruler, AlertTriangle, FileSpreadsheet, Receipt } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, Clock, ShieldCheck, Store, Ruler, AlertTriangle, FileSpreadsheet, Receipt, Bed } from 'lucide-react';
+import { findTourForUnit } from '@/tour/match';
+import { useTourTemplates } from '@/tour/storage';
 import { cn } from '@/lib/utils';
-import { canAccessPaymentForm } from '@/lib/dept-permissions';
+import { canAccessPaymentForm, canAccessTour } from '@/lib/dept-permissions';
 import { getStatusMeta } from '@/lib/unit-status';
 import { Eyebrow } from '@/components/layout/AppShell';
 
@@ -313,6 +315,12 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     }
   };
 
+  const tours = useTourTemplates();
+  const tour = isOpen ? findTourForUnit({ unitId, unitLabel, unitSize, projectId }, tours) : null;
+  const handleOpenTour = () => {
+    if (tour) window.open(`/tour/${tour.id}`, "_blank");
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0" dir="rtl">
@@ -325,6 +333,11 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {tour && canAccessTour(permissions) && (
+              <Button variant="outline" size="sm" onClick={handleOpenTour} className="gap-1.5">
+                <Bed size={13} /> جولة داخل الوحدة
+              </Button>
+            )}
             {projectId && unitId && permissions?.showBrochureButton !== false && (
               <Button variant="outline" size="sm" onClick={handleOpenBrochure} className="gap-1.5">
                 <FileSpreadsheet size={13} /> البروشور

@@ -21,6 +21,18 @@ export function canAccessPaymentPrint(perms?: DeptPermissionMap | null): boolean
   return canAccessPaymentForm(perms) || canAccessPaymentArchive(perms);
 }
 
+/** الخريطة التفاعلية ثلاثية الأبعاد */
+export function canAccessExplore(perms?: DeptPermissionMap | null): boolean {
+  if (!perms) return true;
+  return perms.canAccessExplore !== false;
+}
+
+/** جولة داخل الوحدة */
+export function canAccessTour(perms?: DeptPermissionMap | null): boolean {
+  if (!perms) return true;
+  return perms.canAccessTour !== false;
+}
+
 export async function fetchSessionDeptPermissions(supabase: SupabaseClient) {
   const { session } = await validateCenterSession(supabase);
 

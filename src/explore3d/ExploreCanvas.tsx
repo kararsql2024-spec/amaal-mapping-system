@@ -252,8 +252,8 @@ const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 };
 
 const createSkySprite = (role: "mark" | "unit") => {
-  const width = role === "mark" ? 640 : 440;
-  const height = 188;
+  const width = role === "mark" ? 640 : 920;
+  const height = 248;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -268,36 +268,48 @@ const createSkySprite = (role: "mark" | "unit") => {
     depthTest: role !== "unit",
   });
   const sprite = new THREE.Sprite(material);
-  sprite.center.set(0.5, 0.08);
+  sprite.center.set(0.5, 0);
   sprite.renderOrder = role === "unit" ? 30 : 20;
   sprite.frustumCulled = false;
-  const paint = (text: string) => {
+  const paint = (text: string, accent = "") => {
     if (!ctx) return;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "rgba(36, 32, 28, 0.13)";
-    roundRect(ctx, 34, 34, width - 68, 112, 30);
+    const cardX = 28;
+    const cardY = 18;
+    const cardW = width - 56;
+    const cardH = 132;
+    ctx.fillStyle = "rgba(28, 24, 20, 0.16)";
+    roundRect(ctx, cardX + 8, cardY + 10, cardW, cardH, 28);
     ctx.fill();
-    ctx.fillStyle = "rgba(255, 252, 247, 0.96)";
-    roundRect(ctx, 26, 20, width - 68, 112, 30);
+    ctx.fillStyle = "rgba(255, 252, 247, 0.97)";
+    roundRect(ctx, cardX, cardY, cardW, cardH, 28);
     ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(36, 32, 28, 0.16)";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(36, 32, 28, 0.2)";
     ctx.stroke();
+    if (accent) {
+      ctx.save();
+      roundRect(ctx, cardX, cardY, cardW, cardH, 28);
+      ctx.clip();
+      ctx.fillStyle = accent;
+      ctx.fillRect(cardX, cardY, 14, cardH);
+      ctx.restore();
+    }
     ctx.beginPath();
-    ctx.moveTo(width / 2 - 12, 132);
-    ctx.lineTo(width / 2, 176);
-    ctx.lineTo(width / 2 + 12, 132);
+    ctx.moveTo(width / 2 - 16, cardY + cardH - 1);
+    ctx.lineTo(width / 2, height - 8);
+    ctx.lineTo(width / 2 + 16, cardY + cardH - 1);
     ctx.closePath();
-    ctx.fillStyle = "rgba(255, 252, 247, 0.96)";
+    ctx.fillStyle = "rgba(255, 252, 247, 0.97)";
     ctx.fill();
-    ctx.fillStyle = "#241f1c";
+    ctx.fillStyle = "#1c1917";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = role === "mark" ? "600 62px Tahoma, sans-serif" : "700 76px Tahoma, sans-serif";
+    ctx.font = "700 78px 'Segoe UI', Tahoma, sans-serif";
     const measured = Math.max(ctx.measureText(text).width, 1);
-    const scale = Math.min((width - 110) / measured, 1);
+    const scale = Math.min((cardW - 72) / measured, 1);
     ctx.save();
-    ctx.translate(width / 2 - 6, 76);
+    ctx.translate(width / 2, cardY + cardH / 2);
     ctx.scale(scale, 1);
     ctx.fillText(text, 0, 0);
     ctx.restore();
@@ -836,7 +848,112 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     scene.add(unitSign.sprite);
     ownedMaterials.push(unitSign.sprite.material);
     let unitText = "";
-    const unitAnchor = { x: 0, y: 14, z: 0, w: 4.6 * unitSign.aspect, h: 4.6 };
+    let unitAccent = "";
+    const unitAnchor = { x: 0, y: 14, z: 0, w: 5.2 * unitSign.aspect, h: 5.2 };
+
+    const hoverFillMaterial = new THREE.MeshBasicMaterial({
+      color: 0xfffaf4,
+      transparent: true,
+      opacity: 0.2,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const hoverEdgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x2c2824,
+      transparent: true,
+      opacity: 0.85,
+    });
+    ownedMaterials.push(hoverFillMaterial, hoverEdgeMaterial);
+    const hoverEdges = new THREE.EdgesGeometry(box);
+    remember(hoverEdges);
+    const hoverAnchor = new THREE.Group();
+    hoverAnchor.add(new THREE.Mesh(box, hoverFillMaterial));
+    hoverAnchor.add(new THREE.LineSegments(hoverEdges, hoverEdgeMaterial));
+    hoverAnchor.visible = false;
+    hoverAnchor.renderOrder = 6;
+    scene.add(hoverAnchor);
+    const houseFillMaterial = new THREE.MeshBasicMaterial({
+      color: 0xfffaf4,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      side: THREE.DoubleSide,
+    });
+    const houseEdgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x2c2824,
+      transparent: true,
+      opacity: 0.8,
+    });
+    ownedMaterials.push(houseFillMaterial, houseEdgeMaterial);
+    let houseHoverId = "";
+    let houseLines: THREE.LineSegments | null = null;
+    let houseRoof: THREE.Mesh | null = null;
+    const clearHouseHover = () => {
+      if (houseLines) {
+        scene.remove(houseLines);
+        houseLines.geometry.dispose();
+        houseLines = null;
+      }
+      if (houseRoof) {
+        scene.remove(houseRoof);
+        houseRoof.geometry.dispose();
+        houseRoof = null;
+      }
+      houseHoverId = "";
+    };
+    const showHouseHover = (item: PlacedInstance) => {
+      if (houseHoverId === item.id && houseLines) return;
+      clearHouseHover();
+      const ring = footprintOf(item);
+      if (ring.length < 3) return;
+      houseHoverId = item.id;
+      const y0 = 0.2;
+      const y1 = 0.12 + HOUSE_WALL_M + HOUSE_PARAPET_M + 0.12;
+      const positions: number[] = [];
+      for (let index = 0; index < ring.length; index++) {
+        const start = ring[index];
+        const end = ring[(index + 1) % ring.length];
+        positions.push(start.x, y0, start.z, end.x, y0, end.z);
+        positions.push(start.x, y1, start.z, end.x, y1, end.z);
+        positions.push(start.x, y0, start.z, start.x, y1, start.z);
+      }
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      houseLines = new THREE.LineSegments(lineGeometry, houseEdgeMaterial);
+      houseLines.frustumCulled = false;
+      scene.add(houseLines);
+      const shape = new THREE.Shape();
+      shape.moveTo(ring[0].x, -ring[0].z);
+      for (let index = 1; index < ring.length; index++) shape.lineTo(ring[index].x, -ring[index].z);
+      const roofGeometry = new THREE.ShapeGeometry(shape);
+      roofGeometry.rotateX(-Math.PI / 2);
+      roofGeometry.translate(0, y1, 0);
+      houseRoof = new THREE.Mesh(roofGeometry, houseFillMaterial);
+      houseRoof.frustumCulled = false;
+      scene.add(houseRoof);
+    };
+    const showHover = (item: PlacedInstance | null) => {
+      if (!item) {
+        hoverAnchor.visible = false;
+        clearHouseHover();
+        return;
+      }
+      if (item.kind === "apartment") {
+        clearHouseHover();
+        hoverAnchor.visible = true;
+        hoverAnchor.position.set(item.x, item.y || 0, item.z);
+        hoverAnchor.rotation.set(0, item.rotY, 0);
+        hoverAnchor.scale.set(item.sx * 1.04, item.sy * 1.03, item.sz * 1.04);
+        return;
+      }
+      hoverAnchor.visible = false;
+      if (item.kind === "house") showHouseHover(item);
+    };
 
     if (world.trees.length > 0) {
       const trunk = new THREE.CylinderGeometry(0.18, 0.34, 3.4, 8);
@@ -935,6 +1052,36 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       return null;
     };
 
+    const faceNormal = new THREE.Vector3();
+    const instanceMatrix = new THREE.Matrix4();
+    const wallFacing = (hit: THREE.Intersection) => {
+      if (!hit.face) return false;
+      faceNormal.copy(hit.face.normal);
+      const mesh = hit.object as THREE.InstancedMesh;
+      if (hit.instanceId != null && typeof mesh.getMatrixAt === "function") {
+        mesh.getMatrixAt(hit.instanceId, instanceMatrix);
+        faceNormal.transformDirection(instanceMatrix);
+      } else {
+        faceNormal.transformDirection(hit.object.matrixWorld);
+      }
+      if (Math.hypot(faceNormal.x, faceNormal.z) < 0.55) return false;
+      return faceNormal.dot(raycaster.ray.direction) < -0.2;
+    };
+    const chooseHit = (hits: THREE.Intersection[]) => {
+      let firstApartment: THREE.Intersection | null = null;
+      let facing: THREE.Intersection | null = null;
+      for (const hit of hits) {
+        const item = itemFromHit(hit);
+        if (!item) continue;
+        if (item.kind === "house") return firstApartment ? facing || firstApartment : hit;
+        if (item.kind !== "apartment") continue;
+        if (!firstApartment) firstApartment = hit;
+        if (!facing && hit.distance <= firstApartment.distance + 6 && wallFacing(hit)) facing = hit;
+        if (firstApartment && hit.distance > firstApartment.distance + 6) break;
+      }
+      return facing || firstApartment;
+    };
+
     const skyPresence = (x: number, z: number) => {
       const flat = Math.hypot(camera.position.x - x, camera.position.z - z);
       const byDistance = 1 - THREE.MathUtils.smoothstep(flat, 280, 640);
@@ -958,17 +1105,21 @@ gl_FragColor.a *= 1.0 - edgeFog;`
         return;
       }
       const dist = Math.hypot(camera.position.x - x, camera.position.y - y, camera.position.z - z);
-      const fit = THREE.MathUtils.clamp(dist / 120, 0.52, 1.35);
+      const fit = THREE.MathUtils.clamp(dist / 120, 0.82, 1.35);
       sprite.visible = true;
       sprite.position.set(x, y, z);
       sprite.scale.set(w * fit, h * fit, 1);
       material.opacity = presence;
     };
 
+    const cssHex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
     const unitFloatText = (item: PlacedInstance) => {
       if (item.kind === "house") return shortCode(item.label);
-      if (item.kind === "apartment" && item.floor != null && item.apt != null) return `F${item.floor} · P${item.apt}`;
-      return "";
+      if (item.kind !== "apartment") return "";
+      if (item.code) return item.code.split("-").filter(Boolean).join(" · ");
+      if (item.floor == null || item.apt == null) return "";
+      const floorCode = item.floor === 1 ? "FG" : `F${item.floor - 1}`;
+      return `${shortCode(item.label)} · ${floorCode} · P${item.apt}`;
     };
 
     const tick = () => {
@@ -985,35 +1136,44 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       });
       if (pointerInside) {
         raycaster.setFromCamera(pointer, camera);
-        const hit = raycaster.intersectObjects(pickables, false)[0];
+        const hit = chooseHit(raycaster.intersectObjects(pickables, false));
         const item = hit ? itemFromHit(hit) : null;
         const text = item ? unitFloatText(item) : "";
         if (item && text) {
-          if (text !== unitText) {
+          const accent = item.kind === "apartment" ? cssHex(item.color) : "";
+          if (text !== unitText || accent !== unitAccent) {
             unitText = text;
-            unitSign.paint(text);
+            unitAccent = accent;
+            unitSign.paint(text, accent);
           }
           let x = item.x;
           let z = item.z;
-          let y = 17;
+          const y = item.kind === "apartment"
+            ? (item.y || 0) + item.sy + 0.45
+            : 0.12 + HOUSE_WALL_M + HOUSE_PARAPET_M + 0.35;
           if (item.kind === "apartment") {
             const dx = camera.position.x - item.x;
             const dz = camera.position.z - item.z;
             const len = Math.hypot(dx, dz) || 1;
-            x += (dx / len) * 1.6;
-            z += (dz / len) * 1.6;
-            y = (item.y || 0) + Math.max(item.sy, 1.6) + 2.2;
+            const reach = Math.max(Math.min(item.sx, item.sz) * 0.42, 0.4);
+            x += (dx / len) * reach;
+            z += (dz / len) * reach;
           }
           placeFloat(unitSign.sprite, x, y, z, unitAnchor.w, unitAnchor.h, 1);
+          showHover(item);
           renderer.domElement.style.cursor = "pointer";
         } else {
           unitSign.sprite.visible = false;
           unitText = "";
+          unitAccent = "";
+          showHover(null);
           renderer.domElement.style.cursor = "";
         }
-      } else if (unitSign.sprite.visible) {
+      } else if (unitSign.sprite.visible || hoverAnchor.visible || houseLines) {
         unitSign.sprite.visible = false;
         unitText = "";
+        unitAccent = "";
+        showHover(null);
         renderer.domElement.style.cursor = "";
       }
       renderer.render(scene, camera);
@@ -1032,7 +1192,7 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(pickables, false)[0];
+      const hit = chooseHit(raycaster.intersectObjects(pickables, false));
       const item = hit ? itemFromHit(hit) : null;
       if (item) onPickRef.current(toPick(item));
     };
@@ -1101,6 +1261,7 @@ gl_FragColor.a *= 1.0 - edgeFog;`
 
     return () => {
       cancelAnimationFrame(frame);
+      clearHouseHover();
       viewRef.current = {
         px: camera.position.x,
         py: camera.position.y,

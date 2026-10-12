@@ -933,10 +933,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       canAccessPaymentForm: true,
       canAccessPaymentArchive: true,
       showPaymentPlanButton: true,
+      canAccessExplore: true,
+      canAccessTour: true,
     };
-    
-    const currentValue = current[permission];
-    const newValue = typeof currentValue === 'boolean' ? !currentValue : true;
+
+    const newValue = current[permission] === false;
 
     const updated = {
       ...deptPermissions,
@@ -1870,6 +1871,13 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
   const permissionsCategories = [
     {
+      title: "أنظمة الخريطة",
+      perms: [
+        { key: 'canAccessExplore', label: 'صلاحية نظام الاستكشاف (الخريطة التفاعلية ثلاثية الأبعاد)' },
+        { key: 'canAccessTour', label: 'صلاحية نظام الجولة' },
+      ]
+    },
+    {
       title: "الصلاحيات العامة وعرض الحقول في الوحدة",
       perms: [
         { key: 'canEditUnitData', label: 'تعديل بيانات الوحدات وحفظ التغييرات' },
@@ -2097,6 +2105,11 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
           <Button variant="outline" size="sm" onClick={startEditingMainMap} disabled={isLoadingMainMap} className="gap-1.5">
             <MapIcon size={13} /> {isLoadingMainMap ? 'جاري التحميل...' : 'المخطط العام'}
           </Button>
+          <Link to="/toureditor">
+            <Button variant="ghost" size="sm" className="gap-1.5 text-fg-secondary">
+              <Bed size={13} /> جولات الوحدات
+            </Button>
+          </Link>
           <Link to="/incentives">
             <Button variant="ghost" size="sm" className="gap-1.5 text-fg-secondary">
               <Coins size={13} /> الحوافز
