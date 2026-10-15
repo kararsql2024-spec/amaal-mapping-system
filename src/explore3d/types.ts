@@ -10,6 +10,9 @@ export interface GroundPoly {
   kind: GroundKind;
   points: WorldPoint[];
   holes?: WorldPoint[][];
+  /** محاور الشارع، لرسم الخط المتقطع وأعمدة الإنارة. */
+  lanes?: WorldPoint[][];
+  widthM?: number;
 }
 
 export type PlaceKind = "house" | "tower" | "apartment" | "tree" | "amenity";

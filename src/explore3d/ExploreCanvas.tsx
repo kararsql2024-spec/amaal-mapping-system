@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { AMENITY_HEIGHT_M, COLORS, FLOOR_HEIGHT_M, HOUSE_PARAPET_M, HOUSE_WALL_M, TOWER_ROOF_M } from "./constants";
+import { amenityModel, laneDashes, parkModel, pitchModel, streetFurniture, type AmenityChannel } from "./amenityForms";
+import { COLORS, FLOOR_HEIGHT_M, HOUSE_PARAPET_M, HOUSE_WALL_M, TOWER_ROOF_M } from "./constants";
 import { centroid, insetPoly, yawOffset } from "./geometry";
 import type { ExplorePick, ExploreWorld, GroundKind, GroundPoly, PlacedInstance, WorldPoint } from "./types";
 
@@ -36,6 +37,62 @@ const groundGeometry = (polys: GroundPoly[], y: number) => {
   const merged = mergeGeometries(parts, false);
   parts.forEach((geometry) => geometry.dispose());
   return merged;
+};
+
+/** نسيج أرضي يتكرر بالأمتار، لأن إحداثيات الشكل هي إحداثيات المشهد. */
+const surfaceTexture = (kind: "asphalt" | "pavers" | "grass" | "turf", meters: number) => {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const base = { asphalt: "#8f8e8a", pavers: "#ddd6c9", grass: "#c2cfae", turf: "#b4c5a3" }[kind];
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+  if (kind === "pavers") {
+    const tiles = 4;
+    const step = size / tiles;
+    for (let row = 0; row < tiles; row++) {
+      for (let col = 0; col < tiles; col++) {
+        const shift = row % 2 ? step / 2 : 0;
+        const tone = 214 + Math.floor(Math.random() * 14);
+        ctx.fillStyle = `rgb(${tone + 7}, ${tone}, ${tone - 12})`;
+        ctx.fillRect(col * step + shift + 2, row * step + 2, step - 4, step - 4);
+        if (shift) ctx.fillRect(-step / 2 + 2, row * step + 2, step - 4, step - 4);
+      }
+    }
+    ctx.fillStyle = "rgba(160, 150, 134, 0.55)";
+    for (let row = 0; row <= tiles; row++) ctx.fillRect(0, row * step - 1, size, 2);
+  }
+  const specks = kind === "asphalt" ? 5200 : kind === "pavers" ? 1400 : 3600;
+  for (let index = 0; index < specks; index++) {
+    const light = Math.random() > 0.5;
+    const alpha = kind === "asphalt" ? 0.1 + Math.random() * 0.16 : 0.06 + Math.random() * 0.1;
+    if (kind === "grass" || kind === "turf") {
+      ctx.fillStyle = light ? `rgba(226, 236, 206, ${alpha})` : `rgba(104, 128, 86, ${alpha})`;
+      ctx.fillRect(Math.random() * size, Math.random() * size, 1.4, 2.6);
+    } else {
+      ctx.fillStyle = light ? `rgba(255, 255, 255, ${alpha})` : `rgba(40, 38, 34, ${alpha})`;
+      const dot = 1 + Math.random() * 1.6;
+      ctx.fillRect(Math.random() * size, Math.random() * size, dot, dot);
+    }
+  }
+  if (kind === "asphalt") {
+    for (let index = 0; index < 7; index++) {
+      ctx.fillStyle = `rgba(${Math.random() > 0.5 ? "255,255,255" : "30,30,28"}, 0.035)`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * size, Math.random() * size, 20 + Math.random() * 50, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1 / meters, 1 / meters);
+  texture.anisotropy = 8;
+  return texture;
 };
 
 const unitBox = () => {
@@ -453,7 +510,7 @@ export const ExploreCanvas = ({
       },
       uEdgeColor: { value: horizon.clone() },
     };
-    const veil = (material: THREE.MeshLambertMaterial | THREE.MeshBasicMaterial, fadeAlpha = false) => {
+    const veil = (material: THREE.MeshLambertMaterial | THREE.MeshBasicMaterial | THREE.MeshPhongMaterial, fadeAlpha = false) => {
       material.customProgramCacheKey = () => (fadeAlpha ? "site-edge-rect-alpha" : "site-edge-rect");
       if (fadeAlpha) material.transparent = true;
       material.onBeforeCompile = (shader) => {
@@ -520,13 +577,16 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     scene.add(sky);
     remember(skyGeometry, skyMaterial);
 
-    const addGround = (kind: GroundKind, color: number, y: number) => {
+    const addGround = (kind: GroundKind, color: number, y: number, map?: THREE.Texture | null) => {
       const geometry = groundGeometry(
         world.ground.filter((poly) => poly.kind === kind),
         y,
       );
-      if (!geometry) return;
-      const material = new THREE.MeshBasicMaterial({ color });
+      if (!geometry) {
+        map?.dispose();
+        return;
+      }
+      const material = new THREE.MeshBasicMaterial(map ? { color: 0xffffff, map } : { color });
       veil(material);
       ownedMaterials.push(material);
       material.polygonOffset = true;
@@ -577,10 +637,49 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     remember(sunGlow.geometry, sunGlow.material);
     remember(sunDisc.geometry, sunDisc.material);
 
-    addGround("green", COLORS.green, 0.18);
-    addGround("pitch", COLORS.pitch, 0.24);
-    addGround("sidewalk", COLORS.sidewalk, 0.32);
-    addGround("road", COLORS.road, 0.42);
+    addGround("green", COLORS.green, 0.18, surfaceTexture("grass", 14));
+    addGround("pitch", COLORS.pitch, 0.24, surfaceTexture("turf", 10));
+    addGround("sidewalk", COLORS.sidewalk, 0.32, surfaceTexture("pavers", 2.4));
+    addGround("road", COLORS.road, 0.42, surfaceTexture("asphalt", 9));
+
+    const dashGeometry = laneDashes(world.ground, 0.44);
+    if (dashGeometry) {
+      remember(dashGeometry);
+      const dashMaterial = new THREE.MeshBasicMaterial({ color: 0xf4f2ec, side: THREE.DoubleSide });
+      veil(dashMaterial);
+      dashMaterial.polygonOffset = true;
+      dashMaterial.polygonOffsetFactor = -4;
+      dashMaterial.polygonOffsetUnits = -4;
+      ownedMaterials.push(dashMaterial);
+      scene.add(new THREE.Mesh(dashGeometry, dashMaterial));
+    }
+
+    const detailMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    veil(detailMaterial);
+    ownedMaterials.push(detailMaterial);
+    const addDetail = (parts: THREE.BufferGeometry[]) => {
+      if (parts.length === 0) return;
+      const merged = mergeGeometries(parts, false);
+      parts.forEach((geometry) => geometry.dispose());
+      if (!merged) return;
+      remember(merged);
+      scene.add(new THREE.Mesh(merged, detailMaterial));
+    };
+    addDetail(streetFurniture(world.ground, 0.32));
+    addDetail(world.ground.filter((poly) => poly.kind === "pitch").flatMap((poly) => pitchModel(poly.points, 0.24)));
+    const parks = new Map<string, (x: number, z: number) => boolean>();
+    addDetail(world.ground.filter((poly) => poly.kind === "green").flatMap((poly) => {
+      const park = parkModel(poly.id, poly.points, 0.18);
+      parks.set(poly.id, park.keepOut);
+      return park.parts;
+    }));
+    const onPath = (item: PlacedInstance) => {
+      const owner = item.id.replace(/-(tree|shrub)-\d+$/, "");
+      const keepOut = parks.get(owner);
+      return keepOut ? keepOut(item.x, item.z) : false;
+    };
+    const trees = world.trees.filter((item) => !onPath(item));
+    const shrubs = world.shrubs.filter((item) => !onPath(item));
 
     const box = unitBox();
     const shaded = contactBox();
@@ -955,38 +1054,38 @@ gl_FragColor.a *= 1.0 - edgeFog;`
       if (item.kind === "house") showHouseHover(item);
     };
 
-    if (world.trees.length > 0) {
+    if (trees.length > 0) {
       const trunk = new THREE.CylinderGeometry(0.18, 0.34, 3.4, 8);
       trunk.translate(0, 1.7, 0);
       const crown = treeCrown();
       remember(trunk);
       if (crown) remember(crown);
       const leaf = solid(0xffffff);
-      addMesh(scene, trunk, solid(COLORS.treeTrunk), world.trees, () => 0.18, false, pickables, false);
-      if (crown) addMesh(scene, crown, leaf, world.trees, () => 0.18, true, pickables, false);
+      addMesh(scene, trunk, solid(COLORS.treeTrunk), trees, () => 0.18, false, pickables, false);
+      if (crown) addMesh(scene, crown, leaf, trees, () => 0.18, true, pickables, false);
     }
 
-    if (world.shrubs.length > 0) {
+    if (shrubs.length > 0) {
       const bush = new THREE.SphereGeometry(0.85, 8, 6);
       bush.translate(0, 0.62, 0);
       remember(bush);
-      addMesh(scene, bush, solid(0xffffff), world.shrubs, () => 0.18, true, pickables, false);
+      addMesh(scene, bush, solid(0xffffff), shrubs, () => 0.18, true, pickables, false);
     }
 
     if (world.amenities.length > 0) {
-      const bodies: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
-      const lips: { geometry: THREE.BufferGeometry; item: PlacedInstance }[] = [];
+      const roads = world.ground.filter((poly) => poly.kind === "road");
+      const buckets: Record<AmenityChannel, { geometry: THREE.BufferGeometry; item: PlacedInstance }[]> = {
+        solid: [],
+        glass: [],
+        water: [],
+      };
+      const tops = new Map<string, number>();
       world.amenities.forEach((item) => {
-        const ring = footprintOf(item);
-        const wall = insetPoly(ring, 0.4);
-        const shell = insetPoly(ring, 0.1);
-        const body = extrudeRing(wall, AMENITY_HEIGHT_M, 0.08);
-        if (body) {
-          paintGeometry(body, item.color, true);
-          bodies.push({ geometry: body, item });
-        }
-        const lip = extrudeRing(shell, 0.5, 0.08 + AMENITY_HEIGHT_M, wall);
-        if (lip) lips.push({ geometry: lip, item });
+        const model = amenityModel(item, footprintOf(item), roads);
+        (Object.keys(model.parts) as AmenityChannel[]).forEach((channel) => {
+          model.parts[channel].forEach((geometry) => buckets[channel].push({ geometry, item }));
+        });
+        tops.set(item.id, model.top);
       });
       const placeVolumes = (
         parts: { geometry: THREE.BufferGeometry; item: PlacedInstance }[],
@@ -1004,16 +1103,30 @@ gl_FragColor.a *= 1.0 - edgeFog;`
         vertexColors: true,
         side: THREE.DoubleSide,
       });
-      veil(amenityMaterial);
-      const amenityLip = solid(0xe4d8c6);
-      amenityLip.side = THREE.DoubleSide;
-      ownedMaterials.push(amenityMaterial);
-      placeVolumes(bodies, amenityMaterial);
-      placeVolumes(lips, amenityLip);
+      const glassMaterial = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        shininess: 70,
+        specular: 0x5d6871,
+      });
+      const waterMaterial = new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        shininess: 110,
+        specular: 0x8fa4ad,
+        emissive: 0x16262b,
+      });
+      [amenityMaterial, glassMaterial, waterMaterial].forEach((material) => {
+        veil(material);
+        ownedMaterials.push(material);
+      });
+      placeVolumes(buckets.solid, amenityMaterial);
+      placeVolumes(buckets.glass, glassMaterial);
+      placeVolumes(buckets.water, waterMaterial);
       world.amenities.forEach((item) => {
         const sprite = makeLabel(item.label);
         if (!sprite) return;
-        sprite.position.set(item.x, item.sy + 2.2, item.z);
+        sprite.position.set(item.x, (tops.get(item.id) ?? item.sy) + 2.6, item.z);
         scene.add(sprite);
         ownedMaterials.push(sprite.material);
       });

@@ -4,6 +4,8 @@ import { getApartmentLabel } from "@/lib/units";
 import { floorPlan, orientPlanBox } from "@/lib/tower-plan";
 import {
   AMENITY_COLORS,
+  AMENITY_HEIGHTS,
+  AMENITY_LABELS,
   COLORS,
   AMENITY_HEIGHT_M,
   FLOOR_BAND_M,
@@ -20,7 +22,7 @@ import {
   TREE_SPACING_M,
 } from "./constants";
 import { boundsOf, centroid, hashString, pointInPoly, yawOffset } from "./geometry";
-import { networkShape } from "@/lib/road-geometry";
+import { networkShape, roadMarkings } from "@/lib/road-geometry";
 import type { ExploreWorld, GroundPoly, PlacedInstance, UnitLite, WorldPoint } from "./types";
 
 const elementPoints = (el: MapElement): Point[] => {
@@ -180,18 +182,46 @@ export const buildWorld = (
     if (el.type === "road" || el.type === "sidewalk" || el.type === "green" || el.type === "pitch") {
       let outline = elementPoints(el);
       let holeRings = el.pathHoles || [];
+      let lanes: Point[][] = [];
+      let widthPx = 0;
       if ((el.type === "road" || el.type === "sidewalk") && el.centerline && el.centerline.length >= 2 && el.pathWidth) {
         const shape = networkShape(el.centerline, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
         if (shape.outline.length >= 3) {
           outline = shape.outline;
           holeRings = shape.holes;
         }
+        const main = el.pathClosed ? [...el.centerline, el.centerline[0]] : el.centerline;
+        lanes = [main, ...(el.centerlineBranches || []), ...(el.pathLoops || []).map((loop) => [...loop, loop[0]])];
+        widthPx = el.pathWidth;
+      } else if (el.type === "road" && outline.length >= 4 && holeRings.length === 0) {
+        const center = roadMarkings(outline).center;
+        const area = Math.abs(outline.reduce((sum, point, index) => {
+          const next = outline[(index + 1) % outline.length];
+          return sum + point.x * next.y - next.x * point.y;
+        }, 0)) / 2;
+        const perimeter = outline.reduce((sum, point, index) => {
+          const next = outline[(index + 1) % outline.length];
+          return sum + Math.hypot(next.x - point.x, next.y - point.y);
+        }, 0);
+        const width = perimeter > 0 ? (2 * area) / perimeter : 0;
+        const length = center.reduce((sum, point, index) => (index ? sum + Math.hypot(point.x - center[index - 1].x, point.y - center[index - 1].y) : 0), 0);
+        if (center.length >= 2 && width > 0 && length > width * 2) {
+          lanes = [center];
+          widthPx = width;
+        }
       }
       const roadPts = toWorld(outline);
       const holes = holeRings
         .map((hole) => toWorld(hole))
         .filter((hole) => hole.length >= 3);
-      ground.push({ id: el.id, kind: el.type, points: roadPts.length >= 3 ? roadPts : worldPts, holes: holes.length > 0 ? holes : undefined });
+      ground.push({
+        id: el.id,
+        kind: el.type,
+        points: roadPts.length >= 3 ? roadPts : worldPts,
+        holes: holes.length > 0 ? holes : undefined,
+        lanes: lanes.length > 0 ? lanes.filter((lane) => lane.length >= 2).map((lane) => toWorld(lane)) : undefined,
+        widthM: widthPx > 0 ? widthPx * metersPerPixel : undefined,
+      });
       if (el.type === "green") {
         scatterPlanting(el.id, worldPts, trees, shrubs);
       }
@@ -338,12 +368,12 @@ export const buildWorld = (
         id: el.id,
         kind: "amenity",
         amenityType,
-        label: el.label || amenityType,
+        label: el.label || AMENITY_LABELS[amenityType] || amenityType,
         x: footprintCenter.x,
         z: footprintCenter.z,
         rotY: 0,
         sx: Math.max(footprintBox.width, 0.8),
-        sy: AMENITY_HEIGHT_M,
+        sy: AMENITY_HEIGHTS[amenityType] || AMENITY_HEIGHT_M,
         sz: Math.max(footprintBox.depth, 0.8),
         points: footprint.length >= 3 ? footprint : undefined,
         color: AMENITY_COLORS[amenityType] || COLORS.amenity,

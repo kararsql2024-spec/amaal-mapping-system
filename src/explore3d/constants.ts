@@ -15,6 +15,24 @@ export const HOUSE_DEPTH_M = 10;
 export const FLOOR_BAND_M = 0.42;
 export const TOWER_ROOF_M = 0.9;
 export const AMENITY_HEIGHT_M = 6;
+
+export const AMENITY_HEIGHTS: Record<string, number> = {
+  shop: 4.4,
+  school: 8.4,
+  medical: 6.2,
+  nursery: 4.6,
+  mall: 7.8,
+  gym: 6.2,
+  supermarket: 4.4,
+  mosque: 12.6,
+  garage: 3.1,
+  fountain: 2.5,
+  gate: 5.4,
+  parking: 2.6,
+  pool: 0.9,
+  playground: 2.7,
+  security: 3.8,
+};
 /** شارع مرسوم كخط رفيع لا يبقى بعرض مترين. */
 export const STREET_MIN_M = 8;
 export const MIN_FOOTPRINT_M = 4.5;
@@ -56,6 +74,13 @@ export const AMENITY_COLORS: Record<string, number> = {
   gym: 0xc9d0c4,
   supermarket: 0xd8d2c0,
   mosque: 0xd9d3c8,
+  garage: 0xc8c6c2,
+  fountain: 0xc5d0d4,
+  gate: 0xddd8ce,
+  parking: 0xd9d5cc,
+  pool: 0xc5d0d4,
+  playground: 0xe4d7c4,
+  security: 0xd8d3c8,
 };
 
 export const AMENITY_LABELS: Record<string, string> = {
@@ -67,4 +92,11 @@ export const AMENITY_LABELS: Record<string, string> = {
   gym: "جم",
   supermarket: "أسواق مركزية",
   mosque: "مسجد",
+  garage: "كراج",
+  fountain: "نافورة",
+  gate: "بوابة",
+  parking: "موقف",
+  pool: "مسبح",
+  playground: "ملعب أطفال",
+  security: "استعلامات",
 };
