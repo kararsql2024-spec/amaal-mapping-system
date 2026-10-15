@@ -11,7 +11,11 @@ import {
   Copy, ChevronRight, ChevronDown, X, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   Settings2, MoonStar, Maximize2, Footprints, Car, EyeOff, Eye, Paintbrush, MousePointer2,
   SlidersHorizontal, Maximize, Minimize, Image as ImageIcon, Lock, Unlock, Upload, Bold, RotateCw, Layers, Loader2, RefreshCcw,
-  Frame, Ruler, Plus, Undo2, Route
+  Frame, Ruler, Plus, Undo2, Route, Tag, Pentagon, PenLine,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
+  Warehouse, Droplets, DoorOpen, SquareParking, Waves, ToyBrick, Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -93,19 +97,51 @@ const AMENITY_TYPES = [
   { id: 'gym', label: 'جم', icon: Dumbbell },
   { id: 'supermarket', label: 'أسواق مركزية', icon: ShoppingCart },
   { id: 'mosque', label: 'مسجد', icon: MoonStar },
+  { id: 'garage', label: 'كراج', icon: Warehouse },
+  { id: 'fountain', label: 'نافورة', icon: Droplets },
+  { id: 'gate', label: 'بوابة', icon: DoorOpen },
+  { id: 'parking', label: 'موقف', icon: SquareParking },
+  { id: 'pool', label: 'مسبح', icon: Waves },
+  { id: 'playground', label: 'ملعب أطفال', icon: ToyBrick },
+  { id: 'security', label: 'استعلامات', icon: Shield },
 ];
+
+type EditorTool = ElementType | 'map_boundary' | 'street_auto' | 'green_plot' | 'house_plot' | 'measure' | 'garage' | 'fountain' | 'gate' | 'parking' | 'pool' | 'playground' | 'security';
 
 const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; swatch: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, swatch: STATUS_META.available.fill },
-  { type: 'tower', label: 'برج', icon: Building2, swatch: palette.accent },
+  { type: 'tower', label: 'عمارة', icon: Building2, swatch: palette.accent },
   { type: 'road', label: 'طريق', icon: Waypoints, swatch: mapPalette.roadStroke },
   { type: 'sidewalk', label: 'رصيف', icon: Footprints, swatch: mapPalette.sidewalkStroke },
-  { type: 'green', label: 'مساحة خضراء', icon: Leaf, swatch: mapPalette.green },
+  { type: 'green', label: 'حديقة', icon: Leaf, swatch: mapPalette.green },
   { type: 'pitch', label: 'ملعب', icon: Trophy, swatch: mapPalette.pitch },
   { type: 'amenity', label: 'مرفق', icon: MapPin, swatch: mapPalette.amenity },
   { type: 'text', label: 'نص', icon: Type, swatch: palette.fgSecondary },
-  { type: 'label_area', label: 'منطقة تسمية', icon: Type, swatch: mapPalette.labelAreaStroke },
-  { type: 'map_boundary', label: 'حدود الخريطة', icon: Frame, swatch: mapPalette.highlight },
+  { type: 'label_area', label: 'تسمية', icon: Tag, swatch: mapPalette.labelAreaStroke },
+  { type: 'map_boundary', label: 'حدود', icon: Frame, swatch: mapPalette.highlight },
+];
+
+const RAIL: { type: EditorTool; label: string; hint: string; icon: any; swatch: string; gapBefore?: boolean }[] = [
+  { type: 'measure', label: 'قياس', hint: 'انقر نقطتين لقياس المسافة بينهما', icon: Ruler, swatch: palette.fgSecondary },
+  { type: 'house', label: 'منزل', hint: 'نقرة تضع منزلاً مربعاً ثم تُعدَّل زواياه', icon: Home, swatch: STATUS_META.available.fill, gapBefore: true },
+  { type: 'house_plot', label: 'قطعة', hint: 'ارسم مسار قطعة المنزل وأغلقه عند النقطة الأولى', icon: PenLine, swatch: STATUS_META.available.fill },
+  { type: 'tower', label: 'عمارة', hint: 'نقرة تضع عمارة ثم تُعدَّل زواياها', icon: Building2, swatch: palette.accent },
+  { type: 'pitch', label: 'ملعب', hint: 'نقرة تضع ملعباً', icon: Trophy, swatch: mapPalette.pitch },
+  { type: 'amenity', label: 'مرفق', hint: 'نقرة تضع مرفقاً، ونوعه يُختار من الخصائص', icon: MapPin, swatch: mapPalette.amenity },
+  { type: 'garage', label: 'كراج', hint: 'نقرة تضع كراجاً', icon: Warehouse, swatch: mapPalette.amenity },
+  { type: 'fountain', label: 'نافورة', hint: 'نقرة تضع نافورة', icon: Droplets, swatch: mapPalette.amenity },
+  { type: 'gate', label: 'بوابة', hint: 'نقرة تضع بوابة المشروع', icon: DoorOpen, swatch: mapPalette.amenity },
+  { type: 'parking', label: 'موقف', hint: 'نقرة تضع موقف سيارات', icon: SquareParking, swatch: mapPalette.amenity },
+  { type: 'pool', label: 'مسبح', hint: 'نقرة تضع مسبحاً', icon: Waves, swatch: mapPalette.amenity },
+  { type: 'playground', label: 'أطفال', hint: 'نقرة تضع ملعب أطفال', icon: ToyBrick, swatch: mapPalette.amenity },
+  { type: 'security', label: 'أمن', hint: 'نقرة تضع استعلامات أو مركزاً أمنياً', icon: Shield, swatch: mapPalette.amenity },
+  { type: 'road', label: 'طريق', hint: 'ارسم مسار الطريق نقطة نقطة ثم ولّد عرضه', icon: Waypoints, swatch: mapPalette.roadStroke, gapBefore: true },
+  { type: 'sidewalk', label: 'رصيف', hint: 'ارسم مسار الرصيف نقطة نقطة ثم ولّد عرضه', icon: Footprints, swatch: mapPalette.sidewalkStroke },
+  { type: 'green_plot', label: 'حديقة', hint: 'ارسم مسار الحديقة وأغلقه. المساحة داخله تصبح خضراء', icon: Pentagon, swatch: mapPalette.green },
+  { type: 'street_auto', label: 'بلوك', hint: 'حدد منطقة حول البلوكات لتوليد الشوارع والأرصفة', icon: Route, swatch: mapPalette.roadStroke },
+  { type: 'text', label: 'نص', hint: 'نقرة تضع نصاً', icon: Type, swatch: palette.fgSecondary, gapBefore: true },
+  { type: 'label_area', label: 'تسمية', hint: 'نقرة تضع منطقة تسمية شفافة', icon: Tag, swatch: mapPalette.labelAreaStroke },
+  { type: 'map_boundary', label: 'حدود', hint: 'اسحب مستطيلاً لتحديد حدود لوحة المخطط', icon: Frame, swatch: mapPalette.highlight },
 ];
 
 const MapEditor = ({ 
@@ -131,12 +167,17 @@ const MapEditor = ({
   const dragPushedRef = useRef(false);
   const undoRef = useRef<() => void>(() => {});
   const redoRef = useRef<() => void>(() => {});
+  const duplicateRef = useRef<() => void>(() => {});
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedIdsRef = useRef<string[]>([]);
+  selectedIdsRef.current = selectedIds;
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [activeTool, setActiveTool] = useState<ElementType | 'map_boundary' | 'street_auto' | null>(null);
+  const [activeTool, setActiveTool] = useState<EditorTool | null>(null);
+  const [measurePoints, setMeasurePoints] = useState<Point[]>([]);
   const [isBrushMode, setIsBrushMode] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
-  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush' | 'boundary', startPos?: Point, index?: number } | null>(null);
+  const [dragMode, setDragMode] = useState<{ type: 'move' | 'vertex' | 'edge' | 'rotate' | 'pan' | 'brush' | 'boundary' | 'marquee', startPos?: Point, index?: number, ids?: string[], targetId?: string } | null>(null);
   const [tempPoints, setTempPoints] = useState<Point[]>([]);
   const [plotPoints, setPlotPoints] = useState<Point[]>([]);
   const [plotWidth, setPlotWidth] = useState(40);
@@ -154,7 +195,7 @@ const MapEditor = ({
   const plotRef = useRef({ active: false, count: 0, closed: false });
   const linkingRef = useRef<string | null>(null);
   plotRef.current = {
-    active: activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto',
+    active: activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot',
     count: plotPoints.length,
     closed: plotClosed,
   };
@@ -279,9 +320,17 @@ const MapEditor = ({
       
       const step = gridLock ? GRID_SIZE : 1;
       
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        duplicateRef.current();
+        return;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        setElements(prev => prev.filter(el => el.id !== selectedId));
+        const ids = new Set(selectedIdsRef.current.length ? selectedIdsRef.current : [selectedId]);
+        setElements(prev => prev.filter(el => !ids.has(el.id)));
         setSelectedId(null);
+        setSelectedIds([]);
         return;
       }
 
@@ -356,8 +405,11 @@ const MapEditor = ({
 
   const plotTarget = (pos: Point) => {
     const previous = plotPoints[plotPoints.length - 1];
+    if (!directionLock) {
+      return { point: { x: snap(pos.x), y: snap(pos.y) }, guides: [] as { d: number; x: number; y: number; ax: number; ay: number }[] };
+    }
     const anchors = alignmentAnchors(previous);
-    const canLock = !!(previous && directionLock && (directionMode === 'global' || pathAxis(plotPoints) != null));
+    const canLock = !!(previous && (directionMode === 'global' || pathAxis(plotPoints) != null));
     const locked = canLock ? snapDirection(previous, pos, directionMode, pathAxis(plotPoints)) : null;
     const base = locked ?? pos;
     const horizontal = !!(previous && locked && Math.abs(locked.y - previous.y) <= 0.6 && Math.abs(locked.x - previous.x) > 0.6);
@@ -424,7 +476,12 @@ const MapEditor = ({
       return;
     }
     if (dragMode || !activeTool || isBrushMode || activeTool === 'map_boundary') return;
-    if (activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto') {
+    if (activeTool === 'measure') {
+      const point = { x: snap(pos.x), y: snap(pos.y) };
+      setMeasurePoints((prev) => (prev.length >= 2 ? [point] : [...prev, point]));
+      return;
+    }
+    if (activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot') {
       if (activeTool !== 'street_auto' && extendId && !extendAnchor) {
         const el = elements.find((item) => item.id === extendId);
         const pick = el ? pickOnPaths(el, pos) : null;
@@ -441,6 +498,12 @@ const MapEditor = ({
       const point = resolvePlotPoint(pos);
       const previous = plotPoints[plotPoints.length - 1];
       if (closesPlot(point)) {
+        if (activeTool === 'green_plot' || activeTool === 'house_plot') {
+          if (plotPoints.length >= 3) createElement(activeTool === 'house_plot' ? 'house' : 'green', plotPoints);
+          setPlotPoints([]);
+          setPlotClosed(false);
+          return;
+        }
         setPlotClosed(true);
         return;
       }
@@ -456,6 +519,11 @@ const MapEditor = ({
       { x: snap(pos.x + w/2), y: snap(pos.y + h/2) },
       { x: snap(pos.x - w/2), y: snap(pos.y + h/2) },
     ];
+    const placedAmenity = AMENITY_TYPES.find((entry) => entry.id === activeTool);
+    if (placedAmenity && activeTool !== 'amenity') {
+      createElement('amenity', newPoints, false, placedAmenity.label, { amenityType: placedAmenity.id });
+      return;
+    }
     createElement(activeTool as ElementType, newPoints);
   };
 
@@ -495,6 +563,7 @@ const MapEditor = ({
     };
     setElements(prev => [...prev, newElement]);
     setSelectedId(newElement.id);
+    setSelectedIds([newElement.id]);
   };
 
   useEffect(() => {
@@ -510,7 +579,7 @@ const MapEditor = ({
   }, [activeTool, isBrushMode]);
 
   useEffect(() => {
-    if (activeTool !== 'road' && activeTool !== 'sidewalk' && activeTool !== 'street_auto') return;
+    if (activeTool !== 'road' && activeTool !== 'sidewalk' && activeTool !== 'street_auto' && activeTool !== 'green_plot' && activeTool !== 'house_plot') return;
     const handlePlotKeys = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
       if (e.key === 'Escape') {
@@ -530,12 +599,19 @@ const MapEditor = ({
         if (plotPoints.length <= 1) setExtendAnchor(null);
         return;
       }
+      if (e.key === 'Enter' && (activeTool === 'green_plot' || activeTool === 'house_plot') && plotPoints.length >= 3) {
+        e.preventDefault();
+        createElement(activeTool === 'house_plot' ? 'house' : 'green', plotPoints);
+        setPlotPoints([]);
+        setPlotClosed(false);
+        return;
+      }
       if (e.key === 'Enter' && activeTool === 'street_auto' && plotPoints.length >= 3) {
         e.preventDefault();
         generateRegionStreets();
         return;
       }
-      if (e.key === 'Enter' && plotPoints.length >= 2) {
+      if (e.key === 'Enter' && (activeTool === 'road' || activeTool === 'sidewalk') && plotPoints.length >= 2) {
         e.preventDefault();
         generateFromPlot();
       }
@@ -824,6 +900,18 @@ const MapEditor = ({
     setIsBrushMode(false);
   };
 
+  const grabElement = (event: React.MouseEvent, el: MapElement) => {
+    if (linkingId || extendId) return;
+    const current = selectedIdsRef.current;
+    const next = event.shiftKey ? (current.includes(el.id) ? current : [...current, el.id]) : [el.id];
+    selectedIdsRef.current = next;
+    setSelectedIds(next);
+    setSelectedId(el.id);
+    if (el.locked) return;
+    event.stopPropagation();
+    setDragMode({ type: 'move', ids: next, targetId: el.id });
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (linkingId || extendId) return;
     const pos = getMousePos(e);
@@ -838,12 +926,17 @@ const MapEditor = ({
       return;
     }
     if (!activeTool) {
+      if (e.shiftKey) {
+        setDragMode({ type: 'marquee', startPos: pos });
+        setTempPoints([pos, pos, pos, pos]);
+        return;
+      }
       setDragMode({ type: 'pan', startPos: { x: e.clientX, y: e.clientY } });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if ((activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || linkingId) && !isBrushMode) {
+    if ((activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot' || linkingId) && !isBrushMode) {
       const next = getMousePos(e);
       setPlotCursor((prev) => (prev && Math.abs(prev.x - next.x) < 0.4 && Math.abs(prev.y - next.y) < 0.4 ? prev : next));
     }
@@ -868,6 +961,16 @@ const MapEditor = ({
       if (dist > 30) setTempPoints(prev => [...prev, pos]);
       return;
     }
+    if (dragMode.type === 'marquee' && dragMode.startPos) {
+      const start = dragMode.startPos;
+      setTempPoints([
+        { x: start.x, y: start.y },
+        { x: pos.x, y: start.y },
+        { x: pos.x, y: pos.y },
+        { x: start.x, y: pos.y },
+      ]);
+      return;
+    }
     if (dragMode.type === 'pan' && dragMode.startPos) {
       const dx = e.clientX - dragMode.startPos.x;
       const dy = e.clientY - dragMode.startPos.y;
@@ -876,13 +979,55 @@ const MapEditor = ({
       return;
     }
     if (!selectedId) return;
-    setElements(prev => prev.map(el => {
+    const shiftPoint = (point: Point, dx: number, dy: number) => ({ x: point.x + dx, y: point.y + dy });
+    setElements(prev => {
+      if (dragMode.type === 'move') {
+        const primaryId = dragMode.targetId || selectedId;
+        const primary = prev.find((el) => el.id === primaryId);
+        if (!primary || primary.locked) return prev;
+        const primaryPts = getElementPoints(primary);
+        const cx = primaryPts.reduce((sum, p) => sum + p.x, 0) / primaryPts.length;
+        const cy = primaryPts.reduce((sum, p) => sum + p.y, 0) / primaryPts.length;
+        const dx = snap(pos.x) - cx;
+        const dy = snap(pos.y) - cy;
+        const moving = new Set(dragMode.ids?.length ? dragMode.ids : [primaryId]);
+        return prev.map((el) => {
+          if (!moving.has(el.id) || el.locked) return el;
+          const newPoints = getElementPoints(el).map((point) => shiftPoint(point, dx, dy));
+          checkAndExpandMap(newPoints);
+          return {
+            ...el,
+            points: newPoints,
+            x: newPoints[0].x,
+            y: newPoints[0].y,
+            centerline: el.centerline?.map((point) => shiftPoint(point, dx, dy)),
+            centerlineBranches: el.centerlineBranches?.map((branch) => branch.map((point) => shiftPoint(point, dx, dy))),
+            pathHoles: el.pathHoles?.map((hole) => hole.map((point) => shiftPoint(point, dx, dy))),
+            pathLoops: el.pathLoops?.map((loop) => loop.map((point) => shiftPoint(point, dx, dy))),
+          };
+        });
+      }
+      return prev.map(el => {
       if (el.id !== selectedId) return el;
       if (el.locked) return el;
       const pts = getElementPoints(el);
       const dragIdx = dragMode.index;
       let newPoints = [...pts];
       
+      if (dragMode.type === 'vertex' && dragIdx !== undefined && el.centerline && el.pathWidth && (el.type === 'road' || el.type === 'sidewalk') && dragIdx < el.centerline.length) {
+        const line = el.centerline.map((point, index) => index === dragIdx ? { x: snap(pos.x), y: snap(pos.y) } : point);
+        const shape = networkShape(line, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
+        if (shape.outline.length < 3) return el;
+        return {
+          ...el,
+          centerline: line,
+          points: shape.outline,
+          pathHoles: shape.holes.length > 0 ? shape.holes : undefined,
+          x: shape.outline[0].x,
+          y: shape.outline[0].y,
+          rotation: 0,
+        };
+      }
       if (dragMode.type === 'vertex' && dragIdx !== undefined) {
         const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
         const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
@@ -920,11 +1065,33 @@ const MapEditor = ({
       }
       checkAndExpandMap(newPoints);
       return { ...el, points: newPoints, x: newPoints[0].x, y: newPoints[0].y };
-    }));
+    });
+    });
   };
 
   const handleMouseUp = () => {
     dragPushedRef.current = false;
+    if (dragMode?.type === 'marquee' && tempPoints.length === 4) {
+      const minX = Math.min(...tempPoints.map((p) => p.x));
+      const minY = Math.min(...tempPoints.map((p) => p.y));
+      const maxX = Math.max(...tempPoints.map((p) => p.x));
+      const maxY = Math.max(...tempPoints.map((p) => p.y));
+      if (maxX - minX > 4 && maxY - minY > 4) {
+        const hits = elements.filter((el) => {
+          const pts = getElementPoints(el);
+          const left = Math.min(...pts.map((p) => p.x));
+          const top = Math.min(...pts.map((p) => p.y));
+          const right = Math.max(...pts.map((p) => p.x));
+          const bottom = Math.max(...pts.map((p) => p.y));
+          return right >= minX && left <= maxX && bottom >= minY && top <= maxY;
+        }).map((el) => el.id);
+        setSelectedIds(hits);
+        setSelectedId(hits[0] || null);
+      }
+      setTempPoints([]);
+      setDragMode(null);
+      return;
+    }
     if (dragMode?.type === 'boundary' && tempPoints.length === 4) {
       const minX = Math.min(...tempPoints.map(p => p.x));
       const minY = Math.min(...tempPoints.map(p => p.y));
@@ -1069,7 +1236,107 @@ const MapEditor = ({
     }
   };
 
-  const isSelected = (id: string) => selectedId === id;
+  const duplicateSelection = () => {
+    const ids = selectedIdsRef.current.length ? selectedIdsRef.current : (selectedId ? [selectedId] : []);
+    if (!ids.length) return;
+    const offset = 24;
+    const shift = (point: Point) => ({ x: point.x + offset, y: point.y + offset });
+    const copies = elementsRef.current.filter((el) => ids.includes(el.id)).map((el) => ({
+      ...el,
+      id: Math.random().toString(36).substr(2, 9),
+      points: el.points.map(shift),
+      x: el.x + offset,
+      y: el.y + offset,
+      centerline: el.centerline?.map(shift),
+      centerlineBranches: el.centerlineBranches?.map((branch) => branch.map(shift)),
+      pathHoles: el.pathHoles?.map((hole) => hole.map(shift)),
+      pathLoops: el.pathLoops?.map((loop) => loop.map(shift)),
+    }));
+    if (!copies.length) return;
+    setElements((prev) => [...prev, ...copies]);
+    setSelectedIds(copies.map((el) => el.id));
+    setSelectedId(copies[0].id);
+    showSuccess(copies.length > 1 ? `تم نسخ ${copies.length} عناصر` : 'تم نسخ العنصر');
+  };
+  duplicateRef.current = duplicateSelection;
+
+  const elementBox = (el: MapElement) => {
+    const pts = getElementPoints(el);
+    const cx = pts.reduce((sum, point) => sum + point.x, 0) / pts.length;
+    const cy = pts.reduce((sum, point) => sum + point.y, 0) / pts.length;
+    const rad = ((el.rotation || 0) * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const world = pts.map((point) => ({
+      x: cx + (point.x - cx) * cos - (point.y - cy) * sin,
+      y: cy + (point.x - cx) * sin + (point.y - cy) * cos,
+    }));
+    const xs = world.map((point) => point.x);
+    const ys = world.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY };
+  };
+
+  const translateElement = (el: MapElement, dx: number, dy: number): MapElement => {
+    const shift = (point: Point) => ({ x: point.x + dx, y: point.y + dy });
+    const points = getElementPoints(el).map(shift);
+    return {
+      ...el,
+      points,
+      x: points[0].x,
+      y: points[0].y,
+      centerline: el.centerline?.map(shift),
+      centerlineBranches: el.centerlineBranches?.map((branch) => branch.map(shift)),
+      pathHoles: el.pathHoles?.map((hole) => hole.map(shift)),
+      pathLoops: el.pathLoops?.map((loop) => loop.map(shift)),
+    };
+  };
+
+  const alignSelection = (mode: 'left' | 'cx' | 'right' | 'top' | 'cy' | 'bottom' | 'distX' | 'distY') => {
+    const ids = selectedIdsRef.current;
+    const items = elementsRef.current.filter((el) => ids.includes(el.id) && !el.locked);
+    if (items.length < 2) return;
+    const boxes = items.map((el) => ({ el, box: elementBox(el) }));
+    const shifts = new Map<string, { dx: number; dy: number }>();
+    if (mode === 'distX' || mode === 'distY') {
+      const horizontal = mode === 'distX';
+      const ordered = [...boxes].sort((a, b) => horizontal ? a.box.minX - b.box.minX : a.box.minY - b.box.minY);
+      const first = ordered[0].box;
+      const last = ordered[ordered.length - 1].box;
+      const span = horizontal ? last.maxX - first.minX : last.maxY - first.minY;
+      const size = ordered.reduce((sum, entry) => sum + (horizontal ? entry.box.w : entry.box.h), 0);
+      const gap = (span - size) / (ordered.length - 1);
+      let cursor = horizontal ? first.maxX + gap : first.maxY + gap;
+      ordered.forEach((entry, index) => {
+        if (index === 0 || index === ordered.length - 1) return;
+        const dx = horizontal ? cursor - entry.box.minX : 0;
+        const dy = horizontal ? 0 : cursor - entry.box.minY;
+        shifts.set(entry.el.id, { dx, dy });
+        cursor += (horizontal ? entry.box.w : entry.box.h) + gap;
+      });
+    } else {
+      const target = mode === 'left' ? Math.min(...boxes.map((entry) => entry.box.minX))
+        : mode === 'right' ? Math.max(...boxes.map((entry) => entry.box.maxX))
+        : mode === 'cx' ? boxes.reduce((sum, entry) => sum + entry.box.cx, 0) / boxes.length
+        : mode === 'top' ? Math.min(...boxes.map((entry) => entry.box.minY))
+        : mode === 'bottom' ? Math.max(...boxes.map((entry) => entry.box.maxY))
+        : boxes.reduce((sum, entry) => sum + entry.box.cy, 0) / boxes.length;
+      boxes.forEach(({ el, box }) => {
+        const dx = mode === 'left' ? target - box.minX : mode === 'right' ? target - box.maxX : mode === 'cx' ? target - box.cx : 0;
+        const dy = mode === 'top' ? target - box.minY : mode === 'bottom' ? target - box.maxY : mode === 'cy' ? target - box.cy : 0;
+        shifts.set(el.id, { dx, dy });
+      });
+    }
+    setElements((prev) => prev.map((el) => {
+      const shift = shifts.get(el.id);
+      return shift ? translateElement(el, shift.dx, shift.dy) : el;
+    }));
+  };
+
+  const isSelected = (id: string) => id === selectedId || selectedIds.includes(id);
   const selectedElement = elements.find(el => el.id === selectedId);
   const layerOrder: Record<string, number> = { 'reference_image': -2, 'green': -1, 'label_area': 0, 'sidewalk': 0.5, 'road': 1, 'pitch': 2, 'amenity': 2, 'house': 3, 'tower': 3, 'text': 4 };
   const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
@@ -1279,18 +1546,40 @@ const MapEditor = ({
     showSuccess(`تم حذف الصنف القياسي ${type}`);
   };
 
+  const zoom = Math.max(scale, 0.15);
+  const editUnit = (screenPx: number, floor = screenPx * 0.4) => Math.max(screenPx / Math.pow(zoom, 0.42), floor) / zoom;
+  const vertexR = editUnit(5);
+  const vertexHit = Math.max(vertexR, 11 / zoom);
+  const vertexStroke = editUnit(1.05, 0.7);
+  const edgeStroke = editUnit(1.55, 0.8);
+  const midR = editUnit(4);
+  const midHit = Math.max(midR, 10 / zoom);
+
   return (
     <div className="flex h-screen flex-col gap-3 bg-background p-4">
       <div className="flex items-center justify-between gap-4 border border-line bg-surface px-3 py-2">
         <div className="flex items-center gap-2">
           <div className="flex border border-line">
-            <Button variant="ghost" size="icon" className="size-8 rounded-none" onClick={() => setScale(s => Math.min(s + 0.2, 5))}><ZoomIn size={15} /></Button>
-            <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" onClick={() => setScale(s => Math.max(s - 0.2, 0.1))}><ZoomOut size={15} /></Button>
+            <Button variant="ghost" size="icon" className="size-8 rounded-none" onClick={() => setScale(s => Math.min(s * 1.25, 10))}><ZoomIn size={15} /></Button>
+            <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" onClick={() => setScale(s => Math.max(s / 1.25, 0.1))}><ZoomOut size={15} /></Button>
             <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" onClick={() => { setScale(1); setViewPos({x:0, y:0}); }}><RotateCcw size={15} /></Button>
           </div>
           <span className="font-mono text-[11px] tabular-nums text-fg-faint">{Math.round(scale * 100)}%</span>
           <Button variant={gridLock ? "default" : "outline"} size="icon" className="size-8" onClick={() => setGridLock(!gridLock)}><Grid3X3 size={15} /></Button>
           <Button variant="outline" size="icon" className="size-8" disabled={undoCount === 0} onClick={() => undoRef.current()} title="تراجع (Ctrl+Z)"><Undo2 size={15} /></Button>
+          <Button variant="outline" size="icon" className="size-8" disabled={!selectedId && selectedIds.length === 0} onClick={() => duplicateRef.current()} title="نسخ المحدد (Ctrl+D)"><Copy size={15} /></Button>
+          {selectedIds.length > 1 && (
+            <div className="flex border border-line">
+              <Button variant="ghost" size="icon" className="size-8 rounded-none" title="محاذاة لليسار" onClick={() => alignSelection('left')}><AlignStartVertical size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="توسيط أفقي" onClick={() => alignSelection('cx')}><AlignCenterVertical size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="محاذاة لليمين" onClick={() => alignSelection('right')}><AlignEndVertical size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="محاذاة للأعلى" onClick={() => alignSelection('top')}><AlignStartHorizontal size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="توسيط عمودي" onClick={() => alignSelection('cy')}><AlignCenterHorizontal size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="محاذاة للأسفل" onClick={() => alignSelection('bottom')}><AlignEndHorizontal size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="توزيع أفقي" onClick={() => alignSelection('distX')}><AlignHorizontalDistributeCenter size={15} /></Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-none border-s border-line" title="توزيع عمودي" onClick={() => alignSelection('distY')}><AlignVerticalDistributeCenter size={15} /></Button>
+            </div>
+          )}
           <Button variant="outline" size="icon" className="size-8" onClick={() => setIsFullScreen(!isFullScreen)}>
             {isFullScreen ? <Minimize size={15} /> : <Maximize size={15} />}
           </Button>
@@ -1318,27 +1607,22 @@ const MapEditor = ({
 
       <div className="flex flex-1 gap-3 overflow-hidden">
         <div className="flex w-16 flex-col overflow-y-auto border border-line bg-surface no-scrollbar">
-          <button onClick={() => { setActiveTool(null); setIsBrushMode(false); setLinkingId(null); }} className={cn("flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", !activeTool && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
+          <button title="تحديد وتحريك. Shift مع النقرة يضيف عنصراً، والسحب يحرك كل المحدد. Shift مع السحب على الفراغ يحدد إطاراً" onClick={() => { setActiveTool(null); setIsBrushMode(false); setLinkingId(null); }} className={cn("flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", !activeTool && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
             <MousePointer2 size={16} />
-            <span className="text-[9px]">تصفح</span>
+            <span className="text-[9px]">تحديد</span>
           </button>
-          <button onClick={() => { setActiveTool('street_auto'); setIsBrushMode(false); setLinkingId(null); }} className={cn("relative flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", activeTool === 'street_auto' && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
-            <span className="absolute inset-x-0 top-0 h-[2px]" style={{ backgroundColor: mapPalette.roadStroke }} />
-            <Route size={16} />
-            <span className="text-[9px] leading-tight">توليد</span>
-          </button>
-          {TOOLS.map((tool) => (
-            <button key={tool.type} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); setLinkingId(null); if (tool.type === 'road') setPlotWidth(40); if (tool.type === 'sidewalk') setPlotWidth(16); }} className={cn("relative flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", activeTool === tool.type && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
+          {RAIL.map((tool) => (
+            <button key={tool.type} title={tool.hint} onClick={() => { setActiveTool(tool.type); setIsBrushMode(false); setLinkingId(null); setMeasurePoints([]); if (tool.type === 'road') setPlotWidth(40); if (tool.type === 'sidewalk') setPlotWidth(16); }} className={cn("relative flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", tool.gapBefore && "mt-2", activeTool === tool.type && !isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
               <span className="absolute inset-x-0 top-0 h-[2px]" style={{ backgroundColor: tool.swatch }} />
               <tool.icon size={16} />
               <span className="text-[9px] leading-tight">{tool.label}</span>
             </button>
           ))}
-          <button onClick={() => setIsBrushMode(!isBrushMode)} className={cn("flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
+          <button title="سحب حر لطريق أو مساحة خضراء فقط" onClick={() => { setIsBrushMode(true); setActiveTool((current) => current === 'road' || current === 'green' ? current : 'green'); setLinkingId(null); }} className={cn("mt-2 flex aspect-square w-full flex-col items-center justify-center gap-1 border-b border-line transition-colors", isBrushMode ? "bg-fg text-background" : "text-fg-muted hover:bg-surface-sunken hover:text-fg")}>
             <Paintbrush size={16} />
-            <span className="text-[9px]">فرشاة</span>
+            <span className="text-[9px] leading-tight">خط حر</span>
           </button>
-          <label className="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-1 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg">
+          <label title="إدراج صورة مرجعية تحت المخطط" className="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-1 text-fg-muted transition-colors hover:bg-surface-sunken hover:text-fg">
             <ImageIcon size={16} />
             <span className="text-[9px]">صورة</span>
             <input type="file" accept="image/*" className="hidden" onChange={handleAddReferenceImage} />
@@ -1386,7 +1670,7 @@ const MapEditor = ({
                 const minX = Math.min(...pts.map(p => p.x));
                 const maxX = Math.max(...pts.map(p => p.x));
                 const maxY = Math.max(...pts.map(p => p.y));
-                const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : null;
+                const IconComponent = el.type === 'house' ? Home : el.type === 'tower' ? Building2 : el.type === 'amenity' ? (AMENITY_TYPES.find((entry) => entry.id === (el.amenityType || 'shop'))?.icon || MapPin) : null;
 
                 if (el.type === 'reference_image') {
                   const refSrc = getReferenceImageSrc(el);
@@ -1399,17 +1683,17 @@ const MapEditor = ({
                         width={maxX - minX} height={maxY - minY} 
                         opacity={el.opacity}
                         className={cn("transition-all", !el.locked && "cursor-move", isSelectedEl && "outline outline-2 outline-fg")}
-                        onMouseDown={(e) => { 
-                          setSelectedId(el.id); 
-                          if (el.locked) return;
-                          e.stopPropagation(); 
-                          setDragMode({ type: 'move' }); 
-                        }}
+                        onMouseDown={(e) => grabElement(e, el)}
                       />
                       )}
                       {isSelectedEl && !el.locked && (
                         <>
-                          {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="cursor-pointer fill-surface stroke-fg stroke-2" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />)}
+                          {pts.map((p, i) => (
+                            <g key={`vertex-${i}`}>
+                              <circle cx={p.x} cy={p.y} r={vertexHit} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />
+                              <circle cx={p.x} cy={p.y} r={vertexR} className="fill-surface stroke-fg" strokeWidth={vertexStroke} pointerEvents="none" />
+                            </g>
+                          ))}
                         </>
                       )}
                     </g>
@@ -1434,18 +1718,11 @@ const MapEditor = ({
                           fill={el.isStroke ? "none" : getElementColor(el)} 
                           stroke={el.isStroke ? getElementColor(el) : getElementStroke(el)} 
                           fillOpacity={el.type === 'label_area' ? el.opacity : 1} 
-                          strokeWidth={el.isStroke ? el.strokeWidth : ((el.type === 'green' || (el.type === 'road' && !el.pathWidth)) ? 10 : (isSelectedEl ? 3 : (el.hasBorder ? 4 : 2)))} 
+                          strokeWidth={el.isStroke ? el.strokeWidth : (el.hasBorder ? editUnit(2.1, 0.85) : edgeStroke)} 
                           strokeLinejoin="round"
                           strokeLinecap="round"
                           className={cn("transition-all cursor-move", isSelectedEl && "stroke-fg")} 
-                          onMouseDown={(e) => { 
-                            if (linkingId || extendId) return;
-                            setSelectedId(el.id); 
-                            if (!el.locked) {
-                              e.stopPropagation(); 
-                              setDragMode({ type: 'move' }); 
-                            }
-                          }} 
+                          onMouseDown={(e) => grabElement(e, el)} 
                         />
                         {el.hasTexture && (
                           <g clipPath={`url(#clip-editor-${el.id})`} style={{ color: el.textureColor || 'white' }}>
@@ -1474,13 +1751,7 @@ const MapEditor = ({
                           cursor: 'move',
                           userSelect: 'none'
                         }}
-                        onMouseDown={(e) => { 
-                          setSelectedId(el.id); 
-                          if (!el.locked) {
-                            e.stopPropagation(); 
-                            setDragMode({ type: 'move' }); 
-                          }
-                        }}
+                        onMouseDown={(e) => grabElement(e, el)}
                       >
                         {el.label}
                       </text>
@@ -1539,9 +1810,9 @@ const MapEditor = ({
                             const drawn = el.pathClosed && line.length >= 3 ? [...line, line[0]] : line;
                             return (
                               <g key={`lane-${index}`}>
-                                {guide.left.length > 1 && <polyline points={attr(guide.left)} fill="none" stroke={palette.surface} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />}
-                                {guide.right.length > 1 && <polyline points={attr(guide.right)} fill="none" stroke={palette.surface} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />}
-                                <polyline points={attr(drawn)} fill="none" stroke={palette.surface} strokeWidth="2" strokeDasharray="10,10" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+                                {guide.left.length > 1 && <polyline points={attr(guide.left)} fill="none" stroke={palette.surface} strokeWidth={1.5 / zoom} strokeLinejoin="round" strokeLinecap="round" />}
+                                {guide.right.length > 1 && <polyline points={attr(guide.right)} fill="none" stroke={palette.surface} strokeWidth={1.5 / zoom} strokeLinejoin="round" strokeLinecap="round" />}
+                                <polyline points={attr(drawn)} fill="none" stroke={palette.surface} strokeWidth={2 / zoom} strokeDasharray={`${10 / zoom},${10 / zoom}`} strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
                               </g>
                             );
                           })
@@ -1551,10 +1822,10 @@ const MapEditor = ({
                             return (
                               <>
                                 {marks.edges.map((edge, index) => (
-                                  <polyline key={`edge-${index}`} points={attr(edge)} fill="none" stroke={palette.surface} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                                  <polyline key={`edge-${index}`} points={attr(edge)} fill="none" stroke={palette.surface} strokeWidth={1.5 / zoom} strokeLinejoin="round" strokeLinecap="round" />
                                 ))}
                                 {marks.center.length > 1 && (
-                                  <polyline points={attr(marks.center)} fill="none" stroke={palette.surface} strokeWidth="2" strokeDasharray="10,10" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+                                  <polyline points={attr(marks.center)} fill="none" stroke={palette.surface} strokeWidth={2 / zoom} strokeDasharray={`${10 / zoom},${10 / zoom}`} strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
                                 )}
                               </>
                             );
@@ -1564,36 +1835,62 @@ const MapEditor = ({
 
                     {el.label && el.type !== 'text' && <text x={el.type === 'label_area' ? (minX+maxX)/2 : centerX} y={el.type === 'label_area' ? minY - 10 : centerY + 15} textAnchor="middle" dominantBaseline="middle" fill={el.textColor || palette.fg} style={{ fontSize: `${el.fontSize || 10}px`, fontFamily: canvasFont, fontWeight: 600 }} className="pointer-events-none select-none">{el.label.split('-').pop()}</text>}
                     
-                    {isSelectedEl && el.type !== 'road' && el.type !== 'sidewalk' && (
+                    {isSelectedEl && el.type !== 'text' && (() => {
+                      const pathEdit = (el.type === 'road' || el.type === 'sidewalk') && !!el.centerline && el.centerline.length >= 2 && !!el.pathWidth;
+                      const handlePoints = pathEdit ? el.centerline! : pts;
+                      const closedLoop = pathEdit ? !!el.pathClosed : true;
+                      return (
                       <>
-                        {pts.map((p, i) => {
-                          const nextP = pts[(i + 1) % pts.length];
+                        {handlePoints.map((p, i) => {
+                          const nextP = i + 1 < handlePoints.length ? handlePoints[i + 1] : (closedLoop ? handlePoints[0] : null);
+                          if (!nextP) return null;
                           const midX = (p.x + nextP.x) / 2;
                           const midY = (p.y + nextP.y) / 2;
                           return (
                             <g key={`midpoint-${i}`} className="cursor-pointer">
-                              <circle 
-                                cx={midX} 
-                                cy={midY} 
-                                r={5} 
-                                className="fill-status-available stroke-surface stroke-2 transition-transform hover:scale-125" 
+                              <circle
+                                cx={midX}
+                                cy={midY}
+                                r={midHit}
+                                fill="transparent"
+                                className="cursor-pointer"
                                 onMouseDown={(e) => {
                                   e.stopPropagation();
+                                  const inserted = { x: snap(midX), y: snap(midY) };
+                                  if (pathEdit && el.centerline && el.pathWidth) {
+                                    const line = [...el.centerline];
+                                    line.splice(i + 1, 0, inserted);
+                                    const shape = networkShape(line, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []);
+                                    if (shape.outline.length >= 3) updateSelectedElement({ centerline: line, points: shape.outline, pathHoles: shape.holes.length ? shape.holes : undefined, rotation: 0 });
+                                    return;
+                                  }
                                   const newPoints = [...pts];
-                                  newPoints.splice(i + 1, 0, { x: snap(midX), y: snap(midY) });
+                                  newPoints.splice(i + 1, 0, inserted);
                                   updateSelectedElement({ points: newPoints });
                                   showSuccess("تم إضافة زاوية جديدة للشكل بنجاح");
                                 }}
                               />
+                              <circle cx={midX} cy={midY} r={midR} className="fill-status-available stroke-surface" strokeWidth={vertexStroke} pointerEvents="none" />
                             </g>
                           );
                         })}
 
-                        {pts.map((p, i) => <circle key={`vertex-${i}`} cx={p.x} cy={p.y} r={6} className="cursor-pointer fill-surface stroke-fg stroke-2 transition-colors hover:fill-surface-sunken" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />)}
+                        {handlePoints.map((p, i) => (
+                          <g key={`vertex-${i}`}>
+                            <circle cx={p.x} cy={p.y} r={vertexHit} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pathEdit && el.centerline && el.pathWidth) { if (el.centerline.length <= 2) { showError("لا يمكن حذف هذه النقطة"); return; } const line = el.centerline.filter((_, idx) => idx !== i); const shape = networkShape(line, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []); if (shape.outline.length >= 3) updateSelectedElement({ centerline: line, points: shape.outline, pathHoles: shape.holes.length ? shape.holes : undefined, rotation: 0 }); return; } if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />
+                            <circle cx={p.x} cy={p.y} r={vertexR} className="fill-surface stroke-fg" strokeWidth={vertexStroke} pointerEvents="none" />
+                          </g>
+                        ))}
                         
-                        <circle cx={centerX} cy={pts[0].y - 30} r={8} className="cursor-pointer fill-fg" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
+                        {!pathEdit && (
+                          <>
+                            <circle cx={centerX} cy={pts[0].y - 28 / zoom} r={Math.max(editUnit(6.5), 12 / zoom)} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
+                            <circle cx={centerX} cy={pts[0].y - 28 / zoom} r={editUnit(6.5)} className="fill-fg" pointerEvents="none" />
+                          </>
+                        )}
                       </>
-                    )}
+                      );
+                    })()}
                   </g>
                 );
               })}
@@ -1613,17 +1910,63 @@ const MapEditor = ({
                         fill={plotClosed || closing ? mapPalette.road : "none"}
                         fillOpacity={0.18}
                         stroke={mapPalette.highlight}
-                        strokeWidth={2}
+                        strokeWidth={edgeStroke}
                         strokeDasharray={plotClosed || closing ? undefined : "6,4"}
                         strokeLinejoin="round"
                       />
                     )}
                     {line.map((point, index) => (
-                      <circle key={`region-${index}`} cx={point.x} cy={point.y} r={4} fill={mapPalette.highlight} />
+                      <circle key={`region-${index}`} cx={point.x} cy={point.y} r={vertexR} fill={mapPalette.highlight} />
                     ))}
                   </g>
                 );
               })()}
+
+              {(activeTool === 'green_plot' || activeTool === 'house_plot') && (plotPoints.length > 0 || plotCursor) && (() => {
+                const target = !plotClosed && plotCursor ? plotTarget(plotCursor) : null;
+                const pending = target?.point ?? null;
+                const closing = pending ? closesPlot(pending) : false;
+                const line = !pending || plotPoints.length === 0 ? plotPoints : (closing ? plotPoints : [...plotPoints, pending]);
+                const fill = activeTool === 'green_plot' ? mapPalette.green : STATUS_META.available.fill;
+                return (
+                  <g pointerEvents="none">
+                    {line.length >= 2 && (
+                      <path
+                        d={pointsToPath(closing ? [...line, line[0]] : line, false)}
+                        fill={closing ? fill : "none"}
+                        fillOpacity={0.35}
+                        stroke={fill}
+                        strokeWidth={edgeStroke}
+                        strokeDasharray={closing ? undefined : "6,4"}
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {line.map((point, index) => (
+                      <circle key={`area-${index}`} cx={point.x} cy={point.y} r={index === 0 ? vertexR * 1.3 : vertexR} fill={index === 0 ? mapPalette.highlight : palette.surface} stroke={palette.fg} strokeWidth={vertexStroke} />
+                    ))}
+                  </g>
+                );
+              })()}
+
+              {activeTool === 'measure' && measurePoints.length > 0 && (
+                <g pointerEvents="none">
+                  {measurePoints.length === 2 && (
+                    <>
+                      <line x1={measurePoints[0].x} y1={measurePoints[0].y} x2={measurePoints[1].x} y2={measurePoints[1].y} stroke={mapPalette.highlight} strokeWidth={edgeStroke} />
+                      <text x={(measurePoints[0].x + measurePoints[1].x) / 2} y={(measurePoints[0].y + measurePoints[1].y) / 2 - 8 / zoom} textAnchor="middle" fill={palette.fg} style={{ fontSize: `${12 / zoom}px`, fontFamily: canvasFont }}>
+                        {Math.hypot(measurePoints[1].x - measurePoints[0].x, measurePoints[1].y - measurePoints[0].y).toFixed(1)}
+                      </text>
+                    </>
+                  )}
+                  {measurePoints.map((point, index) => (
+                    <circle key={`measure-${index}`} cx={point.x} cy={point.y} r={vertexR} fill={mapPalette.highlight} />
+                  ))}
+                </g>
+              )}
+
+              {dragMode?.type === 'marquee' && tempPoints.length === 4 && (
+                <path d={pointsToPath(tempPoints, true)} fill={mapPalette.highlight} fillOpacity={0.08} stroke={mapPalette.highlight} strokeWidth={edgeStroke} pointerEvents="none" />
+              )}
 
               {(activeTool === 'road' || activeTool === 'sidewalk') && !(extendId && !extendAnchor) && (plotPoints.length > 0 || plotCursor) && (() => {
                 const target = !plotClosed && plotCursor ? plotTarget(plotCursor) : null;
@@ -1663,7 +2006,7 @@ const MapEditor = ({
                       />
                     )}
                     {plotPoints.map((point, index) => (
-                      <circle key={`plot-${index}`} cx={point.x} cy={point.y} r={index === 0 ? 7 : 4} fill={index === 0 ? mapPalette.highlight : palette.surface} stroke={palette.fg} strokeWidth="1.5" />
+                      <circle key={`plot-${index}`} cx={point.x} cy={point.y} r={index === 0 ? vertexR * 1.35 : vertexR} fill={index === 0 ? mapPalette.highlight : palette.surface} stroke={palette.fg} strokeWidth={vertexStroke} />
                     ))}
                     {target?.guides.map((guide, index) => (
                       <g key={`guide-${index}`}>
@@ -1744,11 +2087,11 @@ const MapEditor = ({
               <span>ضع نقاطاً حول البلوكات والحدائق ثم أغلق الشكل. يُرسم شارع حول شكل كل بلوك، وشارع واحد بين البلوكات المتقابلة، ثم رصيف. الحديقة يجب أن تكون مرسومة قبل التوليد.</span>
               <div className="flex items-center gap-2">
                 <Checkbox id="street-direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
-                <Label htmlFor="street-direction-lock" className="text-[11px] text-fg">قفل الاتجاه</Label>
+                <Label htmlFor="street-direction-lock" className="text-[11px] text-fg">أضلاع مستقيمة</Label>
                 {directionLock && (
                   <div className="flex border border-line">
-                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>عام</button>
-                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>محلي</button>
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>أفقي</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>المسار</button>
                   </div>
                 )}
               </div>
@@ -1761,16 +2104,37 @@ const MapEditor = ({
               </div>
             </div>
           )}
-          {(activeTool === 'road' || activeTool === 'sidewalk') && (
-            <div className="absolute bottom-3 start-3 z-10 flex flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
-              <span>{extendId ? (extendAnchor ? 'أضف نقاط التكملة من الموضع الذي اخترته ثم احفظ.' : 'انقر أي موضع على الشارع لتحديد مكان الاستكمال.') : 'ضع نقطة ثم نقطة. علامة + تعني محاذاة مع نقطة شارع أو مع نقطة من المسار نفسه. النقطة الأولى تغلق الحلقة.'} Backspace يتراجع، Escape يلغي.</span>
+          {(activeTool === 'green_plot' || activeTool === 'house_plot') && (
+            <div className="absolute bottom-3 start-3 z-10 flex max-w-md flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              <span>ضع نقاط المسار. النقطة الأولى تغلق الشكل وتصير المساحة داخله {activeTool === 'green_plot' ? 'حديقة' : 'قطعة منزل'}. ألغِ «أضلاع مستقيمة» لوضع النقطة حيث المؤشر من غير التصاق بحافة. Backspace يتراجع، Enter يغلق، Escape يلغي.</span>
               <div className="flex items-center gap-2">
-                <Checkbox id="direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
-                <Label htmlFor="direction-lock" className="text-[11px] text-fg">قفل الاتجاه</Label>
+                <Checkbox id="plot-direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
+                <Label htmlFor="plot-direction-lock" className="text-[11px] text-fg">أضلاع مستقيمة</Label>
                 {directionLock && (
                   <div className="flex border border-line">
-                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>عام</button>
-                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>محلي</button>
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>أفقي</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>المسار</button>
+                  </div>
+                )}
+              </div>
+              <Button size="sm" disabled={plotPoints.length < 3} onClick={() => { createElement(activeTool === 'house_plot' ? 'house' : 'green', plotPoints); setPlotPoints([]); setPlotClosed(false); }}>إغلاق الشكل</Button>
+            </div>
+          )}
+          {activeTool === 'measure' && (
+            <div className="absolute bottom-3 start-3 z-10 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              انقر نقطة البداية ثم نقطة النهاية. المسافة بوحدة المخطط. نقرة ثالثة تبدأ قياساً جديداً.
+            </div>
+          )}
+          {(activeTool === 'road' || activeTool === 'sidewalk') && (
+            <div className="absolute bottom-3 start-3 z-10 flex flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              <span>{extendId ? (extendAnchor ? 'أضف نقاط التكملة من الموضع الذي اخترته ثم احفظ.' : 'انقر أي موضع على الشارع لتحديد مكان الاستكمال.') : 'ضع نقطة ثم نقطة. مع «أضلاع مستقيمة» تظهر علامة + وتلتصق النقطة بمستوى شارع أو نقطة سابقة. من دونها تتبع النقطة المؤشر، وقفل الشبكة وحده يقرّبها لأقرب مربع. النقطة الأولى تغلق الحلقة.'} Backspace يتراجع، Escape يلغي.</span>
+              <div className="flex items-center gap-2">
+                <Checkbox id="direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
+                <Label htmlFor="direction-lock" className="text-[11px] text-fg">أضلاع مستقيمة</Label>
+                {directionLock && (
+                  <div className="flex border border-line">
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>أفقي</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>المسار</button>
                   </div>
                 )}
               </div>
@@ -1788,11 +2152,11 @@ const MapEditor = ({
               <span>{linkAnchor == null ? 'انقر أي موضع على الشارع، لا يشترط أن يكون زاوية.' : 'الموضع محدد. وجّه المؤشر نحو الشارع الآخر ثم انقر. نقرة على هذا الشارع تنقل موضع الربط.'} Escape يلغي.</span>
               <div className="flex items-center gap-2">
                 <Checkbox id="link-direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
-                <Label htmlFor="link-direction-lock" className="text-[11px] text-fg">قفل الاتجاه</Label>
+                <Label htmlFor="link-direction-lock" className="text-[11px] text-fg">أضلاع مستقيمة</Label>
                 {directionLock && (
                   <div className="flex border border-line">
-                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>عام</button>
-                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>محلي</button>
+                    <button type="button" onClick={() => setDirectionMode('global')} className={cn("px-2 py-1", directionMode === 'global' ? "bg-fg text-background" : "text-fg-muted")}>أفقي</button>
+                    <button type="button" onClick={() => setDirectionMode('local')} className={cn("border-s border-line px-2 py-1", directionMode === 'local' ? "bg-fg text-background" : "text-fg-muted")}>المسار</button>
                   </div>
                 )}
               </div>
@@ -1916,8 +2280,8 @@ const MapEditor = ({
           {selectedElement && (
             <div className="flex flex-col overflow-hidden border border-line bg-surface">
               <div className="flex items-center justify-between border-b border-line px-5 py-4">
-                <div className="flex items-center gap-2"><Settings2 size={14} className="text-fg-muted" /><h3 className="text-[13px] font-medium text-fg">خصائص العنصر</h3></div>
-                <Button variant="ghost" size="icon" onClick={() => setSelectedId(null)} className="text-fg-faint hover:text-fg"><X size={18} /></Button>
+                <div className="flex items-center gap-2"><Settings2 size={14} className="text-fg-muted" /><h3 className="text-[13px] font-medium text-fg">خصائص العنصر</h3>{selectedIds.length > 1 && <span className="text-[11px] text-fg-muted">{selectedIds.length} محدد</span>}</div>
+                <Button variant="ghost" size="icon" onClick={() => { setSelectedId(null); setSelectedIds([]); }} className="text-fg-faint hover:text-fg"><X size={18} /></Button>
               </div>
               <div className="flex-1 space-y-6 overflow-y-auto p-5 no-scrollbar">
                 <div className="space-y-4">
@@ -1951,6 +2315,21 @@ const MapEditor = ({
                   </div>
 
                   <div className="space-y-2"><Label className="text-[11px] text-fg-muted">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="" /></div>
+                  {selectedElement.type === 'amenity' && (
+                    <div className="space-y-2">
+                      <Label className="text-[11px] text-fg-muted">نوع المرفق</Label>
+                      <Select value={selectedElement.amenityType || 'shop'} onValueChange={(val) => {
+                        const found = AMENITY_TYPES.find((entry) => entry.id === val);
+                        const known = AMENITY_TYPES.some((entry) => entry.label === selectedElement.label);
+                        updateSelectedElement({ amenityType: val, ...(!selectedElement.label || known ? { label: found?.label || selectedElement.label } : {}) });
+                      }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {AMENITY_TYPES.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   
                   {/* واجهة إدخال المساحة المخصصة للمنزل يدوياً */}
                   {selectedElement.type === 'house' && (
