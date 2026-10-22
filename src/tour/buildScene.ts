@@ -3,7 +3,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { buildPiece } from "./furniture";
-import { FLOOR_STEP, WALL_HEIGHT, type TourOpening, type TourTemplate, type TourWall } from "./types";
+import { buildSwitchback, stairOutline } from "./stairs";
+import { FLOOR_STEP, WALL_HEIGHT, type TourItem, type TourOpening, type TourTemplate, type TourWall } from "./types";
 import { WALL_THICKNESS } from "./walls";
 
 export interface TourHotspot {
@@ -11,7 +12,8 @@ export interface TourHotspot {
   mesh: THREE.Object3D;
 }
 
-const solid = (color: number) => new THREE.MeshLambertMaterial({ color });
+const solid = (color: number, roughness = 0.66, metalness = 0.02) =>
+  new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
 const marbleFloor = () => {
   const canvas = document.createElement("canvas");
@@ -24,14 +26,13 @@ const marbleFloor = () => {
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(1, 1);
   const finish = () =>
-    new THREE.MeshPhongMaterial({
-      color: 0x000000,
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
       map: texture,
-      emissive: 0xffffff,
-      emissiveMap: texture,
-      emissiveIntensity: 1,
-      specular: 0xffffff,
-      shininess: 86,
+      roughness: 0.24,
+      metalness: 0,
+      clearcoat: 0.32,
+      clearcoatRoughness: 0.18,
     });
   if (!ctx) return finish();
   ctx.fillStyle = "#f7f6f3";
@@ -64,7 +65,7 @@ const woodDoor = () => {
   const ctx = canvas.getContext("2d");
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  if (!ctx) return new THREE.MeshLambertMaterial({ color: 0xb08968, map: texture });
+  if (!ctx) return new THREE.MeshStandardMaterial({ color: 0xb08968, map: texture, roughness: 0.54 });
   ctx.fillStyle = "#c4a06a";
   ctx.fillRect(0, 0, 64, 128);
   for (let row = 0; row < 16; row++) {
@@ -75,7 +76,7 @@ const woodDoor = () => {
     ctx.stroke();
   }
   texture.needsUpdate = true;
-  return new THREE.MeshLambertMaterial({ map: texture });
+  return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.52 });
 };
 
 const addBox = (
@@ -95,7 +96,51 @@ const addBox = (
   );
   mesh.position.set(x, y, z);
   mesh.rotation.y = rotY;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   parent.add(mesh);
+  return mesh;
+};
+
+const stairWells = (items: TourItem[], level: number, box: { minX: number; maxX: number; minY: number; maxY: number }) =>
+  items
+    .filter((item) => item.kind === "stairs" && item.floor === level && (item.points?.length || 0) >= 4)
+    .map((item) => stairOutline(item.points || []))
+    .filter((ring): ring is { x: number; y: number }[] => {
+      if (!ring || ring.length < 3) return false;
+      const cx = ring.reduce((sum, point) => sum + point.x, 0) / ring.length;
+      const cy = ring.reduce((sum, point) => sum + point.y, 0) / ring.length;
+      return cx > box.minX && cx < box.maxX && cy > box.minY && cy < box.maxY;
+    });
+
+const plateMesh = (
+  box: { minX: number; maxX: number; minY: number; maxY: number },
+  holes: { x: number; y: number }[][],
+  material: THREE.Material,
+  y: number,
+  thickness: number,
+) => {
+  const shape = new THREE.Shape();
+  shape.moveTo(box.minX, box.minY);
+  shape.lineTo(box.maxX, box.minY);
+  shape.lineTo(box.maxX, box.maxY);
+  shape.lineTo(box.minX, box.maxY);
+  shape.closePath();
+  holes.forEach((ring) => {
+    if (ring.length < 3) return;
+    const path = new THREE.Path();
+    const wound = ring.slice().reverse();
+    wound.forEach((point, index) => {
+      if (index === 0) path.moveTo(point.x, point.y);
+      else path.lineTo(point.x, point.y);
+    });
+    path.closePath();
+    shape.holes.push(path);
+  });
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+  geometry.rotateX(Math.PI / 2);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.y = y;
   return mesh;
 };
 
@@ -174,7 +219,7 @@ const plasterMaterial = () => {
   if (ctx) {
     const image = ctx.createImageData(size, size);
     for (let index = 0; index < image.data.length; index += 4) {
-      const grain = (Math.random() - 0.5) * 5;
+      const grain = ((((index / 4) * 73) % 29) / 29 - 0.5) * 5;
       image.data[index] = 232 + grain;
       image.data[index + 1] = 233 + grain;
       image.data[index + 2] = 234 + grain;
@@ -183,12 +228,11 @@ const plasterMaterial = () => {
     ctx.putImageData(image, 0, 0);
     texture.needsUpdate = true;
   }
-  return new THREE.MeshLambertMaterial({
+  return new THREE.MeshStandardMaterial({
     map: texture,
     color: 0xffffff,
-    emissive: 0xffffff,
-    emissiveMap: texture,
-    emissiveIntensity: 0.72,
+    roughness: 0.9,
+    metalness: 0,
     side: THREE.DoubleSide,
   });
 };
@@ -278,14 +322,24 @@ const cutWall = (
 ) => {
   const outline = wallEdges(wall.points, WALL_THICKNESS / 2);
   const wood = woodDoor();
-  const metal = solid(0xb7bcc2);
-  const glass = new THREE.MeshLambertMaterial({ color: 0xd5dee6, transparent: true, opacity: 0.42 });
+  const metal = solid(0xaeb4b8, 0.24, 0.78);
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0xcfe0e6,
+    transparent: true,
+    opacity: 0.42,
+    roughness: 0.08,
+    metalness: 0,
+    transmission: 0.22,
+    thickness: 0.03,
+    side: THREE.DoubleSide,
+  });
   const placeDoor = (
     kind: TourOpening["kind"],
     a: { x: number; y: number },
     b: { x: number; y: number },
     yaw: number,
     width: number,
+    side?: number,
   ) => {
     const midX = (a.x + b.x) / 2;
     const midY = (a.y + b.y) / 2;
@@ -301,12 +355,19 @@ const cutWall = (
       parent.add(panel);
       return;
     }
-    placeRun(parent, a.x, a.y, b.x, b.y, base + 2.15, WALL_HEIGHT - 2.15, plaster, 0, wallEdge);
+    const header = kind === "outerDoor" ? 2.5 : 2.15;
+    placeRun(parent, a.x, a.y, b.x, b.y, base + header, Math.max(WALL_HEIGHT - header, 0.08), plaster, 0, wallEdge);
     if (kind === "window") {
       placeRun(parent, a.x, a.y, b.x, b.y, base, 0.9, plaster, 0, wallEdge);
       addBox(parent, width * 0.9, 1.15, 0.03, glass, midX, base + 1.5, midY, yaw);
       addBox(parent, width, 0.04, 0.05, metal, midX, base + 0.92, midY, yaw);
       addBox(parent, width, 0.04, 0.05, metal, midX, base + 2.1, midY, yaw);
+      const ux = Math.cos(yaw);
+      const uz = -Math.sin(yaw);
+      [-1, 1].forEach((side) => {
+        addBox(parent, 0.045, 1.2, 0.055, metal, midX + ux * side * width * 0.48, base + 1.51, midY + uz * side * width * 0.48, yaw);
+      });
+      addBox(parent, 0.04, 1.14, 0.05, metal, midX, base + 1.5, midY, yaw);
       return;
     }
     if (kind === "slideDoor") {
@@ -318,6 +379,38 @@ const cutWall = (
       addBox(frame, width * 0.5, 2.02, 0.035, glass, width * 0.24, 1.04, -0.012);
       addBox(frame, 0.045, 2.05, 0.06, wood, 0, 1.04, 0);
       parent.add(frame);
+    } else if (kind === "outerDoor") {
+      const group = new THREE.Group();
+      group.position.set(midX, base, midY);
+      group.rotation.y = yaw;
+      const out = (side ?? 1) >= 0 ? 1 : -1;
+      const frameMat = solid(0xf4f1ea);
+      const leafMat = solid(0x6e5344);
+      const panelMat = solid(0x8d6b4c);
+      const brass = solid(0xc4a66d, 0.2, 0.72);
+      const leafW = Math.max((width - 0.14) / 2, 0.7);
+      const leafH = 2.32;
+      addBox(group, 0.09, leafH + 0.1, 0.14, frameMat, -width / 2, leafH / 2, 0);
+      addBox(group, 0.09, leafH + 0.1, 0.14, frameMat, width / 2, leafH / 2, 0);
+      addBox(group, width + 0.1, 0.12, 0.16, frameMat, 0, leafH + 0.02, 0);
+      [-1, 1].forEach((sign) => {
+        const hinge = new THREE.Group();
+        hinge.position.set(sign * (width / 2 - 0.05), 0, 0);
+        const leaf = new THREE.Group();
+        leaf.rotation.y = -sign * 0.22 * out;
+        const dir = -sign;
+        addBox(leaf, leafW, leafH, 0.05, leafMat, dir * leafW / 2, leafH / 2, 0);
+        addBox(leaf, leafW * 0.7, 0.72, 0.02, panelMat, dir * leafW * 0.5, 0.55, 0.032);
+        addBox(leaf, leafW * 0.7, 0.58, 0.02, panelMat, dir * leafW * 0.5, 1.5, 0.032);
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.2, 12), brass);
+        handle.rotation.z = Math.PI / 2;
+        handle.position.set(dir * (leafW - 0.12), 1.12, 0.05);
+        leaf.add(handle);
+        hinge.add(leaf);
+        group.add(hinge);
+      });
+      addBox(group, width, 0.08, 0.55, solid(0xe4e0d8), 0, 0.04, out * 0.34);
+      parent.add(group);
     } else {
       const hinge = new THREE.Group();
       hinge.position.set(a.x, base, a.y);
@@ -366,6 +459,9 @@ const cutWall = (
         capStart,
         capEnd,
       );
+      const trimA = pointAt(from);
+      const trimB = pointAt(to);
+      placeRun(parent, trimA.x, trimA.y, trimB.x, trimB.y, base + 0.012, 0.075, solid(0xd8d2c7, 0.54), WALL_THICKNESS / 2 + 0.012);
     };
     cuts.forEach((cut) => {
       const from = Math.max(cut.from, segment.start);
@@ -374,12 +470,131 @@ const cutWall = (
       const a = pointAt(from);
       const b = pointAt(to);
       const yaw = yawOf(b.x - a.x, b.y - a.y);
-      const width = Math.max(to - from, 0.2);
-      placeDoor(cut.kind, a, b, yaw, width);
+    const width = Math.max(to - from, 0.2);
+    placeDoor(cut.kind, a, b, yaw, width, cut.side);
       cursor = to;
     });
     emitSolid(cursor, end);
   });
+};
+
+const grassTexture = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  if (!ctx) return texture;
+  ctx.fillStyle = "#6d9a4e";
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 900; i++) {
+    const tone = i % 3;
+    ctx.fillStyle = tone === 0 ? "#4f7a38" : tone === 1 ? "#8fb56c" : "#5e8a42";
+    ctx.fillRect((i * 53) % 256, (i * 97) % 256, 2, (i % 6) + 3);
+  }
+  for (let i = 0; i < 120; i++) {
+    ctx.strokeStyle = i % 2 ? "rgba(63,104,46,0.55)" : "rgba(168,196,120,0.45)";
+    ctx.beginPath();
+    const x = (i * 41) % 256;
+    const y = (i * 67) % 256;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 1, y - 7);
+    ctx.stroke();
+  }
+  texture.needsUpdate = true;
+  return texture;
+};
+
+const addGarden = (parent: THREE.Object3D, points: { x: number; y: number }[], base: number) => {
+  const shape = new THREE.Shape();
+  points.forEach((point, index) => {
+    if (index === 0) shape.moveTo(point.x, point.y);
+    else shape.lineTo(point.x, point.y);
+  });
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false });
+  geometry.rotateX(Math.PI / 2);
+  const position = geometry.attributes.position;
+  const uv = new Float32Array(position.count * 2);
+  for (let index = 0; index < position.count; index++) {
+    uv[index * 2] = position.getX(index) / 1.1;
+    uv[index * 2 + 1] = position.getZ(index) / 1.1;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  const map = grassTexture();
+  const lawn = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: 0.98, metalness: 0 }),
+  );
+  lawn.receiveShadow = true;
+  lawn.position.y = base + 0.08;
+  parent.add(lawn);
+  const stone = solid(0xd9d3c8);
+  const cap = solid(0xf3f0ea);
+  points.forEach((point, index) => {
+    const next = points[(index + 1) % points.length];
+    const dx = next.x - point.x;
+    const dy = next.y - point.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.25) return;
+    const yaw = Math.atan2(-dy, dx);
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(len, 0.16, 0.12), stone);
+    curb.position.set((point.x + next.x) / 2, base + 0.1, (point.y + next.y) / 2);
+    curb.rotation.y = yaw;
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.04, 0.16), cap);
+    lip.position.set((point.x + next.x) / 2, base + 0.2, (point.y + next.y) / 2);
+    lip.rotation.y = yaw;
+    parent.add(curb, lip);
+  });
+  const cx = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+  const cy = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+  let area = 0;
+  points.forEach((point, index) => {
+    const next = points[(index + 1) % points.length];
+    area += point.x * next.y - next.x * point.y;
+  });
+  area = Math.abs(area) / 2;
+  const spots = Math.min(6, Math.max(2, Math.round(area / 7)));
+  const leaf = solid(0x789765, 0.9);
+  const leafDeep = solid(0x4f7048, 0.94);
+  const trunk = solid(0x72533d, 0.88);
+  const bloom = solid(0xd8b9a6, 0.78);
+  for (let index = 0; index < spots; index++) {
+    const anchor = points[index % points.length];
+    const x = cx + (anchor.x - cx) * (0.35 + (index % 3) * 0.12);
+    const z = cy + (anchor.y - cy) * (0.35 + (index % 3) * 0.12);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.07, 0.42, 12), trunk);
+    stem.position.set(x, base + 0.28, z);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.28 + (index % 3) * 0.05, 18, 14), index % 2 ? leaf : leafDeep);
+    crown.position.set(x, base + 0.62, z);
+    const side = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), leaf);
+    side.position.set(x + 0.16, base + 0.5, z + 0.08);
+    stem.castShadow = true;
+    crown.castShadow = true;
+    side.castShadow = true;
+    parent.add(stem, crown, side);
+    if (index % 2 === 0) {
+      const flower = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), bloom);
+      flower.position.set(x - 0.22, base + 0.1, z + 0.18);
+      flower.castShadow = true;
+      parent.add(flower);
+    }
+  }
+  if (area > 16) {
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 1.15, 14), trunk);
+    stem.position.set(cx, base + 0.7, cy);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 16), leafDeep);
+    crown.position.set(cx, base + 1.45, cy);
+    const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.38, 18, 14), leaf);
+    crown2.position.set(cx + 0.22, base + 1.25, cy - 0.1);
+    stem.castShadow = true;
+    crown.castShadow = true;
+    crown2.castShadow = true;
+    parent.add(stem, crown, crown2);
+  }
 };
 
 export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
@@ -389,8 +604,10 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
   const floorMaterial = marbleFloor();
   const plaster = plasterMaterial();
   const wallEdge = new LineMaterial({
-    color: 0x2a2e32,
-    linewidth: 2.6,
+    color: 0x77736d,
+    linewidth: 1.15,
+    transparent: true,
+    opacity: 0.48,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
@@ -409,6 +626,12 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
       xs.push(point.x);
       ys.push(point.y);
     }));
+    (tour.items || []).filter((item) => item.kind === "stairs" && item.floor === level - 1 && (item.points?.length || 0) >= 4).forEach((item) => {
+      stairOutline(item.points || [])?.forEach((point) => {
+        xs.push(point.x);
+        ys.push(point.y);
+      });
+    });
     if (!xs.length) {
       (tour.items || []).filter((item) => item.floor === level).forEach((item) => {
         xs.push(item.x);
@@ -443,14 +666,17 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
       slabMaterial.opacity = 0.22;
       slabMaterial.depthWrite = false;
     }
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(Math.max(box.maxX - box.minX, 1), 0.08, Math.max(box.maxY - box.minY, 1)), slabMaterial);
-    slab.position.set(box.cx, (level - 1) * FLOOR_STEP - 0.04, box.cz);
+    const openingsBelow = stairWells(tour.items || [], level - 1, box);
+    const slab = plateMesh(box, openingsBelow, slabMaterial, (level - 1) * FLOOR_STEP, 0.08);
     root.add(slab);
-    const ceiling = new THREE.Mesh(
-      new THREE.BoxGeometry(Math.max(box.maxX - box.minX, 1), 0.05, Math.max(box.maxY - box.minY, 1)),
-      new THREE.MeshBasicMaterial({ color: 0xe4e6e8 }),
+    const openingsHere = stairWells(tour.items || [], level, box);
+    const ceiling = plateMesh(
+      box,
+      openingsHere,
+      new THREE.MeshStandardMaterial({ color: 0xf0efeb, roughness: 0.9, side: THREE.DoubleSide }),
+      (level - 1) * FLOOR_STEP + (level < tour.floors ? WALL_HEIGHT - 0.09 : WALL_HEIGHT + 0.025),
+      0.05,
     );
-    ceiling.position.set(box.cx, (level - 1) * FLOOR_STEP + WALL_HEIGHT, box.cz);
     ceiling.visible = false;
     ceiling.userData.ceiling = true;
     ceiling.userData.ceilingFloor = level;
@@ -467,7 +693,8 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
   });
 
   (tour.items || []).forEach((item) => {
-    if (!show(item.floor)) return;
+    const stairShown = item.kind === "stairs" && (show(item.floor) || show(item.floor + 1));
+    if (!stairShown && !show(item.floor)) return;
     const base = (item.floor - 1) * FLOOR_STEP;
     const scale = item.scale || 1;
     if (item.kind === "text") {
@@ -507,7 +734,14 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
     }
     if (item.kind === "balcony") {
       const group = new THREE.Group();
-      const glass = new THREE.MeshLambertMaterial({ color: 0xd5dee6, transparent: true, opacity: 0.42 });
+      const glass = new THREE.MeshPhysicalMaterial({
+        color: 0xcfe0e6,
+        transparent: true,
+        opacity: 0.42,
+        roughness: 0.08,
+        transmission: 0.2,
+        thickness: 0.025,
+      });
       addBox(group, item.w, WALL_HEIGHT / 2, 0.03, glass, 0, WALL_HEIGHT / 4, 0);
       addBox(group, item.w, 0.04, 0.045, solid(0xb7bcc2), 0, WALL_HEIGHT / 2, 0);
       group.position.set(item.x, base, item.y);
@@ -516,15 +750,12 @@ export const buildTourScene = (tour: TourTemplate, floor: number | "all") => {
       root.add(group);
       return;
     }
-    if (item.kind === "stairs") {
-      const group = new THREE.Group();
-      for (let step = 0; step < 10; step++) {
-        addBox(group, 1.05, 0.16, 0.28, solid(step % 2 ? 0xf2f2f0 : 0xd8d8d6), 0, 0.12 + step * 0.18, -1.2 + step * 0.28);
-      }
-      group.position.set(item.x, base, item.y);
-      group.rotation.y = -((item.rot || 0) * Math.PI) / 180;
-      group.scale.setScalar(scale);
-      root.add(group);
+    if (item.kind === "stairs" && item.points && item.points.length >= 4) {
+      buildSwitchback(root, item.points, base);
+      return;
+    }
+    if (item.kind === "garden" && item.points && item.points.length >= 3) {
+      addGarden(root, item.points, base);
       return;
     }
     if (item.kind === "furniture" && item.piece) {

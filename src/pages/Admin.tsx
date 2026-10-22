@@ -13,8 +13,7 @@ import {
   User, Phone, HelpCircle, Coins, Download, Copy, FileCode, Banknote, 
   Tags, X, ShieldCheck, Eye, EyeOff, Home as HomeIcon, BarChart3, Bell,
   Palette, MessageSquare, MapPin, Info, Send, Check, Sparkles, AlertTriangle, Mail,
-  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage, CreditCard, Calendar,
-  Image as ImageIcon
+  FileText, Sparkle, Globe, Layers, Laptop, Bed, Maximize, FileImage, CreditCard, Calendar
 } from 'lucide-react';
 import MapEditor from '@/components/MapEditor';
 import { showSuccess, showError } from '@/utils/toast';
@@ -30,13 +29,7 @@ import {
 import { cn } from '@/lib/utils';
 import { clearMainMapCache, clearProjectCache, readMainMapCache } from '@/lib/map-cache';
 import { fetchNativeSupabase, fetchWithRetry } from '@/lib/supabase-rest';
-import {
-  prepareElementsForSave,
-  migrateAllEmbeddedMapImages,
-  scanEmbeddedMapImages,
-  verifyMapImagesStorageReady,
-  type EmbeddedMapImageScan,
-} from '@/lib/map-image-storage';
+import { prepareElementsForSave } from '@/lib/map-image-storage';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -259,9 +252,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   // Backup & Restore States
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
-  const [isMigratingMapImages, setIsMigratingMapImages] = useState(false);
-  const [embeddedImageScan, setEmbeddedImageScan] = useState<EmbeddedMapImageScan | null>(null);
-  const [isScanningMapImages, setIsScanningMapImages] = useState(false);
   const [isSendingToTelegram, setIsSendingToTelegram] = useState(false);
 
   // Telegram Config
@@ -357,24 +347,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     };
 
     fetchData();
-  }, [session]);
-
-  const refreshEmbeddedImageScan = async () => {
-    setIsScanningMapImages(true);
-    try {
-      const scan = await scanEmbeddedMapImages();
-      setEmbeddedImageScan(scan);
-    } catch (err) {
-      console.error("Error scanning embedded map images:", err);
-    } finally {
-      setIsScanningMapImages(false);
-    }
-  };
-
-  useEffect(() => {
-    if (session) {
-      refreshEmbeddedImageScan();
-    }
   }, [session]);
 
   // جلب إعدادات البروشورات المخصصة ديناميكياً وفقط عند فتح شاشتها
@@ -1633,7 +1605,12 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
       const updatedConfigs = {
         ...projectConfigs,
-        [editingMapProject.id]: { backgroundColor, showGrid, houseTypeAreas }
+        [editingMapProject.id]: {
+          ...(projectConfigs[editingMapProject.id] || {}),
+          backgroundColor,
+          showGrid,
+          houseTypeAreas,
+        },
       };
       await supabase.from('settings').upsert({ key: 'project_configs', value: updatedConfigs });
       setProjectConfigs(updatedConfigs);
@@ -1643,40 +1620,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       setEditingMapProject(null);
       showSuccess('تم حفظ المخطط بنجاح');
     } catch (error) { showError("فشل في حفظ المخطط"); } finally { setIsSavingMap(false); }
-  };
-
-  const handleMigrateMapImages = async () => {
-    setIsMigratingMapImages(true);
-    try {
-      const storageCheck = await verifyMapImagesStorageReady();
-      if (!storageCheck.ok) {
-        showError(`Storage غير جاهز: ${storageCheck.message}. نفّذ database_map_images_storage.sql`);
-        return;
-      }
-
-      const result = await migrateAllEmbeddedMapImages();
-      clearMainMapCache();
-      clearProjectCache();
-      await refreshEmbeddedImageScan();
-      if (result.totalImages === 0) {
-        showSuccess('لا توجد صور مضمّنة في JSON — ربما تم التحويل مسبقاً');
-      } else {
-        showSuccess(
-          `تم تحويل ${result.totalImages} صورة تلقائياً إلى Storage (مخطط عام: ${result.mainMapMigrated}، مشاريع: ${result.projectsMigrated}). لا حاجة لرفع الصور يدوياً.`,
-        );
-      }
-    } catch (error: unknown) {
-      console.error('Map image migration failed:', error);
-      const msg =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'object' && error && 'message' in error
-            ? String((error as { message: unknown }).message)
-            : 'خطأ غير معروف';
-      showError(`فشل تحويل الصور: ${msg}`);
-    } finally {
-      setIsMigratingMapImages(false);
-    }
   };
 
   const startEditingInfo = (project: Project) => {
@@ -2465,23 +2408,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                       احرص على استخدام الإرسال إلى تيليجرام أو التحميل المباشر لحفظ بيانات الحجوزات
                       وملاحظاتها وتحديثات الإكسل اليومية ضد أي فقدان طارئ.
                     </p>
-
-                    <div className="border border-line bg-surface-sunken p-4 space-y-3">
-                      <SubHeading icon={<ImageIcon size={14} />}>تحويل صور المخططات</SubHeading>
-                      <p className="text-[11px] leading-relaxed text-fg-muted">
-                        نفس زر «تحويل الصور المحفوظة» في تبويب المشاريع — يستخرج Base64 من JSON تلقائياً بدون رفع يدوي.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleMigrateMapImages}
-                        disabled={isMigratingMapImages}
-                        className="gap-1.5"
-                      >
-                        {isMigratingMapImages ? <RefreshCcw size={13} className="animate-spin" /> : <ImageIcon size={13} />}
-                        {isMigratingMapImages ? 'جاري التحويل...' : 'تحويل الصور المحفوظة إلى Storage'}
-                      </Button>
-                    </div>
                   </div>
                 </div>
               </Panel>
@@ -3032,73 +2958,6 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
             {activeView === 'projects' && (
               <>
-                <Panel
-                  icon={<ImageIcon size={14} />}
-                  title="تحويل صور المخططات إلى Storage"
-                  description="لا حاجة لامتلاك ملفات الصور على جهازك — تُستخرج تلقائياً من المخطط المحفوظ"
-                  bodyClassName="space-y-4 p-5"
-                >
-                  <p className="text-[12px] leading-relaxed text-fg-muted">
-                    الصور موجودة حالياً داخل JSON (Base64) في قاعدة البيانات — لذلك التحميل بطيء.
-                    هذا الزر يقرأها من المخطط المحفوظ ويرفعها إلى Supabase Storage تلقائياً،
-                    <strong className="font-medium text-fg"> بدون أن ترفع أي ملف من جديد</strong>.
-                  </p>
-
-                  {isScanningMapImages ? (
-                    <p className="text-[11px] text-fg-faint">جاري فحص الصور المضمّنة...</p>
-                  ) : embeddedImageScan ? (
-                    <div className="rounded border border-line bg-surface-sunken px-4 py-3 text-[12px] text-fg-secondary">
-                      {embeddedImageScan.total === 0 ? (
-                        <span className="text-status-available">✓ لا توجد صور مضمّنة — التحويل مكتمل أو غير مطلوب</span>
-                      ) : (
-                        <ul className="space-y-1">
-                          <li>
-                            <span className="font-medium text-fg">{embeddedImageScan.total}</span> صورة مضمّنة جاهزة للتحويل:
-                          </li>
-                          {embeddedImageScan.mainMapCount > 0 && (
-                            <li>• المخطط العام: {embeddedImageScan.mainMapCount}</li>
-                          )}
-                          {embeddedImageScan.projectCounts.map((p) => (
-                            <li key={p.projectId}>• {p.projectName}: {p.count}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ) : null}
-
-                  <p className="text-[11px] text-fg-faint">
-                    الخطوة 1: نفّذ <code className="font-mono text-[10px]">database_map_images_storage.sql</code> في Supabase.
-                    الخطوة 2: اضغط الزر أدناه.
-                  </p>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={handleMigrateMapImages}
-                      disabled={isMigratingMapImages || isScanningMapImages}
-                      className="gap-1.5"
-                    >
-                      {isMigratingMapImages ? (
-                        <RefreshCcw size={13} className="animate-spin" />
-                      ) : (
-                        <ImageIcon size={13} />
-                      )}
-                      {isMigratingMapImages
-                        ? 'جاري التحويل التلقائي...'
-                        : 'تحويل الصور المحفوظة إلى Storage'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={refreshEmbeddedImageScan}
-                      disabled={isScanningMapImages || isMigratingMapImages}
-                      className="gap-1.5"
-                    >
-                      <RefreshCcw size={13} className={isScanningMapImages ? 'animate-spin' : ''} />
-                      إعادة الفحص
-                    </Button>
-                  </div>
-                </Panel>
-
                 {(isCreating || editingProjectInfo) && (
                   <Panel
                     title={editingProjectInfo ? 'تعديل بيانات المشروع' : 'إنشاء مشروع جديد'}

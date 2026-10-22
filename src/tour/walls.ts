@@ -111,90 +111,47 @@ const pullGuide = (value: number, pool: number[], limit: number) => {
   return { value: best, hit: gap < limit };
 };
 
-/** يلتصق بركن إن كان الخيار مفعّلاً، وإلا بحافة أو امتداد من دون القفز إلى الركن. */
+/** يلتصق حسب الخيار فقط: الركن بالحواف، الشبكة بالمربعات، والزاوية القائمة بالمحور. الرسم الحر لا يجذب النقطة. */
 export const snapWallPoint = (
   raw: Pt,
   prev: Pt | null,
   guides: WallGuides,
   options: { free: boolean; grid: boolean; vertex?: boolean; lock?: "x" | "y" | null },
 ): Pt => {
-  const vertexSnap = options.vertex !== false;
+  const vertexSnap = options.vertex === true;
   const onGrid = (value: number) => (options.grid ? Math.round(value / 0.25) * 0.25 : value);
-  const stealsVertex = (point: Pt) => {
-    if (vertexSnap) return false;
-    return guides.vertices.some((vertex) => {
-      const landed = Math.hypot(point.x - vertex.x, point.y - vertex.y) <= 0.07;
-      const aimed = Math.hypot(raw.x - vertex.x, raw.y - vertex.y) <= 0.08;
-      return landed && !aimed;
-    });
-  };
-  const keep = (point: Pt) => (stealsVertex(point) ? null : point);
+  const gridded = (point: Pt) => ({ x: onGrid(point.x), y: onGrid(point.y) });
 
   if (vertexSnap) {
     const vertex = closestVertexPoint(guides.vertices, raw, SNAP_VERTEX);
     if (vertex) return { x: vertex.x, y: vertex.y };
+    let edge: Pt | null = null;
+    let edgeGap = SNAP_EDGE;
+    guides.segments.forEach((segment) => {
+      const hit = closestOnPath([segment.a, segment.b], raw);
+      if (hit.gap <= edgeGap) {
+        edgeGap = hit.gap;
+        edge = { x: hit.x, y: hit.y };
+      }
+    });
+    if (edge) return edge;
   }
-
-  let edge: Pt | null = null;
-  let edgeGap = SNAP_EDGE;
-  guides.segments.forEach((segment) => {
-    const hit = closestOnPath([segment.a, segment.b], raw);
-    if (hit.gap <= edgeGap) {
-      edgeGap = hit.gap;
-      edge = { x: hit.x, y: hit.y };
-    }
-  });
-  if (edge) {
-    const accepted = keep(edge);
-    if (accepted) return accepted;
-  }
-
-  const xs = vertexSnap ? guides.vertices.map((point) => point.x) : [];
-  const ys = vertexSnap ? guides.vertices.map((point) => point.y) : [];
-  if (prev) {
-    xs.push(prev.x);
-    ys.push(prev.y);
-  }
-  guides.segments.forEach((segment) => {
-    if (Math.abs(segment.a.y - segment.b.y) <= 0.05) ys.push((segment.a.y + segment.b.y) / 2);
-    if (Math.abs(segment.a.x - segment.b.x) <= 0.05) xs.push((segment.a.x + segment.b.x) / 2);
-  });
 
   let lock = options.lock || null;
   if (!lock && prev && !options.free) {
     lock = Math.abs(raw.x - prev.x) >= Math.abs(raw.y - prev.y) ? "y" : "x";
   }
+  if (prev && lock === "y") return { x: onGrid(raw.x), y: prev.y };
+  if (prev && lock === "x") return { x: prev.x, y: onGrid(raw.y) };
+  if (!vertexSnap) return gridded(raw);
 
-  if (prev && lock === "y") {
-    const x = pullGuide(raw.x, xs, SNAP_ALIGN);
-    return keep({ x: x.hit ? x.value : onGrid(raw.x), y: prev.y }) || { x: onGrid(raw.x), y: prev.y };
+  const xs = guides.vertices.map((point) => point.x);
+  const ys = guides.vertices.map((point) => point.y);
+  if (prev) {
+    xs.push(prev.x);
+    ys.push(prev.y);
   }
-  if (prev && lock === "x") {
-    const y = pullGuide(raw.y, ys, SNAP_ALIGN);
-    return keep({ x: prev.x, y: y.hit ? y.value : onGrid(raw.y) }) || { x: prev.x, y: onGrid(raw.y) };
-  }
-
-  let line: Pt | null = null;
-  let lineGap = SNAP_ALIGN;
-  guides.segments.forEach((segment) => {
-    const dx = segment.b.x - segment.a.x;
-    const dy = segment.b.y - segment.a.y;
-    const len2 = dx * dx + dy * dy;
-    if (len2 < 0.002) return;
-    const len = Math.sqrt(len2);
-    const distance = Math.abs((raw.x - segment.a.x) * -dy + (raw.y - segment.a.y) * dx) / len;
-    if (distance <= lineGap) {
-      const t = ((raw.x - segment.a.x) * dx + (raw.y - segment.a.y) * dy) / len2;
-      lineGap = distance;
-      line = { x: segment.a.x + dx * t, y: segment.a.y + dy * t };
-    }
-  });
   const x = pullGuide(raw.x, xs, SNAP_ALIGN);
   const y = pullGuide(raw.y, ys, SNAP_ALIGN);
-  const aligned = { x: x.hit ? x.value : onGrid(raw.x), y: y.hit ? y.value : onGrid(raw.y) };
-  if (line && (!x.hit && !y.hit || lineGap < 0.16)) {
-    const accepted = keep(line);
-    if (accepted) return accepted;
-  }
-  return keep(aligned) || { x: onGrid(raw.x), y: onGrid(raw.y) };
+  return { x: x.hit ? x.value : onGrid(raw.x), y: y.hit ? y.value : onGrid(raw.y) };
 };

@@ -24,11 +24,12 @@ export type PieceId =
   | "nightstand"
   | "bookshelf"
   | "dresser"
-  | "curtain";
+  | "curtain"
+  | "catLadder";
 
-export type ItemKind = "room" | "balcony" | "furniture" | "hotspot" | "stairs" | "text";
+export type ItemKind = "room" | "balcony" | "furniture" | "hotspot" | "stairs" | "garden" | "text";
 
-export type OpeningKind = "door" | "mainDoor" | "slideDoor" | "window" | "balcony";
+export type OpeningKind = "door" | "mainDoor" | "outerDoor" | "slideDoor" | "window" | "balcony";
 
 export interface TourPoint {
   x: number;
@@ -68,6 +69,16 @@ export interface TourItem {
   /** نص يظهر تحت الاسم عند التأشير على نقطة الجولة. */
   note?: string;
   piece?: PieceId;
+  /** حدود الحديقة أو الدرج على المخطط. */
+  points?: TourPoint[];
+  /** إزاحة فتحة السلم على الطابق الأعلى فقط. لا تحرّك السلم في طابقه. */
+  above?: TourPoint;
+}
+
+export interface PlanFrame {
+  scale: number;
+  x: number;
+  y: number;
 }
 
 export interface TourTemplate {
@@ -82,6 +93,10 @@ export interface TourTemplate {
   unitLabel: string;
   grid: boolean;
   plans: Record<string, string>;
+  /** تكبير وإزاحة صورة المخطط لكل طابق. */
+  planLayout?: Record<string, PlanFrame>;
+  /** صورة واحدة وإزاحة واحدة لكل طوابق المنزل. */
+  sharedPlan?: boolean;
   walls: TourWall[];
   openings: TourOpening[];
   items: TourItem[];
@@ -90,5 +105,6 @@ export interface TourTemplate {
 
 export const SHEET_W = 22;
 export const SHEET_H = 16;
-export const FLOOR_STEP = 3.2;
 export const WALL_HEIGHT = 2.7;
+/** سطح الطابق التالي عند أعلى الجدار، والدرج يقف عنده. */
+export const FLOOR_STEP = WALL_HEIGHT;
