@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getStoredCenterSessionToken } from "@/lib/center-auth";
-import type { TourTemplate } from "./types";
+import type { PlanFrame, TourTemplate } from "./types";
 
 const KEY = "amaal-tour-templates-v1";
 
@@ -30,9 +30,23 @@ export const subscribeTours = (listener: (tours: TourTemplate[]) => void) => {
   return () => listeners.delete(listener);
 };
 
+const planFrame = (frame: PlanFrame | undefined): PlanFrame => {
+  const scale = Number(frame?.scale);
+  const x = Number(frame?.x);
+  const y = Number(frame?.y);
+  return {
+    scale: Number.isFinite(scale) ? Math.min(4, Math.max(0.4, scale)) : 1,
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+  };
+};
+
 const normalize = (tour: TourTemplate): TourTemplate => {
   const listed = Array.isArray(tour.projectIds) ? tour.projectIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
   const projectIds = Array.from(new Set(listed.length ? listed : tour.projectId ? [tour.projectId] : []));
+  const planLayout = Object.fromEntries(
+    Object.entries(tour.planLayout || {}).map(([key, frame]) => [key, planFrame(frame)]),
+  );
   return {
   ...tour,
   projectId: projectIds[0] || "",
@@ -41,10 +55,12 @@ const normalize = (tour: TourTemplate): TourTemplate => {
   unitLabel: tour.unitLabel || "",
   grid: tour.grid !== false,
   plans: tour.plans || {},
+  planLayout,
+  sharedPlan: tour.sharedPlan === true,
   walls: tour.walls || [],
   openings: tour.openings || [],
   items: (tour.items || [])
-    .filter((item) => item.kind === "room" || item.kind === "balcony" || item.kind === "furniture" || item.kind === "hotspot" || item.kind === "stairs" || item.kind === "text")
+    .filter((item) => item.kind === "room" || item.kind === "balcony" || item.kind === "furniture" || item.kind === "hotspot" || item.kind === "stairs" || item.kind === "garden" || item.kind === "text")
     .map((item) => {
       const legacy = item as typeof item & { turn?: number };
       const rot = typeof item.rot === "number" ? item.rot : typeof legacy.turn === "number" ? legacy.turn * 90 : 0;

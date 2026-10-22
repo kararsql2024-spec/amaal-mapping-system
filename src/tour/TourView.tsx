@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { buildTourScene } from "./buildScene";
 import { TourDenied, TourLoading, useCenterAllowed } from "./gate";
 import { ensureTours } from "./storage";
@@ -37,23 +38,41 @@ const TourStage = ({ tour, showEditor }: { tour: TourTemplate; showEditor: boole
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setSize(host.clientWidth, host.clientHeight);
-    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xe7e7e5);
-    scene.add(new THREE.AmbientLight(0xfffdfb, 0.5));
-    scene.add(new THREE.HemisphereLight(0xfffdfb, 0xe8e6e2, 0.1));
-    const sun = new THREE.DirectionalLight(0xfffaf6, 0.32);
-    sun.position.set(-8, 18, 6);
-    scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xfffdfb, 0.14);
-    fill.position.set(10, 9, -8);
-    scene.add(fill);
+    scene.background = new THREE.Color(0xdfe6e8);
+    scene.fog = new THREE.Fog(0xdfe6e8, 45, 105);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.add(new THREE.HemisphereLight(0xf4f7ff, 0xb7a98f, 0.72));
+    const sun = new THREE.DirectionalLight(0xfff1db, 2.25);
+    sun.position.set(-11, 19, 8);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1536, 1536);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 65;
+    sun.shadow.camera.left = -24;
+    sun.shadow.camera.right = 24;
+    sun.shadow.camera.top = 24;
+    sun.shadow.camera.bottom = -24;
+    sun.shadow.bias = -0.00035;
+    sun.shadow.normalBias = 0.025;
+    scene.add(sun, sun.target);
+    const fill = new THREE.DirectionalLight(0xc9dcff, 0.8);
+    fill.position.set(13, 10, -10);
+    scene.add(fill, fill.target);
+    const warm = new THREE.PointLight(0xffd6a6, 0.7, 32, 2);
+    warm.position.set(0, 6, 0);
+    scene.add(warm);
 
     const camera = new THREE.PerspectiveCamera(74, 1, 0.08, 140);
     let built = buildTourScene(tour, tour.floors > 1 ? "all" : 1);
@@ -61,6 +80,16 @@ const TourStage = ({ tour, showEditor }: { tour: TourTemplate; showEditor: boole
     const focus = built.root.userData.focus as { x: number; z: number } | undefined;
     const fx = focus?.x ?? 11;
     const fz = focus?.z ?? 8;
+    sun.target.position.set(fx, 0, fz);
+    fill.target.position.set(fx, 1.2, fz);
+    warm.position.set(fx, 5.5, fz);
+    built.root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.receiveShadow = mesh.receiveShadow !== false;
+      const height = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3()).y;
+      mesh.castShadow = mesh.castShadow || height > 0.12;
+    });
     const homePos = new THREE.Vector3(fx, 26, fz + 0.45);
     const homeTarget = new THREE.Vector3(fx, 0, fz);
     const introPos = new THREE.Vector3(fx + 1.6, 12.5, fz + 10.2);
@@ -214,6 +243,13 @@ const TourStage = ({ tour, showEditor }: { tour: TourTemplate; showEditor: boole
         scene.remove(built.root);
         disposeRoot(built.root);
         built = buildTourScene(tour, next);
+        built.root.traverse((object) => {
+          const mesh = object as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          mesh.receiveShadow = true;
+          const height = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3()).y;
+          mesh.castShadow = mesh.castShadow || height > 0.12;
+        });
         scene.add(built.root);
         if (pinned && standingFloor) showCeiling(standingFloor);
       },
@@ -297,6 +333,8 @@ const TourStage = ({ tour, showEditor }: { tour: TourTemplate; showEditor: boole
       renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
       window.removeEventListener("pointerup", onPointerUp);
       controls.dispose();
+      scene.environment?.dispose();
+      pmrem.dispose();
       renderer.dispose();
       if (renderer.domElement.parentElement === host) host.removeChild(renderer.domElement);
       apiRef.current = null;

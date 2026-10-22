@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import type { MapElement } from "@/types/project";
 import { hitItem, itemFoot, OPENING_WIDTH, pieceOf, PLACE_SIZE } from "./catalog";
+import { stairOutline } from "./stairs";
 import { TourDenied, TourLoading, useCenterAllowed } from "./gate";
 import { ensureTours, saveTours, shrinkPlanImage } from "./storage";
 import { SHEET_H, SHEET_W, type ItemKind, type OpeningKind, type PieceId, type TourItem, type TourKind, type TourTemplate } from "./types";
@@ -12,13 +13,28 @@ import { projectIdsOf } from "./match";
 import { discoverSpecs, type TourSpec } from "./specs";
 import { closestOnPath, nearestVertex, pathLength, poseAt, snapPoint, snapWallPoint, WALL_THICKNESS, type Pt, type WallGuides } from "./walls";
 
-type Tool = "select" | "wall" | "room" | "text" | OpeningKind | "hotspot" | "stairs" | "furniture";
+type Tool = "select" | "wall" | "room" | "text" | OpeningKind | "hotspot" | "stairs" | "garden" | "furniture";
 type Selection =
   | { kind: "item"; id: string }
   | { kind: "wall"; id: string }
   | { kind: "point"; wallId: string; index: number }
   | { kind: "opening"; id: string }
   | null;
+
+const stairAbove = (item: { kind: string; floor: number; above?: { x: number; y: number } }, level: number) =>
+  item.kind === "stairs" && item.floor !== level ? item.above || { x: 0, y: 0 } : { x: 0, y: 0 };
+
+const planFrameOf = (tour: TourTemplate, level: number) => {
+  const frame = tour.planLayout?.[String(level)];
+  const scale = Number(frame?.scale);
+  const x = Number(frame?.x);
+  const y = Number(frame?.y);
+  return {
+    scale: Number.isFinite(scale) ? Math.min(4, Math.max(0.4, scale)) : 1,
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+  };
+};
 
 const newId = () => crypto.randomUUID();
 
@@ -46,6 +62,7 @@ const itemName = (item: TourItem) => {
   if (item.kind === "room") return "غرفة";
   if (item.kind === "balcony") return "بلكونة";
   if (item.kind === "stairs") return "سلم";
+  if (item.kind === "garden") return "حديقة";
   return "نقطة";
 };
 
@@ -83,7 +100,7 @@ const FURNITURE_GROUPS: { title: string; ids: PieceId[] }[] = [
   { title: "نوم", ids: ["doubleBed", "singleBed", "wardrobe", "nightstand", "dresser", "kidsBed", "toyBox", "kidsShelf"] },
   { title: "مطبخ وعمل", ids: ["kitchen", "bathroom", "desk", "officeChair", "bookshelf"] },
   { title: "إضاءة", ids: ["tv", "curtain", "plant", "lamp"] },
-  { title: "خارج المنزل", ids: ["car", "garden"] },
+  { title: "خارج المنزل", ids: ["car", "catLadder"] },
 ];
 
 const FULL_VIEW = { x: 0, y: 0, w: SHEET_W, h: SHEET_H };
@@ -132,7 +149,8 @@ const Editor = () => {
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<
     | { type: "point"; wallId: string; index: number; lockPrev: "x" | "y" | null; lockNext: "x" | "y" | null }
-    | { type: "item"; id: string; dx: number; dy: number }
+    | { type: "item"; id: string; dx: number; dy: number; projection?: boolean }
+    | { type: "gardenPoint"; id: string; index: number; projection?: boolean }
     | { type: "opening"; id: string }
     | { type: "scale"; id: string }
     | null
@@ -360,6 +378,63 @@ const Editor = () => {
     return { vertices, segments };
   };
 
+  const closeGarden = (points: Pt[]) => {
+    if (!tour || points.length < 3) {
+      setNotice("ارسم ثلاث نقاط على الأقل ثم أغلق الحديقة.");
+      return;
+    }
+    const x = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+    const y = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+    remember();
+    const item: TourItem = {
+      id: newId(),
+      kind: "garden",
+      floor,
+      x,
+      y,
+      w: 1,
+      h: 1,
+      rot: 0,
+      scale: 1,
+      points: points.map((point) => ({ ...point })),
+    };
+    update({ items: [...tour.items, item] });
+    setDraft([]);
+    setGhost(null);
+    setSelection({ kind: "item", id: item.id });
+    setTool("select");
+    setNotice("");
+  };
+
+  const commitStair = (points: Pt[]) => {
+    if (!tour || points.length < 4) {
+      setNotice("الدرج أربع نقاط: بداية الجزء الأول، نهايته، بداية الجزء الثاني، ثم نهايته باتجاه البداية.");
+      return;
+    }
+    const used = points.slice(0, 4);
+    const x = used.reduce((sum, point) => sum + point.x, 0) / used.length;
+    const y = used.reduce((sum, point) => sum + point.y, 0) / used.length;
+    remember();
+    const item: TourItem = {
+      id: newId(),
+      kind: "stairs",
+      floor,
+      x,
+      y,
+      w: 1.05,
+      h: 1,
+      rot: 0,
+      scale: 1,
+      points: used.map((point) => ({ ...point })),
+    };
+    update({ items: [...tour.items, item] });
+    setDraft([]);
+    setGhost(null);
+    setSelection({ kind: "item", id: item.id });
+    setTool("select");
+    setNotice("");
+  };
+
   const onPointerDown = (event: React.PointerEvent) => {
     if (event.button === 1 || (event.button === 0 && spaceRef.current)) {
       panRef.current = { x: event.clientX, y: event.clientY };
@@ -368,15 +443,23 @@ const Editor = () => {
     }
     const raw = toMeter(event);
     if (!raw || !tour) return;
-    if (tool === "wall") {
+    if (tool === "wall" || tool === "garden" || tool === "stairs") {
       const prev = draft.length ? draft[draft.length - 1] : null;
-      const point = snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: wallFree || !prev, grid: tour.grid, vertex: snapVertex });
+      const point = snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: tool === "stairs" || wallFree || !prev, grid: tour.grid, vertex: snapVertex });
+      if (tool === "garden" && draft.length >= 3 && Math.hypot(point.x - draft[0].x, point.y - draft[0].y) < 0.4) {
+        closeGarden(draft);
+        return;
+      }
+      if (tool === "stairs" && draft.length >= 3) {
+        commitStair([...draft, point]);
+        return;
+      }
       if (prev && Math.hypot(point.x - prev.x, point.y - prev.y) < 0.12) return;
       setDraft((points) => [...points, point]);
       setGhost(null);
       return;
     }
-    if (tool === "door" || tool === "mainDoor" || tool === "slideDoor" || tool === "window" || tool === "balcony") {
+    if (tool === "door" || tool === "mainDoor" || tool === "outerDoor" || tool === "slideDoor" || tool === "window" || tool === "balcony") {
       let host: { id: string; along: number; side: number } | null = null;
       let gap = 0.45;
       tour.walls.filter((wall) => wall.floor === floor && wall.points.length > 1).forEach((wall) => {
@@ -398,7 +481,7 @@ const Editor = () => {
         wallId: host.id,
         at: host.along,
         width: OPENING_WIDTH[tool],
-        side: tool === "balcony" ? host.side : undefined,
+        side: tool === "balcony" || tool === "outerDoor" ? host.side : undefined,
       };
       update({ openings: [...tour.openings, opening] });
       setSelection({ kind: "opening", id: opening.id });
@@ -452,7 +535,18 @@ const Editor = () => {
     }
 
     const selectedItem = selection?.kind === "item" ? tour.items.find((item) => item.id === selection.id) : null;
-    if (selectedItem) {
+    if (selectedItem?.points && (selectedItem.kind === "garden" || selectedItem.kind === "stairs")) {
+      const projection = selectedItem.kind === "stairs" && selectedItem.floor !== floor;
+      const shift = stairAbove(selectedItem, floor);
+      const shifted = selectedItem.points.map((point) => ({ x: point.x + shift.x, y: point.y + shift.y }));
+      const index = nearestVertex(shifted, raw, 0.22);
+      if (index >= 0) {
+        remember();
+        dragRef.current = { type: "gardenPoint", id: selectedItem.id, index, projection };
+        return;
+      }
+    }
+    if (selectedItem && selectedItem.kind !== "garden" && selectedItem.kind !== "stairs") {
       const corner = cornerOf(selectedItem);
       if (Math.hypot(corner.x - raw.x, corner.y - raw.y) < 0.28) {
         remember();
@@ -495,12 +589,26 @@ const Editor = () => {
         return;
       }
     }
-    const items = tour.items.filter((item) => item.floor === floor);
+    const items = tour.items.filter((item) => item.floor === floor || (item.kind === "stairs" && item.floor === floor - 1));
     for (let index = items.length - 1; index >= 0; index--) {
-      if (!hitItem(items[index], raw.x, raw.y)) continue;
+      const item = items[index];
+      const shift = stairAbove(item, floor);
+      const probe = {
+        ...item,
+        x: item.x + shift.x,
+        y: item.y + shift.y,
+        points: item.points?.map((point) => ({ x: point.x + shift.x, y: point.y + shift.y })),
+      };
+      if (!hitItem(probe, raw.x, raw.y)) continue;
       remember();
-      setSelection({ kind: "item", id: items[index].id });
-      dragRef.current = { type: "item", id: items[index].id, dx: items[index].x - raw.x, dy: items[index].y - raw.y };
+      setSelection({ kind: "item", id: item.id });
+      dragRef.current = {
+        type: "item",
+        id: item.id,
+        dx: probe.x - raw.x,
+        dy: probe.y - raw.y,
+        projection: item.kind === "stairs" && item.floor !== floor,
+      };
       return;
     }
     for (const wall of tour.walls.filter((entry) => entry.floor === floor && entry.points.length > 1)) {
@@ -528,9 +636,9 @@ const Editor = () => {
       return;
     }
     const raw = toMeter(event);
-    if (tool === "wall" && raw && tour) {
+    if ((tool === "wall" || tool === "garden" || tool === "stairs") && raw && tour) {
       const prev = draft.length ? draft[draft.length - 1] : null;
-      setGhost(snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: wallFree || !prev, grid: tour.grid, vertex: snapVertex }));
+      setGhost(snapWallPoint(raw, prev, wallGuides(tour.walls, floor, draft.slice(0, -1)), { free: tool === "stairs" || wallFree || !prev, grid: tour.grid, vertex: snapVertex }));
     } else if (ghost) setGhost(null);
     const drag = dragRef.current;
     const current = toursRef.current.find((entry) => entry.id === activeId);
@@ -569,7 +677,37 @@ const Editor = () => {
     } else if (drag.type === "item") {
       const point = snapPoint({ x: raw.x + drag.dx, y: raw.y + drag.dy }, current.grid);
       update({
-        items: current.items.map((item) => (item.id === drag.id ? { ...item, x: point.x, y: point.y } : item)),
+        items: current.items.map((item) => {
+          if (item.id !== drag.id) return item;
+          if (drag.projection) return { ...item, above: { x: point.x - item.x, y: point.y - item.y } };
+          const dx = point.x - item.x;
+          const dy = point.y - item.y;
+          return {
+            ...item,
+            x: point.x,
+            y: point.y,
+            points: item.points?.map((vertex) => ({ x: vertex.x + dx, y: vertex.y + dy })),
+          };
+        }),
+      }, false);
+    } else if (drag.type === "gardenPoint") {
+      const item = current.items.find((entry) => entry.id === drag.id);
+      if (!item?.points) return;
+      const point = snapPoint(raw, current.grid);
+      if (drag.projection) {
+        const origin = item.points[drag.index];
+        const shift = item.above || { x: 0, y: 0 };
+        const above = { x: shift.x + point.x - (origin.x + shift.x), y: shift.y + point.y - (origin.y + shift.y) };
+        update({
+          items: current.items.map((entry) => (entry.id === item.id ? { ...entry, above } : entry)),
+        }, false);
+        return;
+      }
+      const points = item.points.map((vertex, index) => (index === drag.index ? point : vertex));
+      const x = points.reduce((sum, vertex) => sum + vertex.x, 0) / points.length;
+      const y = points.reduce((sum, vertex) => sum + vertex.y, 0) / points.length;
+      update({
+        items: current.items.map((entry) => (entry.id === item.id ? { ...entry, points, x, y } : entry)),
       }, false);
     } else if (drag.type === "opening") {
       const opening = current.openings.find((entry) => entry.id === drag.id);
@@ -609,8 +747,9 @@ const Editor = () => {
       name: `نسخة · ${tour.name}`,
       walls: tour.walls.map((wall) => ({ ...wall, id: wallIds.get(wall.id) || newId(), points: wall.points.map((point) => ({ ...point })) })),
       openings: tour.openings.map((opening) => ({ ...opening, id: newId(), wallId: wallIds.get(opening.wallId) || opening.wallId })),
-      items: tour.items.map((item) => ({ ...item, id: newId() })),
+      items: tour.items.map((item) => ({ ...item, id: newId(), points: item.points?.map((point) => ({ ...point })) })),
       plans: { ...tour.plans },
+      planLayout: Object.fromEntries(Object.entries(tour.planLayout || {}).map(([key, frame]) => [key, { ...frame }])),
       projectIds: [...projectIdsOf(tour)],
       updatedAt: new Date().toISOString(),
     };
@@ -656,8 +795,20 @@ const Editor = () => {
   const selectedItem = selection?.kind === "item" ? tour?.items.find((item) => item.id === selection.id) : null;
   const selectedOpening = selection?.kind === "opening" ? tour?.openings.find((opening) => opening.id === selection.id) : null;
   const visibleWalls = tour?.walls.filter((wall) => wall.floor === floor) || [];
-  const visibleItems = tour?.items.filter((item) => item.floor === floor) || [];
-  const plan = tour?.plans[String(floor)] || "";
+  const visibleItems = tour?.items.filter((item) => item.floor === floor || (item.kind === "stairs" && item.floor === floor - 1)) || [];
+  const ownPlan = Boolean(tour?.plans[String(floor)]);
+  const planLevel = !tour ? floor : tour.sharedPlan ? 1 : ownPlan ? floor : tour.plans["1"] ? 1 : floor;
+  const plan = tour?.plans[String(planLevel)] || "";
+  const planPreview = Boolean(tour && !tour.sharedPlan && !ownPlan && planLevel !== floor);
+  const writePlanFrame = (frame: { scale: number; x: number; y: number }) => {
+    if (!tour) return;
+    const levels = tour.sharedPlan ? Array.from({ length: tour.floors }, (_, index) => String(index + 1)) : [String(planLevel)];
+    const planLayout = { ...tour.planLayout };
+    levels.forEach((key) => {
+      planLayout[key] = frame;
+    });
+    update({ planLayout });
+  };
   const specList = (tour?.kind === "house" ? specs.houses : specs.apartments).filter((spec) =>
     spec.label.toLowerCase().includes(unitQuery.trim().toLowerCase()),
   );
@@ -703,6 +854,7 @@ const Editor = () => {
                   ["wall", "مسار جدار"],
                   ["room", "غرفة"],
                   ["mainDoor", "باب رئيسي"],
+                  ["outerDoor", "باب خارجي"],
                   ["door", "باب"],
                   ["slideDoor", "باب سلايد"],
                   ["window", "شباك"],
@@ -710,11 +862,16 @@ const Editor = () => {
                   ["hotspot", "نقطة جولة"],
                   ["text", "نص"],
                   ["stairs", "سلم"],
-                ] as [Tool, string][]).filter(([id]) => id !== "stairs" || tour.floors > 1).map(([id, label]) => (
-                  <button key={id} type="button" onClick={() => setTool(id)} className={`border px-2 py-1.5 text-start text-[12px] ${tool === id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>{label}</button>
+                  ["garden", "حديقة"],
+                ] as [Tool, string][]).filter(([id]) => (id !== "stairs" || tour.floors > 1) && (id !== "garden" && id !== "outerDoor" || tour.kind === "house")).map(([id, label]) => (
+                  <button key={id} type="button" onClick={() => { setTool(id); setDraft([]); setGhost(null); }} className={`border px-2 py-1.5 text-start text-[12px] ${tool === id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>{label}</button>
                 ))}
                 <p className="px-1 pb-1 pt-3 text-[11px] text-[#6b645c]">المسار</p>
-                <button type="button" onClick={generateWall} className="border border-[#1c1917] bg-[#1c1917] px-2 py-1.5 text-start text-[12px] text-white">توليد جدار ({draft.length})</button>
+                {tool === "stairs" ? (
+                  <p className="px-1 text-[11px] leading-5 text-[#6b645c]">{["بداية الصعود", "نهاية الجزء الأول", "بداية الجزء الثاني", "نهاية الصعود"][Math.min(draft.length, 3)]} ({Math.min(draft.length + 1, 4)}/4)</p>
+                ) : (
+                  <button type="button" onClick={tool === "garden" ? () => closeGarden(draft) : generateWall} className="border border-[#1c1917] bg-[#1c1917] px-2 py-1.5 text-start text-[12px] text-white">{tool === "garden" ? `إغلاق الحديقة (${draft.length})` : `توليد جدار (${draft.length})`}</button>
+                )}
                 {draft.length > 0 && <button type="button" onClick={() => setDraft((points) => points.slice(0, -1))} className="border border-black/10 bg-white px-2 py-1.5 text-start text-[12px]">تراجع نقطة</button>}
                 {draft.length > 0 && <button type="button" onClick={() => setDraft([])} className="border border-black/10 bg-white px-2 py-1.5 text-start text-[12px]">مسح المسار</button>}
                 <p className="px-1 pb-1 pt-3 text-[11px] text-[#6b645c]">العرض</p>
@@ -734,7 +891,15 @@ const Editor = () => {
                   {tour.grid && Array.from({ length: SHEET_H * 2 + 1 }, (_, index) => (
                     <line key={`h${index}`} x1={0} y1={index / 2} x2={SHEET_W} y2={index / 2} stroke="#ece7df" strokeWidth={index % 2 ? 0.015 : 0.03} />
                   ))}
-                  {plan && <image href={plan} x={0} y={0} width={SHEET_W} height={SHEET_H} />}
+                  {plan && (() => {
+                    const frame = planFrameOf(tour, planLevel);
+                    const width = SHEET_W * frame.scale;
+                    const height = SHEET_H * frame.scale;
+                    return <image href={plan} x={(SHEET_W - width) / 2 + frame.x} y={(SHEET_H - height) / 2 + frame.y} width={width} height={height} preserveAspectRatio="none" />;
+                  })()}
+                  {tour.walls.filter((wall) => wall.floor === floor - 1 && wall.points.length > 1).map((wall) => (
+                    <polyline key={`below-${wall.id}`} points={wall.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#b7b1a8" strokeWidth={0.05} strokeDasharray="0.16 0.1" />
+                  ))}
                   {visibleWalls.map((wall) => (
                     <g key={wall.id}>
                       <polyline points={wall.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={selection && ((selection.kind === "wall" && selection.id === wall.id) || (selection.kind === "point" && selection.wallId === wall.id)) ? "#1c1917" : "#4a5158"} strokeWidth={WALL_THICKNESS} strokeLinejoin="miter" strokeLinecap="square" />
@@ -745,18 +910,47 @@ const Editor = () => {
                   ))}
                   {draft.length > 0 && (
                     <g>
-                      <polyline points={[...draft, ...(ghost ? [ghost] : [])].map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#1c1917" strokeWidth={WALL_THICKNESS} strokeDasharray="0.18 0.12" strokeLinejoin="miter" strokeLinecap="square" />
-                      {segmentLengths(ghost ? [...draft, ghost] : draft).map((mark, index) => (
-                        <text key={`draft-${index}`} x={mark.x} y={mark.y} textAnchor="middle" fontSize={0.28} fill="#1c1917">{mark.text}</text>
+                      <polyline points={[...draft, ...(ghost ? [ghost] : [])].map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={tool === "stairs" ? "#8a7058" : "#1c1917"} strokeWidth={tool === "stairs" ? 0.12 : WALL_THICKNESS} strokeDasharray="0.18 0.12" strokeLinejoin="miter" strokeLinecap="round" />
+                      {tool !== "stairs" && segmentLengths(ghost ? [...draft, ghost] : draft).map((mark, index) => (
+                        <text key={`draft-len-${index}`} x={mark.x} y={mark.y} textAnchor="middle" fontSize={0.28} fill="#1c1917">{mark.text}</text>
+                      ))}
+                      {draft.map((point, index) => (
+                        <g key={`draft-mark-${index}`}>
+                          <circle cx={point.x} cy={point.y} r={0.1} fill={tool === "stairs" ? "#8a7058" : "#1c1917"} />
+                          {tool === "stairs" && <text x={point.x + 0.16} y={point.y - 0.12} fontSize={0.28} fill="#6b645c">{["بداية ١", "نهاية ١", "بداية ٢", "نهاية ٢"][index]}</text>}
+                        </g>
                       ))}
                     </g>
                   )}
+                  {visibleItems.filter((item) => item.kind === "garden" && item.points && item.points.length >= 3).map((item) => (
+                    <polygon key={item.id} points={item.points!.map((point) => `${point.x},${point.y}`).join(" ")} fill="rgba(109,154,78,0.55)" stroke={selection?.kind === "item" && selection.id === item.id ? "#1c1917" : "#4f7a38"} strokeWidth={0.06} />
+                  ))}
+                  {visibleItems.filter((item) => item.kind === "stairs" && item.points && item.points.length >= 4).map((item) => {
+                    const shift = stairAbove(item, floor);
+                    const mark = item.points!.map((point) => ({ x: point.x + shift.x, y: point.y + shift.y }));
+                    const outline = stairOutline(mark);
+                    if (!outline) return null;
+                    const arrival = item.floor !== floor;
+                    const labelAt = mark.reduce((sum, point) => ({ x: sum.x + point.x / mark.length, y: sum.y + point.y / mark.length }), { x: 0, y: 0 });
+                    return (
+                      <g key={item.id}>
+                        <polygon points={outline.map((point) => `${point.x},${point.y}`).join(" ")} fill={arrival ? "rgba(138,112,88,0.34)" : "rgba(230,215,195,0.72)"} stroke={selection?.kind === "item" && selection.id === item.id ? "#1c1917" : "#8a7058"} strokeWidth={arrival ? 0.08 : 0.05} strokeDasharray={arrival ? "0.2 0.1" : undefined} />
+                        <polyline points={`${mark[0].x},${mark[0].y} ${mark[1].x},${mark[1].y}`} fill="none" stroke="#6e5844" strokeWidth={0.06} />
+                        <polyline points={`${mark[2].x},${mark[2].y} ${mark[3].x},${mark[3].y}`} fill="none" stroke="#6e5844" strokeWidth={0.06} />
+                        <text x={(mark[0].x + mark[1].x) / 2} y={(mark[0].y + mark[1].y) / 2} textAnchor="middle" fontSize={0.26} fill="#1c1917">صعود</text>
+                        <text x={(mark[2].x + mark[3].x) / 2} y={(mark[2].y + mark[3].y) / 2} textAnchor="middle" fontSize={0.26} fill="#1c1917">رجوع</text>
+                        {arrival && <text x={labelAt.x} y={labelAt.y - 0.28} textAnchor="middle" fontSize={0.32} fill="#1c1917">فتحة السلم</text>}
+                      </g>
+                    );
+                  })}
                   {visibleItems.map((item) => {
+                    if (item.kind === "stairs" || (item.kind === "garden" && item.points && item.points.length >= 3)) return null;
                     const foot = itemFoot(item);
+                    const arrival = item.kind === "stairs" && item.floor !== floor;
                     return (
                       <g key={item.id} transform={`translate(${item.x} ${item.y}) rotate(${item.rot || 0})`}>
-                        <rect x={-foot.w / 2} y={-foot.h / 2} width={foot.w} height={foot.h} fill={item.kind === "text" ? "transparent" : item.kind === "furniture" ? "#d0d0ce" : "rgba(220,220,218,0.75)"} stroke={selection?.kind === "item" && selection.id === item.id ? "#1c1917" : "rgba(28,25,23,0.28)"} strokeWidth={0.04} />
-                        <text textAnchor="middle" dominantBaseline="middle" fontSize={item.kind === "text" ? 0.36 : 0.28} fill="#1c1917">{itemName(item)}</text>
+                        <rect x={-foot.w / 2} y={-foot.h / 2} width={foot.w} height={foot.h} fill={item.kind === "text" ? "transparent" : item.kind === "furniture" ? "#d0d0ce" : arrival ? "rgba(196,160,106,0.18)" : "rgba(220,220,218,0.75)"} stroke={selection?.kind === "item" && selection.id === item.id ? "#1c1917" : "rgba(28,25,23,0.28)"} strokeWidth={0.04} strokeDasharray={arrival ? "0.16 0.1" : undefined} />
+                        <text textAnchor="middle" dominantBaseline="middle" fontSize={item.kind === "text" ? 0.36 : 0.28} fill="#1c1917">{arrival ? "فتحة سلم" : itemName(item)}</text>
                       </g>
                     );
                   })}
@@ -764,10 +958,18 @@ const Editor = () => {
                     const wall = tour.walls.find((entry) => entry.id === opening.wallId);
                     if (!wall) return null;
                     const pose = poseAt(wall.points, opening.at);
-                    const fill = opening.kind === "balcony" ? "#b7c6d0" : opening.kind === "window" ? "#c5ced4" : opening.kind === "slideDoor" ? "#d5e0e6" : "#c4a06a";
+                    const fill = opening.kind === "balcony" ? "#b7c6d0" : opening.kind === "window" ? "#c5ced4" : opening.kind === "slideDoor" ? "#d5e0e6" : opening.kind === "outerDoor" ? "#8d6a45" : "#c4a06a";
                     return (
                       <g key={opening.id} transform={`translate(${pose.x} ${pose.y}) rotate(${pose.angle})`}>
                         <rect x={-opening.width / 2} y={-0.09} width={opening.width} height={0.18} fill={fill} stroke={selection?.kind === "opening" && selection.id === opening.id ? "#1c1917" : "transparent"} strokeWidth={0.04} />
+                        {(opening.kind === "outerDoor") && (
+                          <>
+                            <path d={`M 0 0 A ${opening.width / 2} ${opening.width / 2} 0 0 0 ${-opening.width / 2} ${-opening.width / 2}`} fill="none" stroke="#1c1917" strokeWidth={0.025} />
+                            <line x1={-opening.width / 2} y1={0} x2={-opening.width / 2} y2={-opening.width / 2} stroke="#1c1917" strokeWidth={0.025} />
+                            <path d={`M 0 0 A ${opening.width / 2} ${opening.width / 2} 0 0 1 ${opening.width / 2} ${-opening.width / 2}`} fill="none" stroke="#1c1917" strokeWidth={0.025} />
+                            <line x1={opening.width / 2} y1={0} x2={opening.width / 2} y2={-opening.width / 2} stroke="#1c1917" strokeWidth={0.025} />
+                          </>
+                        )}
                         {(opening.kind === "door" || opening.kind === "mainDoor") && (
                           <>
                             <path d={`M ${opening.width / 2} 0 A ${opening.width} ${opening.width} 0 0 0 ${-opening.width / 2} ${-opening.width}`} fill="none" stroke="#1c1917" strokeWidth={0.025} />
@@ -780,9 +982,12 @@ const Editor = () => {
                   {(selection?.kind === "wall" || selection?.kind === "point" ? visibleWalls.filter((wall) => wall.id === (selection.kind === "wall" ? selection.id : selection.wallId)) : []).flatMap((wall) => wall.points.map((point, index) => (
                     <circle key={`${wall.id}-${index}`} cx={point.x} cy={point.y} r={0.12} fill={selection.kind === "point" && selection.index === index ? "#1c1917" : "#fff"} stroke="#1c1917" strokeWidth={0.03} />
                   )))}
-                  {draft.map((point, index) => <circle key={`d${index}`} cx={point.x} cy={point.y} r={0.1} fill="#1c1917" />)}
                   {tool === "wall" && ghost && <circle cx={ghost.x} cy={ghost.y} r={0.12} fill="#fff" stroke="#1c1917" strokeWidth={0.03} />}
-                  {selectedItem && <circle cx={cornerOf(selectedItem).x} cy={cornerOf(selectedItem).y} r={0.12} fill="#fff" stroke="#1c1917" strokeWidth={0.04} />}
+                  {selectedItem?.points && (selectedItem.kind === "garden" || selectedItem.kind === "stairs") && selectedItem.points.map((point, index) => {
+                    const shift = stairAbove(selectedItem, floor);
+                    return <circle key={`garden-${index}`} cx={point.x + shift.x} cy={point.y + shift.y} r={0.12} fill="#fff" stroke="#1c1917" strokeWidth={0.03} />;
+                  })}
+                  {selectedItem && selectedItem.kind !== "garden" && selectedItem.kind !== "stairs" && <circle cx={cornerOf(selectedItem).x} cy={cornerOf(selectedItem).y} r={0.12} fill="#fff" stroke="#1c1917" strokeWidth={0.04} />}
                 </svg>
               </div>
               <div className="flex flex-wrap items-center gap-1 border-t border-black/10 bg-white/85 px-2 py-1.5">
@@ -792,7 +997,7 @@ const Editor = () => {
                   {tour.grid ? "الشبكة مقفلة" : "الشبكة حرة"}
                 </button>
                 <button type="button" onClick={() => setSnapVertex((value) => !value)} className={`border px-2 py-1 text-[12px] ${snapVertex ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>
-                  {snapVertex ? "التصاق بالركن" : "الركن حر"}
+                  {snapVertex ? "التصاق بالركن والجدار" : "بدون التصاق"}
                 </button>
                 <span className="ms-auto text-[11px] text-[#6b645c]">اسحب بالزر الأوسط، أو اضغط مسافة ثم اسحب</span>
               </div>
@@ -806,7 +1011,7 @@ const Editor = () => {
                       <p className="px-1 pb-1 pt-2 text-[11px] text-[#6b645c]">{group.title}</p>
                       <div className="grid grid-cols-2 gap-1">
                         {pieces.map((entry) => (
-                          <button key={entry.id} type="button" onClick={() => { setTool("furniture"); setPiece(entry.id); }} className={`border px-1 py-1 text-[11px] ${tool === "furniture" && piece === entry.id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>{entry.label}</button>
+                          <button key={entry.id} type="button" onClick={() => { setTool("furniture"); setPiece(entry.id); setDraft([]); setGhost(null); }} className={`border px-1 py-1 text-[11px] ${tool === "furniture" && piece === entry.id ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10 bg-white"}`}>{entry.label}</button>
                         ))}
                       </div>
                     </div>
@@ -881,11 +1086,56 @@ const Editor = () => {
               <input type="file" accept="image/*" className="mt-1 block w-full" onChange={async (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
-                try { update({ plans: { ...tour.plans, [String(floor)]: await shrinkPlanImage(file) } }); }
+                try {
+                  const image = await shrinkPlanImage(file);
+                  if (tour.sharedPlan) {
+                    const plans = { ...tour.plans };
+                    for (let level = 1; level <= tour.floors; level++) plans[String(level)] = image;
+                    update({ plans });
+                  } else {
+                    update({ plans: { ...tour.plans, [String(floor)]: image } });
+                  }
+                }
                 catch { setNotice("تعذّر قراءة الصورة."); }
               }} />
             </label>
-            <p className="mb-3 text-[11px] leading-5 text-[#6b645c]">عجلة الفأرة تقرّب. الزر الأوسط أو مسافة مع السحب يحرّك اللوحة. طول الضلع يُكتب بالمتر من خصائص الجدار.</p>
+            {tour.floors > 1 && (
+              <button type="button" className={`mb-3 block w-full border px-2 py-2 text-start ${tour.sharedPlan ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-black/10"}`} onClick={() => {
+                if (tour.sharedPlan) {
+                  update({ sharedPlan: false });
+                  return;
+                }
+                const image = tour.plans[String(floor)] || tour.plans["1"] || "";
+                const frame = planFrameOf(tour, image && tour.plans[String(floor)] ? floor : 1);
+                const plans = { ...tour.plans };
+                const planLayout = { ...tour.planLayout };
+                for (let level = 1; level <= tour.floors; level++) {
+                  if (image) plans[String(level)] = image;
+                  planLayout[String(level)] = { ...frame };
+                }
+                update({ plans, planLayout, sharedPlan: true });
+              }}>{tour.sharedPlan ? "صورة واحدة لكل الطوابق" : "توحيد الصورة لكل الطوابق"}</button>
+            )}
+            {plan && (
+              <div className="mb-3">
+                <label className="block">تكبير الصورة المرجعية
+                  <input type="range" min={0.4} max={3} step={0.05} value={planFrameOf(tour, planLevel).scale} onChange={(event) => {
+                    const frame = planFrameOf(tour, planLevel);
+                    writePlanFrame({ ...frame, scale: Number(event.target.value) });
+                  }} className="mt-1 w-full" />
+                </label>
+                <div className="mt-1 grid grid-cols-3 gap-1">
+                  <button type="button" className="border border-black/10 px-1 py-1" onClick={() => { const frame = planFrameOf(tour, planLevel); writePlanFrame({ ...frame, y: frame.y - 0.4 }); }}>أعلى</button>
+                  <button type="button" className="border border-black/10 px-1 py-1" onClick={() => writePlanFrame({ scale: 1, x: 0, y: 0 })}>إعادة</button>
+                  <button type="button" className="border border-black/10 px-1 py-1" onClick={() => { const frame = planFrameOf(tour, planLevel); writePlanFrame({ ...frame, y: frame.y + 0.4 }); }}>أسفل</button>
+                  <button type="button" className="border border-black/10 px-1 py-1" onClick={() => { const frame = planFrameOf(tour, planLevel); writePlanFrame({ ...frame, x: frame.x - 0.4 }); }}>يسار</button>
+                  <span />
+                  <button type="button" className="border border-black/10 px-1 py-1" onClick={() => { const frame = planFrameOf(tour, planLevel); writePlanFrame({ ...frame, x: frame.x + 0.4 }); }}>يمين</button>
+                </div>
+                {planPreview && <p className="mt-1 text-[11px] leading-5 text-[#6b645c]">هذه صورة الطابق الأول. وحّدها ليبقى السلم في المكان نفسه.</p>}
+              </div>
+            )}
+            <p className="mb-3 text-[11px] leading-5 text-[#6b645c]">الدرج يقف عند أعلى الجدار. فتحة الطابق الأعلى تُسحب وحدها ولا تحرّك السلم في الطابق الأول. جدار الطابق الأسفل يبقى بخط متقطع.</p>
             {selectedItem && (
               <div className="space-y-2 border border-black/10 p-3">
                 <p>{itemName(selectedItem)}</p>
@@ -905,15 +1155,20 @@ const Editor = () => {
                 <label className="block">الزاوية بالدرجات
                   <Input type="number" step={1} value={Number.isFinite(selectedItem.rot) ? selectedItem.rot : 0} onChange={(event) => update({ items: tour.items.map((item) => item.id === selectedItem.id ? { ...item, rot: Number(event.target.value) || 0 } : item) })} className="mt-1" />
                 </label>
+                {selectedItem.kind !== "garden" && selectedItem.kind !== "stairs" && (
                 <label className="block">الحجم
                   <input type="range" min={0.4} max={2.6} step={0.05} value={selectedItem.scale || 1} onChange={(event) => update({ items: tour.items.map((item) => item.id === selectedItem.id ? { ...item, scale: Number(event.target.value) } : item) })} className="mt-1 w-full" />
                 </label>
+                )}
+                {selectedItem.kind === "stairs" && selectedItem.floor !== floor && <p className="text-[11px] leading-5 text-[#6b645c]">هذا إسقاط على الطابق الأعلى. اسحبه إلى مكان السلم في مخطط هذا الطابق، ويبقى السلم في الطابق الأول حيث رسمته.</p>}
+                {selectedItem.kind === "stairs" && selectedItem.floor === floor && <p className="text-[11px] leading-5 text-[#6b645c]">النقاط حدّ كل جزء. إذا اقترب الجزآن يضيق العرض أو يخرج كل جزء لجهته، فلا يتداخلان. اسحب أي نقطة لتعديل المسار.</p>}
+                {selectedItem.kind === "garden" && <p className="text-[11px] leading-5 text-[#6b645c]">اسحب نقطة الحد لتعديل الحدود، أو اسحب المساحة لنقلها.</p>}
                 <Button type="button" size="sm" variant="outline" onClick={() => { remember(); update({ items: tour.items.filter((item) => item.id !== selectedItem.id) }); setSelection(null); }}>حذف</Button>
               </div>
             )}
             {selectedOpening && (
               <div className="space-y-2 border border-black/10 p-3">
-                <p>{selectedOpening.kind === "window" ? "شباك" : selectedOpening.kind === "slideDoor" ? "باب سلايد" : selectedOpening.kind === "mainDoor" ? "باب رئيسي" : selectedOpening.kind === "balcony" ? "بلكونة" : "باب"} على الجدار</p>
+                <p>{selectedOpening.kind === "window" ? "شباك" : selectedOpening.kind === "slideDoor" ? "باب سلايد" : selectedOpening.kind === "outerDoor" ? "باب خارجي مزدوج" : selectedOpening.kind === "mainDoor" ? "باب رئيسي" : selectedOpening.kind === "balcony" ? "بلكونة" : "باب"} على الجدار</p>
                 <label className="block">العرض بالمتر
                   <Input type="number" min={0.4} max={6} step={0.05} value={selectedOpening.width} onChange={(event) => update({ openings: tour.openings.map((opening) => opening.id === selectedOpening.id ? { ...opening, width: Math.max(0.4, Number(event.target.value) || opening.width) } : opening) })} className="mt-1" />
                 </label>

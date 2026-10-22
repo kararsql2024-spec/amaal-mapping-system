@@ -1,4 +1,5 @@
 import type { ItemKind, OpeningKind, PieceId, TourItem } from "./types";
+import { stairOutline } from "./stairs";
 
 export const PIECES: { id: PieceId; label: string; w: number; h: number; house?: boolean }[] = [
   { id: "sofa", label: "كنبة", w: 2.2, h: 0.95 },
@@ -25,6 +26,7 @@ export const PIECES: { id: PieceId; label: string; w: number; h: number; house?:
   { id: "lamp", label: "مصباح", w: 0.35, h: 0.35 },
   { id: "car", label: "سيارة", w: 4.2, h: 1.8, house: true },
   { id: "garden", label: "حديقة", w: 4.5, h: 3.2, house: true },
+  { id: "catLadder", label: "سلم سطح", w: 0.55, h: 0.7, house: true },
 ];
 
 export const pieceOf = (id?: PieceId) => PIECES.find((piece) => piece.id === id);
@@ -32,6 +34,7 @@ export const pieceOf = (id?: PieceId) => PIECES.find((piece) => piece.id === id)
 export const OPENING_WIDTH: Record<OpeningKind, number> = {
   door: 0.9,
   mainDoor: 1.1,
+  outerDoor: 2.6,
   slideDoor: 1.7,
   window: 1.4,
   balcony: 2.4,
@@ -49,7 +52,24 @@ export const itemFoot = (item: TourItem) => ({
   h: item.h * (item.scale || 1),
 });
 
+export const pointInRing = (points: { x: number; y: number }[], x: number, y: number) => {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i].x;
+    const yi = points[i].y;
+    const xj = points[j].x;
+    const yj = points[j].y;
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi + 0) + xi) inside = !inside;
+  }
+  return inside;
+};
+
 export const hitItem = (item: TourItem, x: number, y: number) => {
+  if (item.kind === "garden" && item.points && item.points.length >= 3) return pointInRing(item.points, x, y);
+  if (item.kind === "stairs" && item.points && item.points.length >= 4) {
+    const outline = stairOutline(item.points);
+    return outline ? pointInRing(outline, x, y) : false;
+  }
   const foot = itemFoot(item);
   const angle = -((item.rot || 0) * Math.PI) / 180;
   const dx = x - item.x;
