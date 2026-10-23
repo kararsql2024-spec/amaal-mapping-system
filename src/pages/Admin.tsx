@@ -67,6 +67,14 @@ import {
   type CenterBrochureProfiles,
 } from '@/lib/center-brochure';
 import PaymentAdminPanel from '@/components/payment/PaymentAdminPanel';
+import {
+  DEFAULT_FOLLOWUP_MAPPING,
+  FOLLOWUP_MAPPING_KEY,
+  normalizeFollowupMapping,
+  type FollowupMapping,
+  type RejectedLine,
+} from '@/lib/payment-followup';
+import { importFollowupWorkbook, isMissingFollowupTable } from '@/lib/payment-followup-import';
 import type { ProjectConfigsMap } from '@/lib/project-config';
 import {
   fetchCenterSubscriptions,
@@ -87,7 +95,7 @@ interface AdminProps {
 }
 
 /** الأقسام الرئيسية للوحة الإدارة — قسم واحد ظاهر في كل مرة. */
-type AdminView = 'projects' | 'brochure' | 'backup' | 'departments' | 'sales' | 'payment';
+type AdminView = 'projects' | 'brochure' | 'backup' | 'departments' | 'sales' | 'payment' | 'followup';
 
 const MappingInput = ({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) => (
   <div className="flex items-center justify-between gap-4">
@@ -161,6 +169,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   // الأقسام الأربعة كانت أربعة مفاتيح منفصلة يُطفأ بعضها يدوياً عند تشغيل أحدها.
   const [activeView, setActiveView] = useState<AdminView>('projects');
   const showSalesUpdate = activeView === 'sales';
+  const showFollowupMapping = activeView === 'followup';
   const showPaymentAdmin = activeView === 'payment';
   const showMarketingCenters = activeView === 'departments';
   const showDatabaseInspector = activeView === 'backup';
@@ -203,6 +212,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   // خيار المزامنة الكاملة الذكية (السيناريو الثاني)
   const [isSmartFullSync, setIsSmartFullSync] = useState(true);
 
+  const [followupMapping, setFollowupMapping] = useState<FollowupMapping>(DEFAULT_FOLLOWUP_MAPPING);
+  const [followupProjectId, setFollowupProjectId] = useState('');
+  const [followupLogs, setFollowupLogs] = useState<string[]>([]);
+  const [followupImporting, setFollowupImporting] = useState(false);
+  const [followupRejected, setFollowupRejected] = useState<RejectedLine[]>([]);
+  const followupLogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (followupLogRef.current) followupLogRef.current.scrollTop = followupLogRef.current.scrollHeight;
+  }, [followupLogs]);
   const [excelMapping, setExcelMapping] = useState({
     cityCol: 'A',
     unitCol: 'I',
@@ -291,6 +309,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         if (settingsData) {
           const mapping = settingsData.find(s => s.key === 'excel_mapping');
           if (mapping) setExcelMapping(prev => ({ ...prev, ...mapping.value }));
+
+          const followupColumns = settingsData.find(s => s.key === FOLLOWUP_MAPPING_KEY);
+          if (followupColumns) setFollowupMapping(normalizeFollowupMapping(followupColumns.value));
           
           const update = settingsData.find(s => s.key === 'last_excel_update');
           if (update) setLastUpdate(update.value);
@@ -909,7 +930,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       canAccessTour: true,
     };
 
-    const newValue = current[permission] === false;
+    const stored = current[permission];
+    const currentlyOn = permission === 'canAccessPaymentFollowup' ? stored === true : stored !== false;
+    const newValue = !currentlyOn;
 
     const updated = {
       ...deptPermissions,
@@ -953,6 +976,67 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       showSuccess("تم تحديث نمط التلوين");
     } catch (error) {
       showError("فشل في التحديث");
+    }
+  };
+
+  const handleFollowupUpload = async (file: File) => {
+    if (!followupProjectId) {
+      showError("اختر المشروع أولاً");
+      return;
+    }
+    const projectName = projects.find((project) => project.id === followupProjectId)?.name || followupProjectId;
+    setFollowupImporting(true);
+    setFollowupLogs([`بدء تحديث دفعات ${projectName}`]);
+    setFollowupRejected([]);
+    try {
+      const result = await importFollowupWorkbook({
+        file,
+        projectId: followupProjectId,
+        projectName,
+        mapping: normalizeFollowupMapping(followupMapping),
+        onLog: (line) => setFollowupLogs((prev) => [...prev, line]),
+      });
+      setFollowupRejected(result.rejected);
+      if (result.stored) showSuccess("تم تحديث دفعات المشروع");
+      else showError("لم تُقبل أي دفعة، والتفاصيل في السجل");
+    } catch (error) {
+      const message = isMissingFollowupTable(error)
+        ? "جدول المتابعة غير موجود. نفّذ database_payment_followup.sql في Supabase"
+        : `توقف التحديث: ${(error as { message?: string })?.message || "خطأ غير معروف"}`;
+      setFollowupLogs((prev) => [...prev, message]);
+      showError(message);
+    } finally {
+      setFollowupImporting(false);
+    }
+  };
+
+  const downloadFollowupRejected = async () => {
+    const XLSX = await import('xlsx');
+    const sheet = XLSX.utils.json_to_sheet(followupRejected.map((row) => ({
+      "رقم الصف": row.rowNumber,
+      "رقم الوحدة": row.unitLabel,
+      "اسم الزبون": row.customerName,
+      "الهاتف": row.phone,
+      "سبب الإهمال": row.reason,
+    })));
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "المهمل");
+    XLSX.writeFile(book, "صفوف-الدفعات-المهملة.xlsx");
+  };
+
+  const handleSaveFollowupMapping = async () => {
+    setIsSavingSettings(true);
+    try {
+      const { error } = await supabase.from('settings').upsert({
+        key: FOLLOWUP_MAPPING_KEY,
+        value: normalizeFollowupMapping(followupMapping),
+      });
+      if (error) throw error;
+      showSuccess("تم حفظ أعمدة متابعة الدفعات");
+    } catch (error) {
+      showError("فشل في حفظ أعمدة المتابعة");
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -1818,6 +1902,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       perms: [
         { key: 'canAccessExplore', label: 'صلاحية نظام الاستكشاف (الخريطة التفاعلية ثلاثية الأبعاد)' },
         { key: 'canAccessTour', label: 'صلاحية نظام الجولة' },
+        { key: 'canAccessPaymentFollowup', label: 'صلاحية متابعة الدفعات والمبالغ المتبقية', optIn: true },
       ]
     },
     {
@@ -2012,6 +2097,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     { id: 'backup', label: 'النسخ الاحتياطي', icon: <Database size={14} /> },
     { id: 'departments', label: 'الأقسام', icon: <Store size={14} /> },
     { id: 'sales', label: 'تحديث المبيعات', icon: <FileSpreadsheet size={14} /> },
+    { id: 'followup', label: 'أعمدة المتابعة', icon: <Coins size={14} /> },
     { id: 'payment', label: 'آلية الدفعات', icon: <CreditCard size={14} /> },
   ];
 
@@ -2814,7 +2900,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               </div>
                               <div className="grid grid-cols-1 gap-px bg-line md:grid-cols-2">
                                 {category.perms.map(perm => {
-                                  const isPermEnabled = deptPermissions[activePermsTab]?.[perm.key] !== false;
+                                  const stored = deptPermissions[activePermsTab]?.[perm.key];
+                                  const isPermEnabled = "optIn" in perm && perm.optIn ? stored === true : stored !== false;
                                   return (
                                     <div key={perm.key} className="flex items-center justify-between gap-4 bg-surface px-5 py-3">
                                       <Label htmlFor={`perm-${perm.key}-${activePermsTab}`} className="cursor-pointer text-[12px] font-normal leading-relaxed text-fg-secondary">
@@ -2841,6 +2928,89 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
             {showPaymentAdmin && (
               <PaymentAdminPanel projects={projects.map((p) => ({ id: p.id, name: p.name }))} />
+            )}
+
+            {showFollowupMapping && (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <div className="space-y-6 lg:col-span-2">
+                  <Panel icon={<FileSpreadsheet size={14} />} title="تحديث دفعات مشروع" bodyClassName="space-y-4 p-5">
+                    <div className="space-y-1.5">
+                      <Label>المشروع</Label>
+                      <Select value={followupProjectId || undefined} onValueChange={setFollowupProjectId}>
+                        <SelectTrigger><SelectValue placeholder="اختر المشروع" /></SelectTrigger>
+                        <SelectContent>
+                          {projects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="relative flex flex-col items-center justify-center gap-3 border border-dashed border-line bg-surface px-6 py-12 text-center">
+                      {followupImporting && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface/90 text-[13px] text-fg-secondary">
+                          جاري قراءة الملف ومطابقة الوحدات
+                        </div>
+                      )}
+                      <Upload size={22} strokeWidth={1.25} className="text-fg-faint" />
+                      <div>
+                        <h3 className="text-[15px] text-fg">اسحب ملف دفعات المشروع</h3>
+                        <p className="mt-1 text-[12px] text-fg-muted">يستبدل لقطة هذا المشروع فقط، وتظهر خطوات المطابقة في السجل</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                        disabled={!followupProjectId || followupImporting}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (file) handleFollowupUpload(file);
+                        }}
+                      />
+                    </div>
+                    {followupRejected.length > 0 && (
+                      <Button variant="outline" size="sm" onClick={downloadFollowupRejected} className="gap-1.5">
+                        <Download size={13} /> تنزيل {followupRejected.length} صفاً مهملاً
+                      </Button>
+                    )}
+                  </Panel>
+                  <div className="border border-line bg-fg">
+                    <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5 text-[11px] text-background/60">
+                      <span className="flex items-center gap-2"><Terminal size={13} /> سجل التحديث</span>
+                      <button type="button" className="hover:text-background" onClick={() => setFollowupLogs([])}>مسح</button>
+                    </div>
+                    <div ref={followupLogRef} className="h-80 space-y-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed text-background/85">
+                      {followupLogs.map((log, index) => (
+                        <div key={`${index}-${log.slice(0, 24)}`} className="flex gap-2">
+                          <span className="shrink-0 text-background/35">{String(index + 1).padStart(3, "0")}</span>
+                          <span>{log}</span>
+                        </div>
+                      ))}
+                      {followupLogs.length === 0 && <p className="text-background/35">في انتظار رفع ملف…</p>}
+                    </div>
+                  </div>
+                </div>
+                <Panel
+                  icon={<Coins size={14} />}
+                  title="أعمدة ملف متابعة الدفعات"
+                  description="حرف العمود في الإكسل. الرفع يستخدم الحروف الظاهرة هنا."
+                  bodyClassName="space-y-3 p-5"
+                >
+                  <MappingInput label="المبلغ الواصل" value={followupMapping.receivedCol} onChange={(value) => setFollowupMapping({ ...followupMapping, receivedCol: value })} />
+                  <MappingInput label="مبلغ الدفعة" value={followupMapping.installmentCol} onChange={(value) => setFollowupMapping({ ...followupMapping, installmentCol: value })} />
+                  <MappingInput label="تاريخ الدفعة" value={followupMapping.dueDateCol} onChange={(value) => setFollowupMapping({ ...followupMapping, dueDateCol: value })} />
+                  <MappingInput label="تاريخ البيع" value={followupMapping.saleDateCol} onChange={(value) => setFollowupMapping({ ...followupMapping, saleDateCol: value })} />
+                  <MappingInput label="سعر البيع" value={followupMapping.salePriceCol} onChange={(value) => setFollowupMapping({ ...followupMapping, salePriceCol: value })} />
+                  <MappingInput label="نوع العملة" value={followupMapping.currencyCol} onChange={(value) => setFollowupMapping({ ...followupMapping, currencyCol: value })} />
+                  <MappingInput label="رقم الوحدة" value={followupMapping.unitCol} onChange={(value) => setFollowupMapping({ ...followupMapping, unitCol: value })} />
+                  <MappingInput label="رقم الهاتف" value={followupMapping.phoneCol} onChange={(value) => setFollowupMapping({ ...followupMapping, phoneCol: value })} />
+                  <MappingInput label="اسم المالك" value={followupMapping.ownerCol} onChange={(value) => setFollowupMapping({ ...followupMapping, ownerCol: value })} />
+                  <MappingInput label="رقم العقد" value={followupMapping.contractCol} onChange={(value) => setFollowupMapping({ ...followupMapping, contractCol: value })} />
+                  <Button onClick={handleSaveFollowupMapping} disabled={isSavingSettings} className="mt-2">
+                    {isSavingSettings ? "جاري الحفظ" : "حفظ الأعمدة"}
+                  </Button>
+                </Panel>
+              </div>
             )}
 
             {showSalesUpdate && (

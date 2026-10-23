@@ -27,6 +27,11 @@ export function canAccessExplore(perms?: DeptPermissionMap | null): boolean {
   return perms.canAccessExplore !== false;
 }
 
+/** متابعة المبالغ المتبقية. لا تُمنح إلا إذا فُعّلت صراحة من الأقسام. */
+export function canAccessPaymentFollowup(perms?: DeptPermissionMap | null): boolean {
+  return perms?.canAccessPaymentFollowup === true;
+}
+
 /** جولة داخل الوحدة */
 export function canAccessTour(perms?: DeptPermissionMap | null): boolean {
   if (!perms) return true;

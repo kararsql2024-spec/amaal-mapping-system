@@ -20,6 +20,7 @@ const SalesPrint = lazy(() => import("./pages/SalesPrint"));
 const SalesArchive = lazy(() => import("./pages/SalesArchive"));
 const IncentiveApp = lazy(() => import("./incentives/IncentiveApp"));
 const Explore = lazy(() => import("./pages/Explore"));
+const PaymentFollowup = lazy(() => import("./pages/PaymentFollowup"));
 const TourEditor = lazy(() => import("./tour/TourEditor"));
 const TourView = lazy(() => import("./tour/TourView"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -102,6 +103,7 @@ const SalesApp = () => {
         element={<Reports projects={projects} housesData={housesData} />}
       />
       <Route path="/explore" element={<Explore projects={projects} />} />
+      <Route path="/followup" element={<PaymentFollowup projects={projects} />} />
       <Route path="/toureditor" element={<TourEditor />} />
       <Route path="/tour/:tourId" element={<TourView />} />
       <Route path="/brochure/:projectId/:unitId" element={<Brochure />} />
