@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { canAccessExplore, canAccessPaymentArchive } from "@/lib/dept-permissions";
+import { canAccessExplore, canAccessPaymentArchive, canAccessPaymentFollowup } from "@/lib/dept-permissions";
 import { getHouseArea as getHouseAreaFor } from "@/lib/units";
 import {
   collectProjectBookingActivity,
@@ -1191,6 +1191,11 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           {canAccessExplore(permissions) && (
             <Link to="/explore">
               <Button variant="ghost" size="sm" className="px-2">استكشاف</Button>
+            </Link>
+          )}
+          {canAccessPaymentFollowup(permissions) && (
+            <Link to="/followup">
+              <Button variant="ghost" size="sm" className="px-2">متابعة الدفعات</Button>
             </Link>
           )}
 

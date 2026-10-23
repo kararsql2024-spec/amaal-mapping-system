@@ -20,12 +20,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Phone, Calendar, Banknote, Coins, FileText, Clock, ShieldCheck, Store, Ruler, AlertTriangle, FileSpreadsheet, Receipt, Bed } from 'lucide-react';
+import { User, Phone, Calendar, Banknote, Coins, FileText, Clock, ShieldCheck, Store, Ruler, AlertTriangle, FileSpreadsheet, Receipt, Bed, ScrollText } from 'lucide-react';
 import { findTourForUnit } from '@/tour/match';
 import { useTourTemplates } from '@/tour/storage';
 import { cn } from '@/lib/utils';
-import { canAccessPaymentForm, canAccessTour } from '@/lib/dept-permissions';
+import { canAccessPaymentFollowup, canAccessPaymentForm, canAccessTour } from '@/lib/dept-permissions';
+import UnitAccountStatement from '@/components/UnitAccountStatement';
 import { getStatusMeta } from '@/lib/unit-status';
+import { getCurrencyType } from '@/lib/format';
 import { Eyebrow } from '@/components/layout/AppShell';
 
 interface Note {
@@ -122,6 +124,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
     notes: [] as Note[]
   });
   const [newNote, setNewNote] = useState('');
+  const [statementOpen, setStatementOpen] = useState(false);
 
   const currentCenterId = localStorage.getItem('marketing_center_session') || '';
   const currentCenterName = localStorage.getItem('marketing_center_name') || 'قسم غير معروف';
@@ -143,7 +146,7 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
         phone: initialData.phone || '',
         saleDate: initialData.saleDate || '',
         price: initialData.price || '',
-        currency: initialData.currency || 'IQD',
+        currency: getCurrencyType(initialData.currency),
         taboNum: initialData.taboNum || '',
         taboStatus: initialData.taboStatus || 'غير مروج',
         handoverDate: initialData.handoverDate || '',
@@ -164,6 +167,10 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
       });
     }
   }, [initialData, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) setStatementOpen(false);
+  }, [isOpen, unitId]);
 
   const handleAddNote = () => {
     if (!newNote.trim()) return;
@@ -348,6 +355,11 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                 <Receipt size={13} /> تنظيم الدفعات
               </Button>
             )}
+            {projectId && projectId !== "main_map" && unitId && isSoldOrInvestment && canAccessPaymentFollowup(permissions) && (
+              <Button variant="outline" size="sm" onClick={() => setStatementOpen(true)} className="gap-1.5 font-semibold">
+                <ScrollText size={13} /> كشف حساب
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
@@ -464,7 +476,9 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
                     onValueChange={(val) => setFormData({...formData, currency: val})}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue>
+                        {formData.currency === "USD" ? "دولار أمريكي" : "دينار عراقي"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="IQD">دينار عراقي</SelectItem>
@@ -576,6 +590,21 @@ const UnitDetailsModal = ({ isOpen, onClose, onSave, unitId, unitLabel, initialD
           </Button>
         </DialogFooter>
       </DialogContent>
+      {projectId && projectId !== "main_map" && unitId && (
+        <UnitAccountStatement
+          open={statementOpen}
+          onClose={() => setStatementOpen(false)}
+          projectId={projectId}
+          unitId={unitId}
+          unitLabel={unitLabel || unitId}
+          customerName={formData.name}
+          phone={formData.phone}
+          saleDate={formData.saleDate}
+          price={formData.price}
+          currency={formData.currency}
+          status={formData.status}
+        />
+      )}
     </Dialog>
   );
 };

@@ -5,10 +5,11 @@ import { Project, MapElement } from '@/types/project';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  ArrowRight, TrendingUp, Building2, ShieldCheck, PieChart as PieIcon,
-  Filter, Tags, AlertTriangle, RefreshCcw
+    ArrowRight, TrendingUp, Building2, ShieldCheck, PieChart as PieIcon,
+    Filter, Tags, AlertTriangle, RefreshCcw, Wallet, CalendarRange,
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
@@ -21,7 +22,24 @@ import {
   chartAxis, chartGrid, chartMargin, formatAxisValue,
   ChartTooltip, ChartLegend, ChartEmpty, Meter,
 } from '@/components/charts/chart-kit';
-import { formatNumber, parsePrice, getCurrencyType } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
+import { fetchRemoteSettings, loadSettings, resolveSettingsSources } from "@/incentives/storage";
+import type { IncentiveSettings } from "@/incentives/types";
+import { fetchFollowupRows, isMissingFollowupTable } from "@/lib/payment-followup-import";
+import type { FollowupRecord } from "@/lib/payment-followup";
+import {
+  EMPTY_REPORT_FILTERS,
+  buildReportUnits,
+  collectionRows,
+  currencyOn,
+  inDayRange,
+  matchSettlement,
+  matchStructure,
+  summarizeDues,
+  summarizeMoney,
+  type ReportFilters,
+  type ReportUnit,
+} from "@/lib/report-collection";
 import { palette } from "@/lib/theme";
 import { STATUS_META, PRIMARY_STATUSES } from '@/lib/unit-status';
 import { validateCenterSession } from '@/lib/center-auth';
@@ -47,15 +65,18 @@ const Reports = ({ projects }: ReportsProps) => {
   const [hasAccess, setHasAccess] = useState<boolean>(true);
   const [checkingAccess, setCheckingAccess] = useState<boolean>(true);
   const [retryTrigger, setRetryTrigger] = useState<number>(0);
+  const [followupRows, setFollowupRows] = useState<FollowupRecord[]>([]);
+  const [followupMissing, setFollowupMissing] = useState(false);
+  const [settings, setSettings] = useState<IncentiveSettings | null>(null);
+  const [centers, setCenters] = useState<{ id: string; name: string }[]>([]);
 
-  // حالات الفلترة المخصصة
-  const [selectedZone, setSelectedZone] = useState<string>('all');
-  const [selectedClass, setSelectedClass] = useState<string>('all');
-  const [selectedTower, setSelectedTower] = useState<string>('all');
-  const [selectedSize, setSelectedSize] = useState<string>('all');
-
-  // حالة التبديل بين المنازل والعمارات في مخطط أداء المبيعات
+  const [filters, setFilters] = useState<ReportFilters>(EMPTY_REPORT_FILTERS);
+  const [dueFrom, setDueFrom] = useState("");
+  const [dueTo, setDueTo] = useState("");
+  const [dueState, setDueState] = useState<"all" | "overdue" | "today" | "upcoming">("all");
   const [salesViewMode, setSalesViewMode] = useState<'houses' | 'towers'>('houses');
+  const [moneyMeasure, setMoneyMeasure] = useState<"count" | "contract" | "remaining">("count");
+  const [collectionGroup, setCollectionGroup] = useState<"zone" | "type">("type");
 
   // التحقق من صلاحية الوصول للقسم الحالي
   useEffect(() => {
@@ -101,6 +122,8 @@ const Reports = ({ projects }: ReportsProps) => {
     if (!hasAccess || !selectedProjectId) {
       setFetchedElements([]);
       setHousesData({});
+      setFollowupRows([]);
+      setFollowupMissing(false);
       setLoading(false);
       return;
     }
@@ -153,26 +176,48 @@ const Reports = ({ projects }: ReportsProps) => {
       setLoading(true);
       setFetchedElements([]);
       setHousesData({});
+      setFollowupRows([]);
       try {
         const targets =
           selectedProjectId === "all"
             ? projects
             : projects.filter((project) => project.id === selectedProjectId);
 
-        const packs = await Promise.all(
-          targets.map(async (project) => {
-            const [elements, units] = await Promise.all([
-              fetchProjectRow(project.id, project.name),
-              fetchProjectUnitsParallel(project.id),
-            ]);
-            return { elements, units };
-          }),
-        );
+        let tableMissing = false;
+        const [packs, remote, centerRows] = await Promise.all([
+          Promise.all(
+            targets.map(async (project) => {
+              const [elements, units, followup] = await Promise.all([
+                fetchProjectRow(project.id, project.name),
+                fetchProjectUnitsParallel(project.id),
+                fetchFollowupRows(project.id).catch((error) => {
+                  if (isMissingFollowupTable(error)) {
+                    tableMissing = true;
+                    return [] as FollowupRecord[];
+                  }
+                  throw error;
+                }),
+              ]);
+              return { elements, units, followup };
+            }),
+          ),
+          fetchRemoteSettings(supabase).catch(() => null),
+          supabase.from("marketing_centers").select("id, name"),
+        ]);
 
         if (cancelled) return;
 
         setFetchedElements(packs.flatMap((pack) => pack.elements));
         setHousesData(formatLightweightUnits(packs.flatMap((pack) => pack.units)));
+        setFollowupRows(packs.flatMap((pack) => pack.followup));
+        setFollowupMissing(tableMissing);
+        setSettings(resolveSettingsSources(loadSettings(), remote).settings);
+        setCenters(
+          (centerRows.data || []).map((center) => ({
+            id: String(center.id),
+            name: String(center.name || "").trim(),
+          })),
+        );
       } catch (err) {
         if (cancelled) return;
         console.error("Error fetching reports data:", err);
@@ -188,121 +233,55 @@ const Reports = ({ projects }: ReportsProps) => {
     };
   }, [selectedProjectId, hasAccess, retryTrigger, projects]);
 
-  // استخراج الزونات والأصناف والعمارات والمساحات المتوفرة ديناميكياً من العناصر المجلوبة للفلترة
-  const { availableZones, availableClasses, availableTowers, availableSizes } = useMemo(() => {
+  const reportUnits = useMemo(
+    () => buildReportUnits(fetchedElements, housesData, followupRows, settings, centers),
+    [fetchedElements, housesData, followupRows, settings, centers],
+  );
+
+  const options = useMemo(() => {
     const zones = new Set<string>();
-    const classes = new Set<string>();
-    const sizes = new Set<number>();
-    const towers: { id: string; label: string }[] = [];
-
-    fetchedElements.forEach(el => {
-      if (el.type === 'house') {
-        const parts = el.label.split('-');
-        if (parts[0]) zones.add(parts[0]);
-        if (parts.length >= 3) {
-          const typeMatch = parts[2].match(/[a-zA-Z]+/);
-          if (typeMatch) classes.add(typeMatch[0]);
-        }
-      } else if (el.type === 'tower') {
-        const towerLabel =
-          selectedProjectId === 'all' && el._projectName
-            ? `${el._projectName} — ${el.label}`
-            : el.label;
-        towers.push({ id: el.id, label: towerLabel });
-
-        const floors = el.floors || 1;
-        const aptsPerFloor = el.apartmentsPerFloor || 1;
-        for (let f = 1; f <= floors; f++) {
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            const key = `${el.id}_F${f}_A${a}`;
-            const data = housesData[key];
-            if (data?.status === 'frozen_hidden') continue;
-
-            const size = f === 1 
-              ? (el.groundFloorSizes?.[a - 1] || 0) 
-              : (el.typicalFloorSizes?.[a - 1] || 0);
-            if (size > 0) {
-              sizes.add(size);
-            }
-          }
-        }
+    const towers = new Map<string, string>();
+    const types = new Map<string, string>();
+    const centerNames = new Set<string>();
+    reportUnits.forEach((unit) => {
+      if (unit.centerName) centerNames.add(unit.centerName);
+      if (unit.typeKey) types.set(unit.typeKey, unit.typeLabel);
+      if (unit.kind === "house" && unit.zone) zones.add(unit.zone);
+      if (unit.kind === "apartment" && unit.towerId) {
+        const label = selectedProjectId === "all" && unit.projectName
+          ? `${unit.projectName} — ${unit.towerLabel}`
+          : unit.towerLabel;
+        towers.set(unit.towerId, label || unit.towerId);
       }
     });
-
+    const typeList = Array.from(types.entries()).sort((a, b) => {
+      const rank = (key: string) => (key.startsWith("house:") ? 0 : 1);
+      if (rank(a[0]) !== rank(b[0])) return rank(a[0]) - rank(b[0]);
+      return a[1].localeCompare(b[1], "ar", { numeric: true });
+    });
     return {
-      availableZones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-      availableClasses: Array.from(classes).sort(),
-      availableTowers: towers.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })),
-      availableSizes: Array.from(sizes).sort((a, b) => a - b)
+      zones: Array.from(zones).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      towers: Array.from(towers.entries()).sort((a, b) => a[1].localeCompare(b[1], "ar", { numeric: true })),
+      types: typeList,
+      centers: Array.from(centerNames).sort((a, b) => a.localeCompare(b, "ar")),
     };
-  }, [fetchedElements, housesData, selectedProjectId]);
+  }, [reportUnits, selectedProjectId]);
 
-  // إعادة تعيين الفلاتر الفرعية عند تغيير المشروع المستهدف
   useEffect(() => {
-    setSelectedZone('all');
-    setSelectedClass('all');
-    setSelectedTower('all');
-    setSelectedSize('all');
-    setSalesViewMode('houses');
+    setFilters(EMPTY_REPORT_FILTERS);
+    setDueFrom("");
+    setDueTo("");
+    setDueState("all");
+    setSalesViewMode("houses");
+    setMoneyMeasure("count");
+    setCollectionGroup("type");
   }, [selectedProjectId]);
 
-  // فلاتر المنازل والعمارات متبادلة: الزون/الصنف للمنازل، العمارة للشقق
-  useEffect(() => {
-    if (selectedTower !== 'all') {
-      setSelectedZone('all');
-      setSelectedClass('all');
-      setSalesViewMode('towers');
-    }
-  }, [selectedTower]);
+  const structural = useMemo(
+    () => reportUnits.filter((unit) => matchStructure(unit, filters)),
+    [reportUnits, filters],
+  );
 
-  useEffect(() => {
-    if (selectedZone !== 'all' || selectedClass !== 'all') {
-      setSelectedTower('all');
-    }
-  }, [selectedZone, selectedClass]);
-
-  // تصفية العناصر بناءً على الفلاتر المحددة
-  const filteredElementsForGlobal = useMemo(() => {
-    return fetchedElements.filter(el => {
-      if (selectedTower !== 'all') {
-        if (el.type === 'house') return false;
-        if (el.type === 'tower') return el.id === selectedTower;
-      }
-
-      if (el.type === 'house') {
-        // فلترة الصنف للمنازل
-        if (selectedClass !== 'all') {
-          const parts = el.label.split('-');
-          if (parts.length >= 3) {
-            const typeMatch = parts[2].match(/[a-zA-Z]+/);
-            const uClass = typeMatch ? typeMatch[0] : '';
-            if (uClass !== selectedClass) return false;
-          } else {
-            return false;
-          }
-        }
-
-        // فلترة الزون للمنازل
-        if (selectedZone !== 'all') {
-          const parts = el.label.split('-');
-          const zone = parts[0] || '';
-          if (zone !== selectedZone) return false;
-        }
-
-        // المنازل لا تتأثر بفلتر مساحة الشقة
-        if (selectedSize !== 'all') return false;
-      }
-
-      if (el.type === 'tower') {
-        // العمارات لا تتأثر بفلاتر الزون أو الصنف الخاصة بالمنازل
-        if (selectedZone !== 'all' || selectedClass !== 'all') return false;
-      }
-
-      return true;
-    });
-  }, [fetchedElements, selectedZone, selectedClass, selectedTower, selectedSize]);
-
-  // 1. حساب الإحصائيات العامة والمالية المدمجة (منازل وشقق معاً) بناءً على الفلترة
   const stats = useMemo(() => {
     let total = 0;
     let sold = 0;
@@ -311,401 +290,275 @@ const Reports = ({ projects }: ReportsProps) => {
     let reserved = 0;
     let pending = 0;
     let frozen = 0;
-
-    let revenueIQD = 0;
-    let revenueUSD = 0;
-    let expectedRevenueIQD = 0;
-    let expectedRevenueUSD = 0;
-
     let promotedTabo = 0;
     let receivedTabo = 0;
     let notPromotedTabo = 0;
-
     let receivedUnit = 0;
     let notReceivedUnit = 0;
 
-    const processUnit = (unitKey: string, sizeOfApt?: number) => {
-      // إذا كان هناك فلتر مساحة محدد، والشقة لا تطابق هذه المساحة، نتجاهلها
-      if (selectedSize !== 'all' && sizeOfApt !== undefined && sizeOfApt !== parseFloat(selectedSize)) {
-        return;
-      }
+    structural.forEach((unit) => {
+      if (unit.frozenCounted || unit.frozenUncounted) frozen += 1;
+      if (unit.frozenUncounted) return;
+      total += 1;
+      if (unit.status === "sold") sold += 1;
+      else if (unit.status === "investment") investment += 1;
+      else if (unit.status === "reserved") reserved += 1;
+      else if (unit.status === "pending") pending += 1;
+      else available += 1;
 
-      const data = housesData[unitKey] || { status: 'available' };
-      
-      if (data.status === 'frozen_hidden') return;
-
-      if (data.status === 'frozen_uncounted' || data.status === 'frozen_counted') {
-        frozen++;
-        if (data.status === 'frozen_uncounted') return;
-      }
-
-      total++;
-
-      if (data.status === 'sold') sold++;
-      else if (data.status === 'investment') investment++;
-      else if (data.status === 'reserved') reserved++;
-      else if (data.status === 'pending') pending++;
-      else available++;
-
-      // تحليل الطابو
-      const tabo = data.taboStatus?.trim();
-      if (tabo === 'مروج') promotedTabo++;
-      else if (tabo === 'مستلم') receivedTabo++;
-      else notPromotedTabo++;
-
-      // تحليل استلام الوحدة
-      if (data.handoverDate) receivedUnit++;
-      else notReceivedUnit++;
-
-      // تحليل الإيرادات والأسعار
-      const priceValue = parsePrice(data.price);
-      if (priceValue > 0) {
-        const cType = getCurrencyType(data.currency);
-        if (data.status === 'sold' || data.status === 'investment') {
-          if (cType === 'IQD') revenueIQD += priceValue;
-          else revenueUSD += priceValue;
-        } else if (data.status === 'reserved' || data.status === 'pending') {
-          if (cType === 'IQD') expectedRevenueIQD += priceValue;
-          else expectedRevenueUSD += priceValue;
-        }
-      }
-    };
-
-    filteredElementsForGlobal.forEach(el => {
-      if (el.type === 'house') {
-        processUnit(el.id);
-      } else if (el.type === 'tower') {
-        const floors = el.floors || 0;
-        const aptsPerFloor = el.apartmentsPerFloor || 0;
-        for (let f = 1; f <= floors; f++) {
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            const key = `${el.id}_F${f}_A${a}`;
-            const size = f === 1 
-              ? (el.groundFloorSizes?.[a - 1] || 0) 
-              : (el.typicalFloorSizes?.[a - 1] || 0);
-            processUnit(key, size);
-          }
-        }
-      }
+      if (unit.tabo === "مروج") promotedTabo += 1;
+      else if (unit.tabo === "مستلم") receivedTabo += 1;
+      else notPromotedTabo += 1;
+      if (unit.handover) receivedUnit += 1;
+      else notReceivedUnit += 1;
     });
 
     return {
       total, sold, investment, available, reserved, pending, frozen,
-      revenueIQD, revenueUSD, expectedRevenueIQD, expectedRevenueUSD,
-      promotedTabo, receivedTabo, notPromotedTabo,
-      receivedUnit, notReceivedUnit
+      promotedTabo, receivedTabo, notPromotedTabo, receivedUnit, notReceivedUnit,
     };
-  }, [filteredElementsForGlobal, housesData, selectedSize]);
+  }, [structural]);
 
-  // 2. بيانات مخطط توزيع الحالات (Pie Chart)
+  const money = useMemo(() => summarizeMoney(reportUnits, filters), [reportUnits, filters]);
+
   const statusDistributionData = useMemo(() => {
-    return PRIMARY_STATUSES.map(key => ({
+    return PRIMARY_STATUSES.map((key) => ({
       name: STATUS_META[key].label,
       value: stats[key],
       color: STATUS_META[key].chart,
-    })).filter(item => item.value > 0);
+    })).filter((item) => item.value > 0);
   }, [stats]);
 
-  // 3. بيانات أداء المبيعات (Bar Chart) - ذكي وتفاعلي حسب المشروع المختار
   const salesPerformanceData = useMemo(() => {
-    if (selectedProjectId === 'all') {
-      // السيناريو الأول: كافة المشاريع المدمجة -> العرض يكون حسب المشاريع
-      const projectStats: Record<string, { name: string, total: number, sold: number, investment: number }> = {};
-
-      filteredElementsForGlobal.forEach(el => {
-        const projId = el._projectId || 'unknown';
-        const projName = el._projectName || 'مشروع غير معروف';
-
-        if (!projectStats[projId]) {
-          projectStats[projId] = { name: projName, total: 0, sold: 0, investment: 0 };
-        }
-
-        const processUnit = (unitKey: string) => {
-          const data = housesData[unitKey] || { status: 'available' };
-          if (data.status === 'frozen_hidden') return;
-
-          projectStats[projId].total++;
-          if (data.status === 'sold') projectStats[projId].sold++;
-          if (data.status === 'investment') projectStats[projId].investment++;
-        };
-
-        if (el.type === 'house') {
-          processUnit(el.id);
-        } else if (el.type === 'tower') {
-          const floors = el.floors || 0;
-          const aptsPerFloor = el.apartmentsPerFloor || 0;
-          for (let f = 1; f <= floors; f++) {
-            for (let a = 1; a <= aptsPerFloor; a++) {
-              processUnit(`${el.id}_F${f}_A${a}`);
-            }
-          }
-        }
-      });
-
-      return Object.values(projectStats).map(p => ({
-        name: p.name,
-        'إجمالي الوحدات': p.total,
-        'المباعة': p.sold,
-        'الاستثمار': p.investment,
-        'نسبة المبيعات %': p.total > 0 ? Math.round(((p.sold + p.investment) / p.total) * 100) : 0
-      }));
-    } else {
-      // السيناريو الثاني: مشروع محدد -> العرض يكون حسب اختيار المستخدم (منازل أو عمارات)
-      if (salesViewMode === 'houses') {
-        // عرض المنازل حسب الزونات
-        const zones: Record<string, { total: number, sold: number, investment: number }> = {};
-
-        filteredElementsForGlobal.forEach(el => {
-          if (el.type === 'house') {
-            const parts = el.label.split('-');
-            const zone = parts[0] || "عام";
-            const data = housesData[el.id] || { status: 'available' };
-
-            if (data.status === 'frozen_hidden') return;
-
-            if (!zones[zone]) {
-              zones[zone] = { total: 0, sold: 0, investment: 0 };
-            }
-
-            zones[zone].total++;
-            if (data.status === 'sold') zones[zone].sold++;
-            if (data.status === 'investment') zones[zone].investment++;
-          }
-        });
-
-        const sortedZones = Object.entries(zones).sort((a, b) => {
-          return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
-        });
-
-        return sortedZones.map(([name, z]) => ({
-          name: `زون ${name}`,
-          'إجمالي الوحدات': z.total,
-          'المباعة': z.sold,
-          'الاستثمار': z.investment,
-          'نسبة المبيعات %': z.total > 0 ? Math.round(((z.sold + z.investment) / z.total) * 100) : 0
-        }));
-      } else {
-        // عرض العمارات (كل عمارة على حدة)
-        const towersDataList: any[] = [];
-
-        filteredElementsForGlobal.forEach(el => {
-          if (el.type === 'tower') {
-            let total = 0;
-            let sold = 0;
-            let investment = 0;
-
-            const floors = el.floors || 0;
-            const aptsPerFloor = el.apartmentsPerFloor || 0;
-            for (let f = 1; f <= floors; f++) {
-              for (let a = 1; a <= aptsPerFloor; a++) {
-                const key = `${el.id}_F${f}_A${a}`;
-                const data = housesData[key] || { status: 'available' };
-                if (data.status === 'frozen_hidden') continue;
-
-                total++;
-                if (data.status === 'sold') sold++;
-                if (data.status === 'investment') investment++;
-              }
-            }
-
-            towersDataList.push({
-              name: el.label,
-              'إجمالي الوحدات': total,
-              'المباعة': sold,
-              'الاستثمار': investment,
-              'نسبة المبيعات %': total > 0 ? Math.round(((sold + investment) / total) * 100) : 0
-            });
-          }
-        });
-
-        return towersDataList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-      }
-    }
-  }, [selectedProjectId, filteredElementsForGlobal, housesData, salesViewMode]);
-
-  // 4. بيانات منحنى المبيعات الزمني مرتبة كرونولوجياً من الأقدم للأحدث (Line Chart)
-  const salesTrendData = useMemo(() => {
-    const monthlySales: Record<string, { count: number, revenueIQD: number, revenueUSD: number, dateObj: Date }> = {};
-
-    const processUnitDate = (unitKey: string) => {
-      const data = housesData[unitKey];
-      if (data && (data.status === 'sold' || data.status === 'investment') && data.saleDate) {
-        const date = new Date(data.saleDate);
-        if (!isNaN(date.getTime())) {
-          const year = date.getFullYear();
-          const month = date.getMonth();
-          const sortKey = `${year}-${String(month + 1).padStart(2, '0')}`;
-          
-          if (!monthlySales[sortKey]) {
-            monthlySales[sortKey] = { 
-              count: 0, 
-              revenueIQD: 0, 
-              revenueUSD: 0,
-              dateObj: new Date(year, month, 1)
-            };
-          }
-          monthlySales[sortKey].count++;
-          
-          const priceValue = parsePrice(data.price);
-          const cType = getCurrencyType(data.currency);
-          if (cType === 'IQD') monthlySales[sortKey].revenueIQD += priceValue;
-          else monthlySales[sortKey].revenueUSD += priceValue;
-        }
-      }
+    const groups = new Map<string, {
+      total: number;
+      sold: number;
+      investment: number;
+      contractIQD: number;
+      contractUSD: number;
+      remainingIQD: number;
+      remainingUSD: number;
+    }>();
+    const bucket = (name: string) => {
+      const current = groups.get(name) || {
+        total: 0, sold: 0, investment: 0,
+        contractIQD: 0, contractUSD: 0, remainingIQD: 0, remainingUSD: 0,
+      };
+      groups.set(name, current);
+      return current;
+    };
+    const groupName = (unit: ReportUnit): string | null => {
+      if (selectedProjectId === "all") return unit.projectName || "مشروع";
+      if (salesViewMode === "houses") return unit.kind === "house" ? `زون ${unit.zone || "عام"}` : null;
+      return unit.kind === "apartment" ? (unit.towerLabel || "عمارة") : null;
     };
 
-    filteredElementsForGlobal.forEach(el => {
-      if (el.type === 'house') {
-        processUnitDate(el.id);
-      } else if (el.type === 'tower') {
-        const floors = el.floors || 0;
-        const aptsPerFloor = el.apartmentsPerFloor || 0;
-        for (let f = 1; f <= floors; f++) {
-          for (let a = 1; a <= aptsPerFloor; a++) {
-            processUnitDate(`${el.id}_F${f}_A${a}`);
-          }
+    structural.forEach((unit) => {
+      if (unit.frozenUncounted) return;
+      const name = groupName(unit);
+      if (!name) return;
+      if (moneyMeasure === "count") {
+        const row = bucket(name);
+        row.total += 1;
+        if (unit.status === "sold") row.sold += 1;
+        if (unit.status === "investment") row.investment += 1;
+        return;
+      }
+      if (unit.status !== "sold" && unit.status !== "investment") return;
+      if (!inDayRange(unit.saleDate, filters.saleFrom, filters.saleTo)) return;
+      if (moneyMeasure === "contract") {
+        if (!currencyOn(filters.currency, unit.systemCurrency) || unit.systemPrice <= 0) return;
+        const row = bucket(name);
+        if (unit.systemCurrency === "IQD") row.contractIQD += unit.systemPrice;
+        else row.contractUSD += unit.systemPrice;
+        return;
+      }
+      if (!matchSettlement(unit, filters) || !currencyOn(filters.currency, unit.fileCurrency)) return;
+      const row = bucket(name);
+      if (unit.fileCurrency === "IQD") row.remainingIQD += unit.remaining;
+      else row.remainingUSD += unit.remaining;
+    });
+
+    return Array.from(groups.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], "ar", { numeric: true }))
+      .map(([name, row]) => {
+        if (moneyMeasure === "contract") {
+          return { name, "قيمة العقود (د.ع)": row.contractIQD, "قيمة العقود ($)": row.contractUSD };
         }
-      }
-    });
-
-    // ترتيب الأشهر تصاعدياً من الأقدم إلى الأحدث
-    const sortedMonths = Object.entries(monthlySales).sort((a, b) => {
-      return a[0].localeCompare(b[0]);
-    });
-
-    return sortedMonths.map(([key, data]) => {
-      const monthName = data.dateObj.toLocaleString('ar-EG', { month: 'long', year: 'numeric' });
-      return {
-        name: monthName,
-        'عدد الوحدات المباعة': data.count,
-        'الإيرادات (د.ع)': data.revenueIQD,
-        'الإيرادات ($)': data.revenueUSD
-      };
-    });
-  }, [filteredElementsForGlobal, housesData]);
-
-  // 5. تقرير متوسط أسعار الأصناف للمنازل (الأسلوب المنفصل)
-  const averagePriceDataHouses = useMemo(() => {
-    const classPrices: Record<string, { sumIQD: number, countIQD: number, sumUSD: number, countUSD: number }> = {};
-
-    filteredElementsForGlobal.filter(el => el.type === 'house').forEach(el => {
-      const parts = el.label.split('-');
-      let uClass = "غير محدد";
-      if (parts.length >= 3) {
-        const typeMatch = parts[2].match(/[a-zA-Z]+/);
-        uClass = typeMatch ? typeMatch[0] : 'غير محدد';
-      }
-
-      // آلية العرض الذكية لكافة المشاريع المدمجة: إلحاق اسم المشروع بالصنف
-      const displayName = selectedProjectId === 'all' 
-        ? `${el._projectName} - صنف ${uClass}` 
-        : `صنف ${uClass}`;
-
-      const data = housesData[el.id];
-      if (data && (data.status === 'sold' || data.status === 'investment')) {
-        const priceValue = parsePrice(data.price);
-        if (priceValue > 0) {
-          const cType = getCurrencyType(data.currency);
-          if (!classPrices[displayName]) {
-            classPrices[displayName] = { sumIQD: 0, countIQD: 0, sumUSD: 0, countUSD: 0 };
-          }
-          if (cType === 'IQD') {
-            classPrices[displayName].sumIQD += priceValue;
-            classPrices[displayName].countIQD++;
-          } else {
-            classPrices[displayName].sumUSD += priceValue;
-            classPrices[displayName].countUSD++;
-          }
+        if (moneyMeasure === "remaining") {
+          return { name, "المتبقي (د.ع)": row.remainingIQD, "المتبقي ($)": row.remainingUSD };
         }
+        return {
+          name,
+          "إجمالي الوحدات": row.total,
+          "المباعة": row.sold,
+          "الاستثمار": row.investment,
+        };
+      });
+  }, [structural, selectedProjectId, salesViewMode, moneyMeasure, filters]);
+
+  const salesTrendData = useMemo(() => {
+    const monthly = new Map<string, { count: number; revenueIQD: number; revenueUSD: number; date: Date }>();
+    structural.forEach((unit) => {
+      if (unit.frozenUncounted) return;
+      if (unit.status !== "sold" && unit.status !== "investment") return;
+      if (!unit.saleDate) return;
+      if (!inDayRange(unit.saleDate, filters.saleFrom, filters.saleTo)) return;
+      if (!currencyOn(filters.currency, unit.systemCurrency)) return;
+      const [yearText, monthText] = unit.saleDate.split("-");
+      const year = Number(yearText);
+      const month = Number(monthText) - 1;
+      if (!year || month < 0) return;
+      const key = `${yearText}-${monthText}`;
+      const row = monthly.get(key) || { count: 0, revenueIQD: 0, revenueUSD: 0, date: new Date(year, month, 1) };
+      row.count += 1;
+      if (unit.systemPrice > 0) {
+        if (unit.systemCurrency === "IQD") row.revenueIQD += unit.systemPrice;
+        else row.revenueUSD += unit.systemPrice;
       }
+      monthly.set(key, row);
     });
+    return Array.from(monthly.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, row]) => ({
+        name: row.date.toLocaleString("ar-EG", { month: "long", year: "numeric" }),
+        "عدد الوحدات المباعة": row.count,
+        "قيمة البيع (د.ع)": row.revenueIQD,
+        "قيمة البيع ($)": row.revenueUSD,
+      }));
+  }, [structural, filters]);
 
-    return Object.entries(classPrices).map(([name, data]) => ({
-      name: name,
-      'متوسط السعر (د.ع)': data.countIQD > 0 ? Math.round(data.sumIQD / data.countIQD) : 0,
-      'متوسط السعر ($)': data.countUSD > 0 ? Math.round(data.sumUSD / data.countUSD) : 0,
-    })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
-  }, [filteredElementsForGlobal, housesData, selectedProjectId]);
-
-  // 6. تقرير متوسط أسعار الشقق حسب المساحة (الأسلوب المنفصل الجديد)
-  const averagePriceDataApartments = useMemo(() => {
-    const sizePrices: Record<string, { sumIQD: number, countIQD: number, sumUSD: number, countUSD: number }> = {};
-
-    filteredElementsForGlobal.filter(el => el.type === 'tower').forEach(el => {
-      const floors = el.floors || 1;
-      const aptsPerFloor = el.apartmentsPerFloor || 1;
-
-      for (let f = 1; f <= floors; f++) {
-        for (let a = 1; a <= aptsPerFloor; a++) {
-          const key = `${el.id}_F${f}_A${a}`;
-          const data = housesData[key];
-          if (data && (data.status === 'sold' || data.status === 'investment')) {
-            const size = f === 1 
-              ? (el.groundFloorSizes?.[a - 1] || 0) 
-              : (el.typicalFloorSizes?.[a - 1] || 0);
-            
-            if (size > 0) {
-              // آلية العرض الذكية لكافة المشاريع المدمجة: إلحاق اسم المشروع بالمساحة
-              const displayName = selectedProjectId === 'all'
-                ? `${el._projectName} - مساحة ${size} م²`
-                : `مساحة ${size} م²`;
-
-              const priceValue = parsePrice(data.price);
-              if (priceValue > 0) {
-                const cType = getCurrencyType(data.currency);
-                if (!sizePrices[displayName]) {
-                  sizePrices[displayName] = { sumIQD: 0, countIQD: 0, sumUSD: 0, countUSD: 0 };
-                }
-                if (cType === 'IQD') {
-                  sizePrices[displayName].sumIQD += priceValue;
-                  sizePrices[displayName].countIQD++;
-                } else {
-                  sizePrices[displayName].sumUSD += priceValue;
-                  sizePrices[displayName].countUSD++;
-                }
-              }
-            }
-          }
-        }
+  const priced = (kind: ReportUnit["kind"]) => {
+    const groups = new Map<string, { sumIQD: number; countIQD: number; sumUSD: number; countUSD: number }>();
+    structural.forEach((unit) => {
+      if (unit.kind !== kind || unit.frozenUncounted) return;
+      if (unit.status !== "sold" && unit.status !== "investment") return;
+      if (unit.systemPrice <= 0) return;
+      if (!currencyOn(filters.currency, unit.systemCurrency)) return;
+      const own = kind === "house" ? unit.typeLabel : unit.typeLabel;
+      const name = selectedProjectId === "all" && unit.projectName ? `${unit.projectName} - ${own}` : own;
+      const row = groups.get(name) || { sumIQD: 0, countIQD: 0, sumUSD: 0, countUSD: 0 };
+      if (unit.systemCurrency === "IQD") {
+        row.sumIQD += unit.systemPrice;
+        row.countIQD += 1;
+      } else {
+        row.sumUSD += unit.systemPrice;
+        row.countUSD += 1;
       }
+      groups.set(name, row);
     });
+    return Array.from(groups.entries()).map(([name, row]) => ({
+      name,
+      "متوسط السعر (د.ع)": row.countIQD > 0 ? Math.round(row.sumIQD / row.countIQD) : 0,
+      "متوسط السعر ($)": row.countUSD > 0 ? Math.round(row.sumUSD / row.countUSD) : 0,
+    })).filter((item) => item["متوسط السعر (د.ع)"] > 0 || item["متوسط السعر ($)"] > 0);
+  };
 
-    return Object.entries(sizePrices).map(([name, data]) => ({
-      name: name,
-      'متوسط السعر (د.ع)': data.countIQD > 0 ? Math.round(data.sumIQD / data.countIQD) : 0,
-      'متوسط السعر ($)': data.countUSD > 0 ? Math.round(data.sumUSD / data.countUSD) : 0,
-    })).filter(item => item['متوسط السعر (د.ع)'] > 0 || item['متوسط السعر ($)'] > 0);
-  }, [filteredElementsForGlobal, housesData, selectedProjectId]);
+  const averagePriceDataHouses = useMemo(() => priced("house"), [structural, filters.currency, selectedProjectId]);
+  const averagePriceDataApartments = useMemo(() => priced("apartment"), [structural, filters.currency, selectedProjectId]);
+
+  const collection = useMemo(
+    () => collectionRows(reportUnits, filters, collectionGroup, selectedProjectId === "all"),
+    [reportUnits, filters, collectionGroup, selectedProjectId],
+  );
+
+  const collectionTotal = useMemo(() => collection.reduce((sum, row) => ({
+    fileIQD: sum.fileIQD + row.fileIQD,
+    receivedIQD: sum.receivedIQD + row.receivedIQD,
+    remainingIQD: sum.remainingIQD + row.remainingIQD,
+    fileUSD: sum.fileUSD + row.fileUSD,
+    receivedUSD: sum.receivedUSD + row.receivedUSD,
+    remainingUSD: sum.remainingUSD + row.remainingUSD,
+    paid: sum.paid + row.paid,
+    owing: sum.owing + row.owing,
+  }), {
+    fileIQD: 0,
+    receivedIQD: 0,
+    remainingIQD: 0,
+    fileUSD: 0,
+    receivedUSD: 0,
+    remainingUSD: 0,
+    paid: 0,
+    owing: 0,
+  }), [collection]);
+
+  const dues = useMemo(
+    () => summarizeDues(reportUnits, filters, dueFrom, dueTo, dueState),
+    [reportUnits, filters, dueFrom, dueTo, dueState],
+  );
 
   const salesRatio = stats.total > 0
     ? Math.round(((stats.sold + stats.investment) / stats.total) * 100)
     : 0;
 
+  const showIQD = filters.currency !== "USD";
+  const showUSD = filters.currency !== "IQD";
+  const collectionHint = (count: number) => {
+    if (followupMissing) return "جدول الدفعات غير منشأ، والتحصيل غير محسوب";
+    const settlement = filters.settlement === "paid"
+      ? "سددوا كامل المبلغ"
+      : filters.settlement === "remaining"
+        ? "متبقي عليهم"
+        : "";
+    const gap = count > 0 ? `بلا ملف دفعات: ${formatNumber(count)} وحدة` : "من ملف الدفعات";
+    return settlement ? `${gap} · ${settlement}` : gap;
+  };
+
   const statCells: StatCell[] = [
     {
-      label: 'إجمالي المبيعات المحققة (د.ع)',
-      value: formatNumber(stats.revenueIQD),
-      hint: `محجوز متوقع ${formatNumber(stats.expectedRevenueIQD)} د.ع`,
+      label: "قيمة العقود (د.ع)",
+      value: showIQD ? formatNumber(money.contractIQD) : "—",
+      hint: showIQD ? `محجوز متوقع ${formatNumber(money.expectedIQD)} د.ع` : "خارج تصفية العملة",
     },
     {
-      label: 'إجمالي المبيعات المحققة ($)',
-      value: `$${formatNumber(stats.revenueUSD)}`,
-      hint: `محجوز متوقع $${formatNumber(stats.expectedRevenueUSD)}`,
+      label: "الواصل الكلي (د.ع)",
+      value: showIQD ? formatNumber(money.receivedIQD) : "—",
+      hint: showIQD ? collectionHint(money.untrackedIQD) : "خارج تصفية العملة",
+      accent: showIQD ? STATUS_META.available.chart : undefined,
     },
     {
-      label: 'نسبة المبيعات العامة',
+      label: "المتبقي (د.ع)",
+      value: showIQD ? formatNumber(money.remainingIQD) : "—",
+      hint: showIQD ? collectionHint(money.untrackedIQD) : "خارج تصفية العملة",
+      accent: showIQD ? STATUS_META.sold.chart : undefined,
+    },
+    {
+      label: "نسبة المبيعات العامة",
       value: `${salesRatio}%`,
       hint: `مباع ${stats.sold} · استثمار ${stats.investment}`,
     },
     {
-      label: 'الوحدات المتاحة للبيع',
+      label: "قيمة العقود ($)",
+      value: showUSD ? `$${formatNumber(money.contractUSD)}` : "—",
+      hint: showUSD ? `محجوز متوقع $${formatNumber(money.expectedUSD)}` : "خارج تصفية العملة",
+    },
+    {
+      label: "الواصل الكلي ($)",
+      value: showUSD ? `$${formatNumber(money.receivedUSD)}` : "—",
+      hint: showUSD ? collectionHint(money.untrackedUSD) : "خارج تصفية العملة",
+      accent: showUSD ? STATUS_META.available.chart : undefined,
+    },
+    {
+      label: "المتبقي ($)",
+      value: showUSD ? `$${formatNumber(money.remainingUSD)}` : "—",
+      hint: showUSD ? collectionHint(money.untrackedUSD) : "خارج تصفية العملة",
+      accent: showUSD ? STATUS_META.sold.chart : undefined,
+    },
+    {
+      label: "الوحدات المتاحة للبيع",
       value: formatNumber(stats.available),
       hint: `من أصل ${formatNumber(stats.total)} وحدة`,
     },
   ];
 
-  const hasSubFilters =
-    selectedZone !== 'all' || selectedClass !== 'all' || selectedTower !== 'all' || selectedSize !== 'all';
+  const filtersActive =
+    filters.zones.length > 0 || filters.towers.length > 0 || filters.types.length > 0
+    || filters.investors !== "with" || filters.center !== "all" || filters.currency !== "all"
+    || filters.saleFrom !== "" || filters.saleTo !== "" || filters.settlement !== "all"
+    || dueFrom !== "" || dueTo !== "" || dueState !== "all";
+
+  const toggleValue = (list: string[], value: string) =>
+    list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 
   const priceChartProps = {
     grid: chartGrid,
@@ -728,8 +581,8 @@ const Reports = ({ projects }: ReportsProps) => {
             />
           }
         />
-        <Bar dataKey="متوسط السعر (د.ع)" fill={STATUS_META.available.chart} maxBarSize={26} />
-        <Bar dataKey="متوسط السعر ($)" fill={STATUS_META.pending.chart} maxBarSize={26} />
+        {showIQD && <Bar dataKey="متوسط السعر (د.ع)" fill={STATUS_META.available.chart} maxBarSize={26} />}
+        {showUSD && <Bar dataKey="متوسط السعر ($)" fill={STATUS_META.pending.chart} maxBarSize={26} />}
       </BarChart>
     </ResponsiveContainer>
   );
@@ -737,8 +590,8 @@ const Reports = ({ projects }: ReportsProps) => {
   const priceLegend = (
     <ChartLegend
       items={[
-        { name: 'متوسط السعر (د.ع)', color: STATUS_META.available.chart },
-        { name: 'متوسط السعر ($)', color: STATUS_META.pending.chart },
+        ...(showIQD ? [{ name: 'متوسط السعر (د.ع)', color: STATUS_META.available.chart }] : []),
+        ...(showUSD ? [{ name: 'متوسط السعر ($)', color: STATUS_META.pending.chart }] : []),
       ]}
     />
   );
@@ -803,87 +656,102 @@ const Reports = ({ projects }: ReportsProps) => {
     >
       {/* Filter bar — يظهر فقط بعد اختيار مشروع */}
       {hasSelectedProject && (
-      <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-line py-3">
-        <div className="flex items-center gap-2 text-fg-muted">
-          <Filter size={13} />
-          <span className="eyebrow">تصفية</span>
+      <div className="mt-8 space-y-4 border-y border-line py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-fg-muted">
+            <Filter size={13} />
+            <span className="eyebrow">تصفية</span>
+          </div>
+          <span className="text-[11px] text-fg-faint">الزون للمنزل، والعمارة للشقة، والنوع يجمع الاثنين معاً</span>
+          {filtersActive && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFilters(EMPTY_REPORT_FILTERS);
+                setDueFrom("");
+                setDueTo("");
+                setDueState("all");
+              }}
+              className="ms-auto text-status-sold hover:text-status-sold"
+            >
+              إعادة تعيين
+            </Button>
+          )}
         </div>
 
-        <label className="flex items-center gap-2">
-          <span className="text-[11px] text-fg-muted">الزون</span>
-          <Select value={selectedZone} onValueChange={setSelectedZone}>
-            <SelectTrigger className="h-8 w-[130px] text-[12px]">
-              <SelectValue placeholder="كل الزونات" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الزونات</SelectItem>
-              {availableZones.map(z => (
-                <SelectItem key={z} value={z}>زون {z}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-
-        <label className="flex items-center gap-2">
-          <span className="text-[11px] text-fg-muted">صنف المنزل</span>
-          <Select value={selectedClass} onValueChange={setSelectedClass}>
-            <SelectTrigger className="h-8 w-[130px] text-[12px]">
-              <SelectValue placeholder="كل الأصناف" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الأصناف</SelectItem>
-              {availableClasses.map(c => (
-                <SelectItem key={c} value={c}>صنف {c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-
-        <label className="flex items-center gap-2">
-          <span className="text-[11px] text-fg-muted">عمارة</span>
-          <Select value={selectedTower} onValueChange={setSelectedTower}>
-            <SelectTrigger className="h-8 w-[160px] text-[12px]">
-              <SelectValue placeholder="كل العمارات" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل العمارات</SelectItem>
-              {availableTowers.map((tower) => (
-                <SelectItem key={tower.id} value={tower.id}>{tower.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-
-        <label className="flex items-center gap-2">
-          <span className="text-[11px] text-fg-muted">مساحة الشقة</span>
-          <Select value={selectedSize} onValueChange={setSelectedSize}>
-            <SelectTrigger className="h-8 w-[130px] text-[12px]">
-              <SelectValue placeholder="كل المساحات" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل المساحات</SelectItem>
-              {availableSizes.map(s => (
-                <SelectItem key={s} value={s.toString()}>{s} م²</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-
-        {hasSubFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSelectedZone('all');
-              setSelectedClass('all');
-              setSelectedTower('all');
-              setSelectedSize('all');
-            }}
-            className="ms-auto text-status-sold hover:text-status-sold"
-          >
-            إعادة تعيين
-          </Button>
+        {options.zones.length > 0 && (
+          <ChipRow label="زونات المنازل">
+            {options.zones.map((zone) => (
+              <ChoiceChip
+                key={zone}
+                active={filters.zones.includes(zone)}
+                onClick={() => setFilters({ ...filters, zones: toggleValue(filters.zones, zone) })}
+              >
+                زون {zone}
+              </ChoiceChip>
+            ))}
+          </ChipRow>
         )}
+
+        {options.towers.length > 0 && (
+          <ChipRow label="العمارات">
+            {options.towers.map(([id, label]) => (
+              <ChoiceChip
+                key={id}
+                active={filters.towers.includes(id)}
+                onClick={() => setFilters({ ...filters, towers: toggleValue(filters.towers, id) })}
+              >
+                {label}
+              </ChoiceChip>
+            ))}
+          </ChipRow>
+        )}
+
+        {options.types.length > 0 && (
+          <ChipRow label="نوع الوحدة">
+            {options.types.map(([key, label]) => (
+              <ChoiceChip
+                key={key}
+                active={filters.types.includes(key)}
+                onClick={() => setFilters({ ...filters, types: toggleValue(filters.types, key) })}
+              >
+                {label}
+              </ChoiceChip>
+            ))}
+          </ChipRow>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <FilterSelect label="العملة" value={filters.currency} onChange={(value) => setFilters({ ...filters, currency: value as ReportFilters["currency"] })}>
+            <SelectItem value="all">الكل</SelectItem>
+            <SelectItem value="IQD">دينار</SelectItem>
+            <SelectItem value="USD">دولار</SelectItem>
+          </FilterSelect>
+          <FilterSelect label="السداد" value={filters.settlement} onChange={(value) => setFilters({ ...filters, settlement: value as ReportFilters["settlement"] })}>
+            <SelectItem value="all">الكل</SelectItem>
+            <SelectItem value="remaining">متبقي عليهم</SelectItem>
+            <SelectItem value="paid">سددوا كامل المبلغ</SelectItem>
+          </FilterSelect>
+          <FilterSelect label="المستثمرون" value={filters.investors} onChange={(value) => setFilters({ ...filters, investors: value as ReportFilters["investors"] })}>
+            <SelectItem value="with">ضمن الأرقام</SelectItem>
+            <SelectItem value="without">إخفاؤهم</SelectItem>
+          </FilterSelect>
+          <FilterSelect label="المركز التسويقي" value={filters.center} onChange={(value) => setFilters({ ...filters, center: value })}>
+            <SelectItem value="all">الكل</SelectItem>
+            {options.centers.map((name) => (
+              <SelectItem key={name} value={name}>{name}</SelectItem>
+            ))}
+          </FilterSelect>
+          <label className="space-y-1">
+            <span className="text-[11px] text-fg-muted">تاريخ البيع من</span>
+            <Input type="date" value={filters.saleFrom} onChange={(event) => setFilters({ ...filters, saleFrom: event.target.value })} className="h-8" />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-fg-muted">تاريخ البيع إلى</span>
+            <Input type="date" value={filters.saleTo} onChange={(event) => setFilters({ ...filters, saleTo: event.target.value })} className="h-8" />
+          </label>
+        </div>
       </div>
       )}
 
@@ -916,6 +784,161 @@ const Reports = ({ projects }: ReportsProps) => {
         <>
           <div className="mt-10">
             <StatGrid items={statCells} columns={4} />
+          </div>
+
+          <Panel
+            className="mt-6"
+            icon={<Wallet size={14} />}
+            title="موقف التحصيل"
+            description="قيمة العقد من ملف الدفعات، وتساوي الواصل زائد المتبقي. البطاقات أعلاه تُبقي سعر البيع المسجل على الوحدة."
+            actions={
+              <SegmentedControl
+                value={collectionGroup}
+                onChange={(value) => setCollectionGroup(value)}
+                options={[
+                  { value: "type", label: "حسب النوع" },
+                  { value: "zone", label: "حسب الزون" },
+                ]}
+              />
+            }
+            bodyClassName="p-0"
+          >
+            {collection.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead className="bg-surface text-fg-muted">
+                    <tr className="border-b border-line">
+                      {["النطاق", ...(showIQD ? ["عقد د.ع", "واصل د.ع", "متبقي د.ع"] : []), ...(showUSD ? ["عقد $", "واصل $", "متبقي $"] : []), "سددوا", "عليهم"].map((heading) => (
+                        <th key={heading} className="px-4 py-3 text-start font-normal">{heading}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {collection.map((row) => (
+                      <tr key={row.name} className="border-b border-line">
+                        <td className="px-4 py-3 text-fg">{row.name}</td>
+                        {showIQD && <MoneyCell value={row.fileIQD} />}
+                        {showIQD && <MoneyCell value={row.receivedIQD} tone="in" />}
+                        {showIQD && <MoneyCell value={row.remainingIQD} tone="out" />}
+                        {showUSD && <MoneyCell value={row.fileUSD} prefix="$" />}
+                        {showUSD && <MoneyCell value={row.receivedUSD} prefix="$" tone="in" />}
+                        {showUSD && <MoneyCell value={row.remainingUSD} prefix="$" tone="out" />}
+                        <td className="px-4 py-3 font-mono tabular-nums text-fg">{formatNumber(row.paid)}</td>
+                        <td className="px-4 py-3 font-mono tabular-nums text-fg">{formatNumber(row.owing)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-line bg-surface-sunken">
+                      <td className="px-4 py-3 font-semibold text-fg">المجموع الكلي</td>
+                      {showIQD && <MoneyCell value={collectionTotal.fileIQD} strong />}
+                      {showIQD && <MoneyCell value={collectionTotal.receivedIQD} tone="in" strong />}
+                      {showIQD && <MoneyCell value={collectionTotal.remainingIQD} tone="out" strong />}
+                      {showUSD && <MoneyCell value={collectionTotal.fileUSD} prefix="$" strong />}
+                      {showUSD && <MoneyCell value={collectionTotal.receivedUSD} prefix="$" tone="in" strong />}
+                      {showUSD && <MoneyCell value={collectionTotal.remainingUSD} prefix="$" tone="out" strong />}
+                      <td className="px-4 py-3 font-mono text-[13px] font-semibold tabular-nums text-fg">{formatNumber(collectionTotal.paid)}</td>
+                      <td className="px-4 py-3 font-mono text-[13px] font-semibold tabular-nums text-fg">{formatNumber(collectionTotal.owing)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div className="p-5">
+                <ChartEmpty>
+                  {followupMissing
+                    ? "جدول الدفعات غير منشأ، نفّذ ملف المتابعة في قاعدة البيانات"
+                    : "لا يوجد تحصيل محسوب ضمن هذه التصفية. المشروع بلا ملف دفعات لا يُعامل كسداد كامل"}
+                </ChartEmpty>
+              </div>
+            )}
+          </Panel>
+
+          <div className="mt-6">
+            <Panel
+              icon={<CalendarRange size={14} />}
+              title="الاستحقاقات"
+              description="المتبقي على الدفعات المفتوحة فقط، حسب موعد الاستحقاق. هذا الفلتر لا يغيّر بقية التقارير."
+              bodyClassName="space-y-5 p-5"
+            >
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="space-y-1">
+                  <span className="text-[11px] text-fg-muted">من</span>
+                  <Input type="date" value={dueFrom} onChange={(event) => setDueFrom(event.target.value)} className="h-8" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] text-fg-muted">إلى</span>
+                  <Input type="date" value={dueTo} onChange={(event) => setDueTo(event.target.value)} className="h-8" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] text-fg-muted">حالة الدفعة</span>
+                  <Select value={dueState} onValueChange={(value) => setDueState(value as typeof dueState)}>
+                    <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">الكل</SelectItem>
+                      <SelectItem value="overdue">متأخرة</SelectItem>
+                      <SelectItem value="today">اليوم</SelectItem>
+                      <SelectItem value="upcoming">قادمة</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
+              </div>
+              {dues.count > 0 ? (
+                <>
+                  <div className="text-[11px] text-fg-muted">{formatNumber(dues.count)} دفعة مفتوحة</div>
+                  {showIQD && (
+                    <div className="space-y-3">
+                      <div className="eyebrow">دينار</div>
+                      <Meter label="متأخر" value={dues.overdueIQD} total={dues.overdueIQD + dues.todayIQD + dues.upcomingIQD} color={STATUS_META.sold.chart} />
+                      <Meter label="مستحق اليوم" value={dues.todayIQD} total={dues.overdueIQD + dues.todayIQD + dues.upcomingIQD} color={STATUS_META.reserved.chart} />
+                      <Meter label="قادم" value={dues.upcomingIQD} total={dues.overdueIQD + dues.todayIQD + dues.upcomingIQD} color={STATUS_META.available.chart} />
+                    </div>
+                  )}
+                  {showUSD && (
+                    <div className="space-y-3">
+                      <div className="eyebrow">دولار</div>
+                      <Meter label="متأخر" value={dues.overdueUSD} total={dues.overdueUSD + dues.todayUSD + dues.upcomingUSD} color={STATUS_META.sold.chart} />
+                      <Meter label="مستحق اليوم" value={dues.todayUSD} total={dues.overdueUSD + dues.todayUSD + dues.upcomingUSD} color={STATUS_META.reserved.chart} />
+                      <Meter label="قادم" value={dues.upcomingUSD} total={dues.overdueUSD + dues.todayUSD + dues.upcomingUSD} color={STATUS_META.available.chart} />
+                    </div>
+                  )}
+                  {(showIQD || showUSD) && dues.months.length > 0 && (
+                    <div className={showIQD && showUSD ? "grid gap-4" : ""}>
+                      {showIQD && dues.months.some((month) => month.remainingIQD !== 0) && (
+                        <div className="h-44">
+                          <div className="eyebrow mb-1">حسب شهر الاستحقاق — دينار</div>
+                          <ResponsiveContainer width="100%" height="85%">
+                            <BarChart data={dues.months} margin={chartMargin}>
+                              <CartesianGrid {...chartGrid} />
+                              <XAxis dataKey="name" {...chartAxis} interval={0} />
+                              <YAxis tickFormatter={formatAxisValue} width={64} {...chartAxis} />
+                              <Tooltip cursor={{ fill: palette.surfaceSunken }} content={<ChartTooltip format={(value) => `${formatNumber(value)} د.ع`} />} />
+                              <Bar dataKey="remainingIQD" name="المتبقي (د.ع)" fill={STATUS_META.sold.chart} maxBarSize={18} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      {showUSD && dues.months.some((month) => month.remainingUSD !== 0) && (
+                        <div className="h-44">
+                          <div className="eyebrow mb-1">حسب شهر الاستحقاق — دولار</div>
+                          <ResponsiveContainer width="100%" height="85%">
+                            <BarChart data={dues.months} margin={chartMargin}>
+                              <CartesianGrid {...chartGrid} />
+                              <XAxis dataKey="name" {...chartAxis} interval={0} />
+                              <YAxis tickFormatter={formatAxisValue} width={64} {...chartAxis} />
+                              <Tooltip cursor={{ fill: palette.surfaceSunken }} content={<ChartTooltip format={(value) => `$${formatNumber(value)}`} />} />
+                              <Bar dataKey="remainingUSD" name="المتبقي ($)" fill={STATUS_META.pending.chart} maxBarSize={18} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <ChartEmpty>لا توجد دفعات مفتوحة ضمن هذه التصفية</ChartEmpty>
+              )}
+            </Panel>
           </div>
 
           {/* Distribution + performance */}
@@ -972,58 +995,115 @@ const Reports = ({ projects }: ReportsProps) => {
             <Panel
               icon={<Building2 size={14} />}
               title={
-                selectedProjectId === 'all'
-                  ? 'أداء المبيعات حسب المشاريع'
-                  : salesViewMode === 'houses'
-                    ? 'أداء مبيعات المنازل حسب الزونات'
-                    : 'أداء مبيعات العمارات'
+                moneyMeasure === "count"
+                  ? selectedProjectId === "all"
+                    ? "أداء المبيعات حسب المشاريع"
+                    : salesViewMode === "houses"
+                      ? "أداء مبيعات المنازل حسب الزونات"
+                      : "أداء مبيعات العمارات"
+                  : moneyMeasure === "contract"
+                    ? "قيمة العقود"
+                    : "المتبقي على الدفعات"
               }
               description={
-                selectedProjectId === 'all'
-                  ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل مشروع'
-                  : salesViewMode === 'houses'
-                    ? 'مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون'
-                    : 'مقارنة الوحدات المباعة والاستثمارية لكل عمارة على حدة'
+                moneyMeasure === "remaining"
+                  ? "مجموع المتبقي ضمن التصفية. الوحدة التي بلا ملف دفعات لا تُحسب صفراً"
+                  : moneyMeasure === "contract"
+                    ? "سعر البيع المسجل على الوحدة المباعة أو الاستثمار، حسب تاريخ البيع"
+                    : selectedProjectId === "all"
+                      ? "مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل مشروع"
+                      : salesViewMode === "houses"
+                        ? "مقارنة الوحدات المباعة والاستثمارية مقابل الإجمالي لكل زون"
+                        : "مقارنة الوحدات المباعة والاستثمارية لكل عمارة على حدة"
               }
               actions={
-                selectedProjectId !== 'all' ? (
+                <div className="flex flex-wrap items-center gap-2">
                   <SegmentedControl
-                    value={salesViewMode}
-                    onChange={(value) => setSalesViewMode(value)}
+                    value={moneyMeasure}
+                    onChange={(value) => setMoneyMeasure(value)}
                     options={[
-                      { value: 'houses', label: 'المنازل' },
-                      { value: 'towers', label: 'العمارات' },
+                      { value: "count", label: "العدد" },
+                      { value: "contract", label: "قيمة العقود" },
+                      { value: "remaining", label: "المتبقي" },
                     ]}
                   />
-                ) : undefined
+                  {selectedProjectId !== "all" && (
+                    <SegmentedControl
+                      value={salesViewMode}
+                      onChange={(value) => setSalesViewMode(value)}
+                      options={[
+                        { value: "houses", label: "المنازل" },
+                        { value: "towers", label: "العمارات" },
+                      ]}
+                    />
+                  )}
+                </div>
               }
               className="lg:col-span-2"
               bodyClassName="flex flex-col gap-4 p-5"
             >
-              <div className="h-64">
+              <div className={moneyMeasure !== "count" && showIQD && showUSD ? "grid gap-4 overflow-x-auto lg:grid-cols-2" : "overflow-x-auto"}>
                 {salesPerformanceData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={salesPerformanceData} margin={chartMargin} barCategoryGap="30%">
-                      <CartesianGrid {...chartGrid} />
-                      <XAxis dataKey="name" {...chartAxis} interval={0} />
-                      <YAxis tickFormatter={formatAxisValue} width={48} {...chartAxis} />
-                      <Tooltip cursor={{ fill: palette.surfaceSunken }} content={<ChartTooltip />} />
-                      <Bar dataKey="إجمالي الوحدات" fill={palette.line} maxBarSize={22} />
-                      <Bar dataKey="المباعة" fill={STATUS_META.sold.chart} maxBarSize={22} />
-                      <Bar dataKey="الاستثمار" fill={STATUS_META.investment.chart} maxBarSize={22} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  (moneyMeasure === "count"
+                    ? [{ key: "count", label: "" }]
+                    : [
+                        ...(showIQD ? [{ key: moneyMeasure === "contract" ? "قيمة العقود (د.ع)" : "المتبقي (د.ع)", label: "دينار" }] : []),
+                        ...(showUSD ? [{ key: moneyMeasure === "contract" ? "قيمة العقود ($)" : "المتبقي ($)", label: "دولار" }] : []),
+                      ]
+                  ).map((series) => {
+                    const plotWidth = Math.max(640, salesPerformanceData.length * (series.key === "count" ? 56 : 40));
+                    const plotHeight = series.label ? 220 : 256;
+                    return (
+                    <div key={series.key} style={{ width: plotWidth, height: plotHeight + (series.label ? 28 : 0) }}>
+                      {series.label && <div className="eyebrow mb-2">{series.label}</div>}
+                      <BarChart data={salesPerformanceData} width={plotWidth} height={plotHeight} margin={chartMargin} barCategoryGap="18%" barGap={2}>
+                          <CartesianGrid {...chartGrid} />
+                          <XAxis dataKey="name" {...chartAxis} interval={0} />
+                          <YAxis tickFormatter={formatAxisValue} width={series.key === "count" ? 48 : 64} {...chartAxis} />
+                          <Tooltip
+                            cursor={{ fill: palette.surfaceSunken }}
+                            content={
+                              <ChartTooltip
+                                format={(value, name) => {
+                                  if (name.includes("$")) return `$${formatNumber(value)}`;
+                                  if (name.includes("د.ع")) return `${formatNumber(value)} د.ع`;
+                                  return formatNumber(value);
+                                }}
+                              />
+                            }
+                          />
+                          {series.key === "count" && <Bar dataKey="إجمالي الوحدات" fill={palette.lineStrong} maxBarSize={22} />}
+                          {series.key === "count" && <Bar dataKey="المباعة" fill={STATUS_META.sold.chart} maxBarSize={22} />}
+                          {series.key === "count" && <Bar dataKey="الاستثمار" fill={STATUS_META.investment.chart} maxBarSize={22} />}
+                          {series.key !== "count" && (
+                            <Bar
+                              dataKey={series.key}
+                              fill={series.key.includes("متبقي") ? STATUS_META.sold.chart : series.key.includes("$") ? STATUS_META.pending.chart : palette.fg}
+                              maxBarSize={22}
+                            />
+                          )}
+                        </BarChart>
+                    </div>
+                    );
+                  })
                 ) : (
                   <ChartEmpty>لا توجد بيانات كافية للعرض</ChartEmpty>
                 )}
               </div>
               <ChartLegend
                 className="border-t border-line pt-4"
-                items={[
-                  { name: 'إجمالي الوحدات', color: palette.line },
-                  { name: 'المباعة', color: STATUS_META.sold.chart },
-                  { name: 'الاستثمار', color: STATUS_META.investment.chart },
-                ]}
+                items={
+                  moneyMeasure === "count"
+                    ? [
+                        { name: "إجمالي الوحدات", color: palette.lineStrong },
+                        { name: "المباعة", color: STATUS_META.sold.chart },
+                        { name: "الاستثمار", color: STATUS_META.investment.chart },
+                      ]
+                    : [
+                        ...(showIQD ? [{ name: moneyMeasure === "contract" ? "قيمة العقود (د.ع)" : "المتبقي (د.ع)", color: moneyMeasure === "remaining" ? STATUS_META.sold.chart : palette.fg }] : []),
+                        ...(showUSD ? [{ name: moneyMeasure === "contract" ? "قيمة العقود ($)" : "المتبقي ($)", color: STATUS_META.pending.chart }] : []),
+                      ]
+                }
               />
             </Panel>
           </div>
@@ -1033,7 +1113,7 @@ const Reports = ({ projects }: ReportsProps) => {
             <Panel
               icon={<TrendingUp size={14} />}
               title="منحنى المبيعات عبر الزمن"
-              description="تطور حجم المبيعات والإيرادات الفعلية مرتبة من الأقدم للأحدث"
+              description="قيمة البيع حسب تاريخ البيع، من الأقدم للأحدث. ليست المبالغ الواصلة"
               className="lg:col-span-2"
               bodyClassName="flex flex-col gap-4 p-5"
             >
@@ -1064,22 +1144,26 @@ const Reports = ({ projects }: ReportsProps) => {
                         dot={false}
                         activeDot={{ r: 3, strokeWidth: 0 }}
                       />
-                      <Line
-                        type="monotone"
-                        dataKey="الإيرادات (د.ع)"
-                        stroke={STATUS_META.available.chart}
-                        strokeWidth={1.5}
-                        dot={false}
-                        activeDot={{ r: 3, strokeWidth: 0 }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="الإيرادات ($)"
-                        stroke={STATUS_META.pending.chart}
-                        strokeWidth={1.5}
-                        dot={false}
-                        activeDot={{ r: 3, strokeWidth: 0 }}
-                      />
+                      {showIQD && (
+                        <Line
+                          type="monotone"
+                          dataKey="قيمة البيع (د.ع)"
+                          stroke={STATUS_META.available.chart}
+                          strokeWidth={1.5}
+                          dot={false}
+                          activeDot={{ r: 3, strokeWidth: 0 }}
+                        />
+                      )}
+                      {showUSD && (
+                        <Line
+                          type="monotone"
+                          dataKey="قيمة البيع ($)"
+                          stroke={STATUS_META.pending.chart}
+                          strokeWidth={1.5}
+                          dot={false}
+                          activeDot={{ r: 3, strokeWidth: 0 }}
+                        />
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
@@ -1092,8 +1176,8 @@ const Reports = ({ projects }: ReportsProps) => {
                 className="border-t border-line pt-4"
                 items={[
                   { name: 'عدد الوحدات المباعة', color: palette.fg },
-                  { name: 'الإيرادات (د.ع)', color: STATUS_META.available.chart },
-                  { name: 'الإيرادات ($)', color: STATUS_META.pending.chart },
+                  ...(showIQD ? [{ name: 'قيمة البيع (د.ع)', color: STATUS_META.available.chart }] : []),
+                  ...(showUSD ? [{ name: 'قيمة البيع ($)', color: STATUS_META.pending.chart }] : []),
                 ]}
               />
             </Panel>
@@ -1125,20 +1209,20 @@ const Reports = ({ projects }: ReportsProps) => {
             className="mt-6"
             icon={<Tags size={14} />}
             title="تحليل متوسط أسعار الوحدات السكنية"
-            description="متوسط القيمة الفعلية للوحدات المباعة والمستثمرة بالدينار والدولار"
+            description="متوسط سعر البيع المسجل على الوحدة المباعة أو المستثمرة، لا المتبقي"
             actions={
               <div className="flex items-center gap-5 border border-line px-4 py-2">
                 <div className="text-end">
-                  <div className="eyebrow">إجمالي د.ع</div>
+                  <div className="eyebrow">قيمة العقود د.ع</div>
                   <div className="mt-0.5 font-mono text-[13px] tabular-nums text-fg">
-                    {formatNumber(stats.revenueIQD)}
+                    {showIQD ? formatNumber(money.contractIQD) : "—"}
                   </div>
                 </div>
                 <span className="h-7 w-px bg-line" />
                 <div className="text-end">
-                  <div className="eyebrow">إجمالي $</div>
+                  <div className="eyebrow">قيمة العقود $</div>
                   <div className="mt-0.5 font-mono text-[13px] tabular-nums text-fg">
-                    {formatNumber(stats.revenueUSD)}
+                    {showUSD ? formatNumber(money.contractUSD) : "—"}
                   </div>
                 </div>
               </div>
@@ -1172,5 +1256,78 @@ const Reports = ({ projects }: ReportsProps) => {
     </AppShell>
   );
 };
+
+const ChoiceChip = ({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={
+      active
+        ? "border border-fg bg-fg px-2.5 py-1 text-[12px] text-background"
+        : "border border-line px-2.5 py-1 text-[12px] text-fg-secondary"
+    }
+  >
+    {children}
+  </button>
+);
+
+const ChipRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="space-y-2">
+    <div className="text-[11px] text-fg-muted">{label}</div>
+    <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">{children}</div>
+  </div>
+);
+
+const FilterSelect = ({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) => (
+  <label className="space-y-1">
+    <span className="text-[11px] text-fg-muted">{label}</span>
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
+      <SelectContent>{children}</SelectContent>
+    </Select>
+  </label>
+);
+
+const MoneyCell = ({
+  value,
+  prefix = "",
+  tone = "plain",
+  strong = false,
+}: {
+  value: number;
+  prefix?: string;
+  tone?: "plain" | "in" | "out";
+  strong?: boolean;
+}) => (
+  <td
+    className={
+      tone === "in"
+        ? `px-4 py-3 font-mono tabular-nums text-[#0c5a30] ${strong ? "font-semibold" : ""}`
+        : tone === "out"
+          ? `px-4 py-3 font-mono tabular-nums text-[#8d1c16] ${strong ? "font-semibold" : ""}`
+          : `px-4 py-3 font-mono tabular-nums text-fg ${strong ? "font-semibold" : ""}`
+    }
+  >
+    {prefix}{formatNumber(value)}
+  </td>
+);
 
 export default Reports;
