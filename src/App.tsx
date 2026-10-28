@@ -14,6 +14,7 @@ import { LoadingBlock } from "@/components/layout/AppShell";
  */
 const Admin = lazy(() => import("./pages/Admin"));
 const Reports = lazy(() => import("./pages/Reports"));
+const ReportPrint = lazy(() => import("./pages/ReportPrint"));
 const Brochure = lazy(() => import("./pages/Brochure"));
 const SalesForm = lazy(() => import("./pages/SalesForm"));
 const SalesPrint = lazy(() => import("./pages/SalesPrint"));
@@ -102,6 +103,7 @@ const SalesApp = () => {
         path="/reports"
         element={<Reports projects={projects} housesData={housesData} />}
       />
+      <Route path="/reports/print" element={<ReportPrint />} />
       <Route path="/explore" element={<Explore projects={projects} />} />
       <Route path="/followup" element={<PaymentFollowup projects={projects} />} />
       <Route path="/toureditor" element={<TourEditor />} />

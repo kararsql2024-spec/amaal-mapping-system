@@ -26,9 +26,13 @@ import { showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import {
   filterFollowupUnits,
+  FOLLOWUP_EXCEPTIONS_KEY,
   groupFollowupUnits,
+  normalizeFollowupExceptions,
+  normalizePersonName,
   sortFollowupUnits,
   type CatalogEntry,
+  type FollowupExceptionGroup,
   type FollowupFilters,
   type FollowupRecord,
   type FollowupUnit,
@@ -67,7 +71,10 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     investors: "with",
     center: "all",
     types: [],
+    excludedNames: [],
   });
+  const [exceptionGroups, setExceptionGroups] = useState<FollowupExceptionGroup[]>([]);
+  const [excludedGroupIds, setExcludedGroupIds] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<"overdue" | "unit" | "name">("overdue");
 
   const visibleProjects = useMemo(() => {
@@ -87,14 +94,16 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
       setAllowed(true);
       setAllowedProjectIds(session.allowed_projects || []);
       setAuthorCenter(session.name || "قسم غير معروف");
-      const [{ data }, remote, centerRows] = await Promise.all([
+      const [{ data }, remote, centerRows, exceptionRow] = await Promise.all([
         supabase.from("settings").select("key, value").eq("key", "dept_permissions").maybeSingle(),
         fetchRemoteSettings(supabase).catch(() => null),
         supabase.from("marketing_centers").select("id, name"),
+        supabase.from("settings").select("value").eq("key", FOLLOWUP_EXCEPTIONS_KEY).maybeSingle(),
       ]);
       const perms = data?.value?.[session.type];
       setPermitted(canAccessPaymentFollowup(perms));
       if (!cancelled) {
+        setExceptionGroups(normalizeFollowupExceptions(exceptionRow.data?.value));
         setSettings(resolveSettingsSources(loadSettings(), remote).settings);
         setMarketingCenters(
           (centerRows.data || []).map((center) => ({
@@ -159,9 +168,20 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     () => groupFollowupUnits(rows, catalog, projectId, projectName, settings, marketingCenters),
     [rows, catalog, projectId, projectName, settings, marketingCenters],
   );
+  const excludedNames = useMemo(() => {
+    const names = new Set<string>();
+    exceptionGroups.forEach((group) => {
+      if (!excludedGroupIds.includes(group.id)) return;
+      group.names.forEach((name) => {
+        const key = normalizePersonName(name);
+        if (key) names.add(key);
+      });
+    });
+    return Array.from(names);
+  }, [exceptionGroups, excludedGroupIds]);
   const filtered = useMemo(
-    () => sortFollowupUnits(filterFollowupUnits(units, filters), sortMode),
-    [units, filters, sortMode],
+    () => sortFollowupUnits(filterFollowupUnits(units, { ...filters, excludedNames }), sortMode),
+    [units, filters, excludedNames, sortMode],
   );
   const typeOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -451,6 +471,35 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
             {typeOptions.length === 0 && <span className="text-[12px] text-fg-faint">يظهر بعد اختيار مشروع فيه دفعات</span>}
           </div>
         </div>
+        {exceptionGroups.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Label>الاستثناءات</Label>
+              <span className="text-[11px] text-fg-muted">إلغاء التحديد يخرج أسماء المجموعة من القائمة ومن المجموع</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {exceptionGroups.map((group) => {
+                const included = !excludedGroupIds.includes(group.id);
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => setExcludedGroupIds((current) => (
+                      included ? [...current, group.id] : current.filter((id) => id !== group.id)
+                    ))}
+                    className={cn(
+                      "border px-2.5 py-1 text-[12px]",
+                      included ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+                    )}
+                  >
+                    {group.name}
+                    <span className="ms-1.5 font-mono tabular-nums opacity-70">{formatNumber(group.names.length)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Panel>
 
       {loading ? (
