@@ -12,6 +12,7 @@ import {
 } from "@/lib/units";
 
 export const FOLLOWUP_MAPPING_KEY = "payment_followup_mapping";
+export const FOLLOWUP_EXCEPTIONS_KEY = "payment_followup_exceptions";
 export const FOLLOWUP_TABLE = "payment_followup_rows";
 
 export const DEFAULT_FOLLOWUP_MAPPING = {
@@ -549,6 +550,45 @@ export const groupFollowupUnits = (
   return [...owing, ...settled];
 };
 
+export interface FollowupExceptionGroup {
+  id: string;
+  name: string;
+  names: string[];
+}
+
+export const normalizePersonName = (value: string): string =>
+  value
+    .replace(/\u0640/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+export const normalizeFollowupExceptions = (value: unknown): FollowupExceptionGroup[] => {
+  if (!Array.isArray(value)) return [];
+  const groups: FollowupExceptionGroup[] = [];
+  value.forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const row = item as { id?: unknown; name?: unknown; names?: unknown };
+    const id = String(row.id || "").trim();
+    const name = String(row.name || "").trim();
+    if (!id || !name) return;
+    const seen = new Set<string>();
+    const names: string[] = [];
+    const source = Array.isArray(row.names) ? row.names : [];
+    source.forEach((entry) => {
+      const text = String(entry || "").trim().replace(/\s+/g, " ");
+      const key = normalizePersonName(text);
+      if (!text || !key || seen.has(key)) return;
+      seen.add(key);
+      names.push(text);
+    });
+    groups.push({ id, name, names });
+  });
+  return groups;
+};
+
 export interface FollowupFilters {
   search: string;
   dueFrom: string;
@@ -561,6 +601,7 @@ export interface FollowupFilters {
   investors: "with" | "without";
   center: string;
   types: string[];
+  excludedNames: string[];
 }
 
 const inDateRange = (value: string, from: string, to: string): boolean => {
@@ -576,7 +617,9 @@ const phoneHaystack = (phone: string): string => phone.replace(/[^\d]/g, "");
 export const filterFollowupUnits = (units: FollowupUnit[], filters: FollowupFilters): FollowupUnit[] => {
   const needle = filters.search.trim().toLowerCase();
   const needleDigits = needle.replace(/[^\d]/g, "");
+  const excluded = new Set((filters.excludedNames || []).map(normalizePersonName).filter(Boolean));
   return units.flatMap((unit) => {
+    if (excluded.size > 0 && excluded.has(normalizePersonName(unit.customerName))) return [];
     if (filters.investors === "without" && unit.status === "investment") return [];
     if (filters.settlement === "paid" && !unit.paidInFull) return [];
     if (filters.settlement === "remaining" && unit.paidInFull) return [];

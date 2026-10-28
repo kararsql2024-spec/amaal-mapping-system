@@ -69,7 +69,9 @@ import {
 import PaymentAdminPanel from '@/components/payment/PaymentAdminPanel';
 import {
   DEFAULT_FOLLOWUP_MAPPING,
+  FOLLOWUP_EXCEPTIONS_KEY,
   FOLLOWUP_MAPPING_KEY,
+  normalizeFollowupExceptions,
   normalizeFollowupMapping,
   type FollowupMapping,
   type RejectedLine,
@@ -217,6 +219,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [followupLogs, setFollowupLogs] = useState<string[]>([]);
   const [followupImporting, setFollowupImporting] = useState(false);
   const [followupRejected, setFollowupRejected] = useState<RejectedLine[]>([]);
+  const [exceptionDrafts, setExceptionDrafts] = useState<{ id: string; name: string; namesText: string }[]>([]);
+  const [newExceptionName, setNewExceptionName] = useState("");
   const followupLogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (followupLogRef.current) followupLogRef.current.scrollTop = followupLogRef.current.scrollHeight;
@@ -312,6 +316,15 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
           const followupColumns = settingsData.find(s => s.key === FOLLOWUP_MAPPING_KEY);
           if (followupColumns) setFollowupMapping(normalizeFollowupMapping(followupColumns.value));
+
+          const followupExceptions = settingsData.find(s => s.key === FOLLOWUP_EXCEPTIONS_KEY);
+          if (followupExceptions) {
+            setExceptionDrafts(normalizeFollowupExceptions(followupExceptions.value).map((group) => ({
+              id: group.id,
+              name: group.name,
+              namesText: group.names.join("\n"),
+            })));
+          }
           
           const update = settingsData.find(s => s.key === 'last_excel_update');
           if (update) setLastUpdate(update.value);
@@ -1022,6 +1035,42 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "المهمل");
     XLSX.writeFile(book, "صفوف-الدفعات-المهملة.xlsx");
+  };
+
+  const addExceptionGroup = () => {
+    const name = newExceptionName.trim();
+    if (!name) return;
+    setExceptionDrafts((current) => [
+      ...current,
+      { id: crypto.randomUUID(), name, namesText: "" },
+    ]);
+    setNewExceptionName("");
+  };
+
+  const handleSaveExceptions = async () => {
+    const value = normalizeFollowupExceptions(exceptionDrafts.map((group) => ({
+      id: group.id,
+      name: group.name,
+      names: group.namesText.split(/\n/),
+    })));
+    setIsSavingSettings(true);
+    try {
+      const { error } = await supabase.from("settings").upsert({
+        key: FOLLOWUP_EXCEPTIONS_KEY,
+        value,
+      });
+      if (error) throw error;
+      setExceptionDrafts(value.map((group) => ({
+        id: group.id,
+        name: group.name,
+        namesText: group.names.join("\n"),
+      })));
+      showSuccess("تم حفظ الاستثناءات");
+    } catch (error) {
+      showError("فشل في حفظ الاستثناءات");
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const handleSaveFollowupMapping = async () => {
@@ -2931,6 +2980,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
             )}
 
             {showFollowupMapping && (
+              <div className="space-y-6">
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 <div className="space-y-6 lg:col-span-2">
                   <Panel icon={<FileSpreadsheet size={14} />} title="تحديث دفعات مشروع" bodyClassName="space-y-4 p-5">
@@ -3010,6 +3060,62 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                     {isSavingSettings ? "جاري الحفظ" : "حفظ الأعمدة"}
                   </Button>
                 </Panel>
+              </div>
+              <Panel
+                icon={<Tags size={14} />}
+                title="الاستثناءات"
+                description="مجموعات أسماء، مثل موظفي الشركة. في متابعة الدفعات تظهر محددة، وإلغاء تحديد مجموعة يخرج أسماءها من القائمة ومن المجموع. الاسم يطابق اسم الزبون."
+                bodyClassName="space-y-4 p-5"
+              >
+                <div className="flex gap-2">
+                  <Input
+                    value={newExceptionName}
+                    onChange={(event) => setNewExceptionName(event.target.value)}
+                    placeholder="اسم المجموعة، مثل موظفي الشركة"
+                    onKeyDown={(event) => { if (event.key === "Enter") addExceptionGroup(); }}
+                  />
+                  <Button variant="outline" onClick={addExceptionGroup} className="shrink-0 gap-1.5">
+                    <Plus size={13} /> إنشاء
+                  </Button>
+                </div>
+                {exceptionDrafts.length === 0 && (
+                  <p className="text-[12px] text-fg-faint">لا توجد مجموعات بعد.</p>
+                )}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {exceptionDrafts.map((group) => {
+                    const count = group.namesText.split(/\n/).map((line) => line.trim()).filter(Boolean).length;
+                    return (
+                      <div key={group.id} className="border border-line">
+                        <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+                          <Input
+                            value={group.name}
+                            onChange={(event) => setExceptionDrafts((current) => current.map((item) => item.id === group.id ? { ...item, name: event.target.value } : item))}
+                            placeholder="اسم المجموعة"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setExceptionDrafts((current) => current.filter((item) => item.id !== group.id))}
+                            className="size-8 shrink-0 text-fg-faint hover:text-status-sold"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                        <Textarea
+                          value={group.namesText}
+                          onChange={(event) => setExceptionDrafts((current) => current.map((item) => item.id === group.id ? { ...item, namesText: event.target.value } : item))}
+                          placeholder={"اسم في كل سطر"}
+                          className="min-h-36 rounded-none border-0 text-[13px]"
+                        />
+                        <p className="border-t border-line px-3 py-2 text-[11px] text-fg-muted">{count === 0 ? "لا أسماء بعد" : `${count} ${count === 1 ? "اسم" : "أسماء"}`}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <Button onClick={handleSaveExceptions} disabled={isSavingSettings}>
+                  {isSavingSettings ? "جاري الحفظ" : "حفظ الاستثناءات"}
+                </Button>
+              </Panel>
               </div>
             )}
 

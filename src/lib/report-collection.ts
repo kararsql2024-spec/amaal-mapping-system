@@ -21,6 +21,9 @@ export interface ReportUnit {
   towerLabel: string;
   typeKey: string;
   typeLabel: string;
+  label: string;
+  customerName: string;
+  phone: string;
   status: string;
   systemPrice: number;
   systemCurrency: CurrencyType;
@@ -167,6 +170,9 @@ export const buildReportUnits = (
         towerLabel,
         typeKey: entry?.typeKey || typeKey,
         typeLabel: entry?.typeLabel || typeLabel,
+        label: follow?.unitLabel || visibleLabel,
+        customerName: follow?.customerName || entry?.name || "",
+        phone: follow?.phone || entry?.phone || "",
         status,
         systemPrice: parsePrice(data.price),
         systemCurrency: getCurrencyType(data.currency),
@@ -251,7 +257,8 @@ export const summarizeMoney = (units: ReportUnit[], filters: ReportFilters): Hea
   units.forEach((unit) => {
     if (unit.frozenUncounted || !matchStructure(unit, filters)) return;
     const priced = unit.systemPrice > 0;
-    if (priced && currencyOn(filters.currency, unit.systemCurrency)) {
+    const saleScoped = Boolean(filters.saleFrom || filters.saleTo);
+    if (!saleScoped && priced && currencyOn(filters.currency, unit.systemCurrency)) {
       const expected = unit.status === "reserved" || unit.status === "pending";
       if (expected) {
         if (unit.systemCurrency === "IQD") money.expectedIQD += unit.systemPrice;
@@ -260,6 +267,7 @@ export const summarizeMoney = (units: ReportUnit[], filters: ReportFilters): Hea
     }
     if (!soldLike(unit.status)) return;
     if (!inDayRange(unit.saleDate, filters.saleFrom, filters.saleTo)) return;
+    if (filters.settlement !== "all" && !matchSettlement(unit, filters)) return;
     if (currencyOn(filters.currency, unit.systemCurrency)) {
       if (priced) {
         if (unit.systemCurrency === "IQD") money.contractIQD += unit.systemPrice;
@@ -346,6 +354,242 @@ export const collectionRows = (
   return Array.from(rows.values()).sort((a, b) => a.name.localeCompare(b.name, "ar", { numeric: true }));
 };
 
+/** الواصل ÷ (الواصل + المتبقي). عقد الملف فقط، ولا يدخل سعر النظام. */
+export const collectionRate = (received: number, remaining: number): number | null => {
+  const base = received + remaining;
+  if (!(base > 0)) return null;
+  return (received / base) * 100;
+};
+
+/** وحدة داخلة في عقد الملف: مباعة أو استثمار، ومعروفة في ملف الدفعات. */
+export const matchBook = (unit: ReportUnit, filters: ReportFilters): boolean => {
+  if (unit.frozenUncounted || !matchStructure(unit, filters)) return false;
+  if (!soldLike(unit.status)) return false;
+  if (!inDayRange(unit.saleDate, filters.saleFrom, filters.saleTo)) return false;
+  if (!matchSettlement(unit, filters)) return false;
+  return currencyOn(filters.currency, unit.fileCurrency);
+};
+
+const emptyCollection = (name: string): CollectionRow => ({
+  name,
+  fileIQD: 0,
+  receivedIQD: 0,
+  remainingIQD: 0,
+  fileUSD: 0,
+  receivedUSD: 0,
+  remainingUSD: 0,
+  paid: 0,
+  owing: 0,
+});
+
+export const centerRows = (units: ReportUnit[], filters: ReportFilters): CollectionRow[] => {
+  const rows = new Map<string, CollectionRow>();
+  units.forEach((unit) => {
+    if (!matchBook(unit, filters)) return;
+    const name = unit.centerName || "غير محدد";
+    const row = rows.get(name) || emptyCollection(name);
+    addCollection(row, unit);
+    rows.set(name, row);
+  });
+  return Array.from(rows.values());
+};
+
+export const sortCenterRows = (
+  rows: CollectionRow[],
+  mode: "remaining" | "rate",
+  currency: ReportFilters["currency"],
+): CollectionRow[] => {
+  const rateOf = (row: CollectionRow): number | null => {
+    const rates: number[] = [];
+    if (currency !== "USD") {
+      const rate = collectionRate(row.receivedIQD, row.remainingIQD);
+      if (rate != null) rates.push(rate);
+    }
+    if (currency !== "IQD") {
+      const rate = collectionRate(row.receivedUSD, row.remainingUSD);
+      if (rate != null) rates.push(rate);
+    }
+    if (rates.length === 0) return null;
+    return Math.min(...rates);
+  };
+  return rows.slice().sort((a, b) => {
+    if (mode === "rate") {
+      const left = rateOf(a);
+      const right = rateOf(b);
+      if (left == null && right == null) return a.name.localeCompare(b.name, "ar");
+      if (left == null) return 1;
+      if (right == null) return -1;
+      if (left !== right) return left - right;
+      return a.name.localeCompare(b.name, "ar");
+    }
+    const primary = (row: CollectionRow) => (currency === "USD" ? row.remainingUSD : row.remainingIQD);
+    const secondary = (row: CollectionRow) => (currency === "IQD" ? 0 : row.remainingUSD);
+    if (primary(a) !== primary(b)) return primary(b) - primary(a);
+    if (secondary(a) !== secondary(b)) return secondary(b) - secondary(a);
+    return a.name.localeCompare(b.name, "ar");
+  });
+};
+
+export interface CohortRow extends CollectionRow {
+  sort: string;
+  count: number;
+}
+
+export const saleCohortRows = (units: ReportUnit[], filters: ReportFilters): CohortRow[] => {
+  const rows = new Map<string, CohortRow>();
+  units.forEach((unit) => {
+    if (!matchBook(unit, filters)) return;
+    const year = /^(\d{4})/.exec(unit.saleDate)?.[1] || "";
+    const name = year || "بلا تاريخ";
+    const sort = year || "9999";
+    const row = rows.get(name) || { ...emptyCollection(name), sort, count: 0 };
+    addCollection(row, unit);
+    row.count += 1;
+    rows.set(name, row);
+  });
+  return Array.from(rows.values()).sort((a, b) => a.sort.localeCompare(b.sort));
+};
+
+export interface OverdueHit {
+  key: string;
+  label: string;
+  customerName: string;
+  phone: string;
+  amount: number;
+  ageLabel: string;
+}
+
+const installmentVisible = (
+  item: FollowupInstallment,
+  dueFrom: string,
+  dueTo: string,
+  dueState: "all" | "overdue" | "today" | "upcoming",
+): boolean => {
+  if (!inDayRange(item.dueDate, dueFrom, dueTo)) return false;
+  if (dueState !== "all" && item.whenKind !== dueState) return false;
+  return true;
+};
+
+export const largestOverdue = (
+  units: ReportUnit[],
+  filters: ReportFilters,
+  dueFrom: string,
+  dueTo: string,
+  dueState: "all" | "overdue" | "today" | "upcoming",
+): { iqd: OverdueHit[]; usd: OverdueHit[] } => {
+  const hits: { currency: "IQD" | "USD"; hit: OverdueHit & { age: number } }[] = [];
+  units.forEach((unit) => {
+    if (!matchBook(unit, filters)) return;
+    let amount = 0;
+    let age = 0;
+    let ageLabel = "";
+    unit.installments.forEach((item) => {
+      if (!installmentVisible(item, dueFrom, dueTo, dueState)) return;
+      if (item.whenKind !== "overdue" || item.days == null) return;
+      const days = -item.days;
+      amount += item.remaining;
+      if (days >= age) {
+        age = days;
+        ageLabel = item.whenLabel;
+      }
+    });
+    if (!(amount > 0)) return;
+    hits.push({
+      currency: unit.fileCurrency,
+      hit: {
+        key: `${unit.projectId}::${unit.key}`,
+        label: unit.label,
+        customerName: unit.customerName,
+        phone: unit.phone,
+        amount,
+        ageLabel,
+        age,
+      },
+    });
+  });
+  const take = (currency: "IQD" | "USD") => hits
+    .filter((item) => item.currency === currency)
+    .sort((a, b) => b.hit.amount - a.hit.amount || b.hit.age - a.hit.age)
+    .slice(0, 20)
+    .map((item) => item.hit);
+  return { iqd: take("IQD"), usd: take("USD") };
+};
+
+export interface ObligationUnit {
+  key: string;
+  label: string;
+  customerName: string;
+  phone: string;
+  amount: number;
+  currency: "IQD" | "USD";
+}
+
+export interface ObligationCross {
+  taboIQD: number;
+  taboUSD: number;
+  taboCountIQD: number;
+  taboCountUSD: number;
+  handoverIQD: number;
+  handoverUSD: number;
+  handoverCountIQD: number;
+  handoverCountUSD: number;
+  tabo: ObligationUnit[];
+  handover: ObligationUnit[];
+}
+
+export const obligationCross = (units: ReportUnit[], filters: ReportFilters): ObligationCross => {
+  const cross: ObligationCross = {
+    taboIQD: 0,
+    taboUSD: 0,
+    taboCountIQD: 0,
+    taboCountUSD: 0,
+    handoverIQD: 0,
+    handoverUSD: 0,
+    handoverCountIQD: 0,
+    handoverCountUSD: 0,
+    tabo: [],
+    handover: [],
+  };
+  const pushUnit = (list: ObligationUnit[], unit: ReportUnit) => {
+    list.push({
+      key: `${unit.projectId}::${unit.key}`,
+      label: unit.label,
+      customerName: unit.customerName,
+      phone: unit.phone,
+      amount: unit.remaining,
+      currency: unit.fileCurrency,
+    });
+  };
+  units.forEach((unit) => {
+    if (!matchBook(unit, filters) || !(unit.remaining > 0)) return;
+    const iqd = unit.fileCurrency === "IQD";
+    if (unit.tabo === "مستلم") {
+      pushUnit(cross.tabo, unit);
+      if (iqd) {
+        cross.taboIQD += unit.remaining;
+        cross.taboCountIQD += 1;
+      } else {
+        cross.taboUSD += unit.remaining;
+        cross.taboCountUSD += 1;
+      }
+    }
+    if (unit.handover) {
+      pushUnit(cross.handover, unit);
+      if (iqd) {
+        cross.handoverIQD += unit.remaining;
+        cross.handoverCountIQD += 1;
+      } else {
+        cross.handoverUSD += unit.remaining;
+        cross.handoverCountUSD += 1;
+      }
+    }
+  });
+  const byAmount = (a: ObligationUnit, b: ObligationUnit) => b.amount - a.amount;
+  cross.tabo.sort(byAmount);
+  cross.handover.sort(byAmount);
+  return cross;
+};
+
 export interface DueMonth {
   key: string;
   name: string;
@@ -360,6 +604,16 @@ export interface DueSummary {
   overdueUSD: number;
   todayUSD: number;
   upcomingUSD: number;
+  age30IQD: number;
+  age60IQD: number;
+  age90IQD: number;
+  ageOverIQD: number;
+  age30USD: number;
+  age60USD: number;
+  age90USD: number;
+  ageOverUSD: number;
+  soonIQD: number;
+  soonUSD: number;
   count: number;
   months: DueMonth[];
 }
@@ -378,6 +632,16 @@ export const summarizeDues = (
     overdueUSD: 0,
     todayUSD: 0,
     upcomingUSD: 0,
+    age30IQD: 0,
+    age60IQD: 0,
+    age90IQD: 0,
+    ageOverIQD: 0,
+    age30USD: 0,
+    age60USD: 0,
+    age90USD: 0,
+    ageOverUSD: 0,
+    soonIQD: 0,
+    soonUSD: 0,
     count: 0,
     months: [],
   };
@@ -396,12 +660,35 @@ export const summarizeDues = (
       if (item.whenKind === "overdue") {
         if (iqd) summary.overdueIQD += item.remaining;
         else summary.overdueUSD += item.remaining;
+        if (item.days != null) {
+          const age = -item.days;
+          if (age <= 30) {
+            if (iqd) summary.age30IQD += item.remaining;
+            else summary.age30USD += item.remaining;
+          } else if (age <= 60) {
+            if (iqd) summary.age60IQD += item.remaining;
+            else summary.age60USD += item.remaining;
+          } else if (age <= 90) {
+            if (iqd) summary.age90IQD += item.remaining;
+            else summary.age90USD += item.remaining;
+          } else {
+            if (iqd) summary.ageOverIQD += item.remaining;
+            else summary.ageOverUSD += item.remaining;
+          }
+        }
       } else if (item.whenKind === "today") {
         if (iqd) summary.todayIQD += item.remaining;
         else summary.todayUSD += item.remaining;
       } else if (item.whenKind === "upcoming") {
         if (iqd) summary.upcomingIQD += item.remaining;
         else summary.upcomingUSD += item.remaining;
+      }
+      const withinMonth = item.whenKind === "overdue"
+        || item.whenKind === "today"
+        || (item.whenKind === "upcoming" && item.days != null && item.days <= 30);
+      if (withinMonth) {
+        if (iqd) summary.soonIQD += item.remaining;
+        else summary.soonUSD += item.remaining;
       }
       const key = /^(\d{4}-\d{2})/.exec(item.dueDate)?.[1] || "";
       if (!key) return;
