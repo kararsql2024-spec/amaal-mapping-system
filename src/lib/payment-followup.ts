@@ -96,6 +96,8 @@ export interface FollowupInstallment {
 }
 
 export interface FollowupUnit {
+  projectId: string;
+  projectName: string;
   unitKey: string;
   unitLabel: string;
   customerName: string;
@@ -483,6 +485,8 @@ export const groupFollowupUnits = (
     const knownDays = installments.map((item) => item.days).filter((days): days is number => days != null);
 
     return {
+      projectId,
+      projectName,
       unitKey: first.unit_key,
       unitLabel: entry?.label || first.unit_label,
       customerName: first.customer_name || "",
@@ -525,6 +529,8 @@ export const groupFollowupUnits = (
     if (seen.has(entry.unitKey) || seen.has(cleanUnitLabel(entry.label))) return;
     const salePrice = parsePrice(entry.price);
     settled.push({
+      projectId,
+      projectName,
       unitKey: entry.unitKey,
       unitLabel: entry.label,
       customerName: entry.name || "",
@@ -602,6 +608,8 @@ export interface FollowupFilters {
   center: string;
   types: string[];
   excludedNames: string[];
+  /** عند وجودها تُعرض هذه الأسماء فقط. المصفوفة الفارغة لا تُظهر أحداً. */
+  includedNames: string[] | null;
 }
 
 const inDateRange = (value: string, from: string, to: string): boolean => {
@@ -618,8 +626,13 @@ export const filterFollowupUnits = (units: FollowupUnit[], filters: FollowupFilt
   const needle = filters.search.trim().toLowerCase();
   const needleDigits = needle.replace(/[^\d]/g, "");
   const excluded = new Set((filters.excludedNames || []).map(normalizePersonName).filter(Boolean));
+  const included = filters.includedNames
+    ? new Set(filters.includedNames.map(normalizePersonName).filter(Boolean))
+    : null;
   return units.flatMap((unit) => {
-    if (excluded.size > 0 && excluded.has(normalizePersonName(unit.customerName))) return [];
+    const person = normalizePersonName(unit.customerName);
+    if (included && !included.has(person)) return [];
+    if (excluded.size > 0 && excluded.has(person)) return [];
     if (filters.investors === "without" && unit.status === "investment") return [];
     if (filters.settlement === "paid" && !unit.paidInFull) return [];
     if (filters.settlement === "remaining" && unit.paidInFull) return [];
