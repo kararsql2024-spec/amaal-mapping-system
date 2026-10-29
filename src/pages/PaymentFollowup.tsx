@@ -12,6 +12,7 @@ import { fetchRemoteSettings, loadSettings, resolveSettingsSources } from "@/inc
 import type { IncentiveSettings } from "@/incentives/types";
 import { AppShell, EmptyState, Eyebrow, LoadingBlock, Panel } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -46,15 +47,53 @@ import {
   type FollowupNote,
 } from "@/lib/payment-followup-import";
 
+const EXPORT_FIELDS = [
+  { id: "project", label: "المشروع", sheets: "both" },
+  { id: "unit", label: "رقم الوحدة", sheets: "both" },
+  { id: "name", label: "اسم الزبون", sheets: "both" },
+  { id: "phone", label: "الهاتف", sheets: "both" },
+  { id: "type", label: "النوع", sheets: "both" },
+  { id: "center", label: "المركز التسويقي", sheets: "both" },
+  { id: "currency", label: "العملة", sheets: "both" },
+  { id: "price", label: "سعر الوحدة", sheets: "both" },
+  { id: "saleDate", label: "تاريخ البيع", sheets: "both" },
+  { id: "received", label: "الواصل الكلي", sheets: "both" },
+  { id: "remaining", label: "مجموع المتبقي", sheets: "both" },
+  { id: "status", label: "الحالة", sheets: "both" },
+  { id: "due", label: "تاريخ الدفعة", sheets: "lines" },
+  { id: "amount", label: "مبلغ الدفعة", sheets: "lines" },
+  { id: "lineReceived", label: "الواصل من الدفعة", sheets: "lines" },
+  { id: "lineRemaining", label: "المتبقي من الدفعة", sheets: "lines" },
+  { id: "duration", label: "المدة", sheets: "lines" },
+  { id: "warning", label: "تنبيه", sheets: "lines" },
+  { id: "count", label: "عدد الدفعات الظاهرة", sheets: "units" },
+] as const;
+
+type ExportFieldId = (typeof EXPORT_FIELDS)[number]["id"];
+
+const EXPORT_FIELD_KEY = "amaal-followup-export-fields-v1";
+
+const loadExportFields = (): ExportFieldId[] => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXPORT_FIELD_KEY) || "null");
+    if (!Array.isArray(raw)) return EXPORT_FIELDS.map((field) => field.id);
+    const known = new Set(EXPORT_FIELDS.map((field) => field.id));
+    return raw.filter((id): id is ExportFieldId => known.has(id));
+  } catch {
+    return EXPORT_FIELDS.map((field) => field.id);
+  }
+};
+
+const noteKey = (projectId: string, unitKey: string) => `${projectId}::${unitKey}`;
+
 const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [permitted, setPermitted] = useState(false);
   const [allowedProjectIds, setAllowedProjectIds] = useState<string[] | null>(null);
-  const [projectId, setProjectId] = useState("");
+  const [projectIds, setProjectIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [tableMissing, setTableMissing] = useState(false);
-  const [rows, setRows] = useState<FollowupRecord[]>([]);
-  const [catalog, setCatalog] = useState<Map<string, CatalogEntry>>(new Map());
+  const [packs, setPacks] = useState<{ projectId: string; projectName: string; rows: FollowupRecord[]; catalog: Map<string, CatalogEntry> }[]>([]);
   const [settings, setSettings] = useState<IncentiveSettings | null>(null);
   const [marketingCenters, setMarketingCenters] = useState<{ id: string; name: string }[]>([]);
   const [authorCenter, setAuthorCenter] = useState("");
@@ -72,10 +111,15 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     center: "all",
     types: [],
     excludedNames: [],
+    includedNames: null,
   });
   const [exceptionGroups, setExceptionGroups] = useState<FollowupExceptionGroup[]>([]);
   const [excludedGroupIds, setExcludedGroupIds] = useState<string[]>([]);
+  const [exceptionOnly, setExceptionOnly] = useState(false);
+  const [onlyGroupIds, setOnlyGroupIds] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<"overdue" | "unit" | "name">("overdue");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFields, setExportFields] = useState<ExportFieldId[]>(() => loadExportFields());
 
   const visibleProjects = useMemo(() => {
     if (!allowedProjectIds || allowedProjectIds.length === 0) return projects;
@@ -119,10 +163,12 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     };
   }, []);
 
+  const selectedKey = [...projectIds].sort().join("|");
+
   useEffect(() => {
-    if (!projectId) {
-      setRows([]);
-      setCatalog(new Map());
+    const ids = selectedKey ? selectedKey.split("|") : [];
+    if (ids.length === 0) {
+      setPacks([]);
       setNotesByUnit({});
       setTableMissing(false);
       return;
@@ -131,25 +177,36 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     const load = async () => {
       setLoading(true);
       try {
-        const [nextCatalog, followup, noteRows] = await Promise.all([
-          loadFollowupCatalog(projectId),
-          fetchFollowupRows(projectId),
-          fetchFollowupNotes(projectId).catch(() => [] as FollowupNote[]),
-        ]);
+        const loaded = await Promise.all(ids.map(async (id) => {
+          const projectName = projects.find((project) => project.id === id)?.name || "";
+          const [catalog, rows, noteRows] = await Promise.all([
+            loadFollowupCatalog(id),
+            fetchFollowupRows(id),
+            fetchFollowupNotes(id).catch(() => [] as FollowupNote[]),
+          ]);
+          return { id, projectName, catalog, rows, noteRows };
+        }));
         if (cancelled) return;
-        setCatalog(nextCatalog);
-        setRows(followup);
+        setPacks(loaded.map((pack) => ({
+          projectId: pack.id,
+          projectName: pack.projectName,
+          rows: pack.rows,
+          catalog: pack.catalog,
+        })));
         const grouped: Record<string, FollowupNote[]> = {};
-        noteRows.forEach((note) => {
-          const list = grouped[note.unit_key] || [];
-          list.push(note);
-          grouped[note.unit_key] = list;
+        loaded.forEach((pack) => {
+          pack.noteRows.forEach((note) => {
+            const key = noteKey(pack.id, note.unit_key);
+            const list = grouped[key] || [];
+            list.push(note);
+            grouped[key] = list;
+          });
         });
         setNotesByUnit(grouped);
         setTableMissing(false);
       } catch (error) {
         if (!cancelled) {
-          setRows([]);
+          setPacks([]);
           if (isMissingFollowupTable(error)) setTableMissing(true);
           else showError("تعذر تحميل دفعات المشروع");
         }
@@ -161,27 +218,34 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [selectedKey, projects]);
 
-  const projectName = visibleProjects.find((project) => project.id === projectId)?.name || "";
   const units = useMemo(
-    () => groupFollowupUnits(rows, catalog, projectId, projectName, settings, marketingCenters),
-    [rows, catalog, projectId, projectName, settings, marketingCenters],
+    () => packs.flatMap((pack) => groupFollowupUnits(pack.rows, pack.catalog, pack.projectId, pack.projectName, settings, marketingCenters)),
+    [packs, settings, marketingCenters],
   );
-  const excludedNames = useMemo(() => {
-    const names = new Set<string>();
+  const namesInGroups = (ids: string[]) => {
+    const names: string[] = [];
     exceptionGroups.forEach((group) => {
-      if (!excludedGroupIds.includes(group.id)) return;
+      if (!ids.includes(group.id)) return;
       group.names.forEach((name) => {
         const key = normalizePersonName(name);
-        if (key) names.add(key);
+        if (key) names.push(name);
       });
     });
-    return Array.from(names);
-  }, [exceptionGroups, excludedGroupIds]);
+    return names;
+  };
+  const excludedNames = useMemo(
+    () => (exceptionOnly ? [] : namesInGroups(excludedGroupIds)),
+    [exceptionOnly, excludedGroupIds, exceptionGroups],
+  );
+  const includedNames = useMemo(
+    () => (exceptionOnly ? namesInGroups(onlyGroupIds) : null),
+    [exceptionOnly, onlyGroupIds, exceptionGroups],
+  );
   const filtered = useMemo(
-    () => sortFollowupUnits(filterFollowupUnits(units, { ...filters, excludedNames }), sortMode),
-    [units, filters, excludedNames, sortMode],
+    () => sortFollowupUnits(filterFollowupUnits(units, { ...filters, excludedNames, includedNames }), sortMode),
+    [units, filters, excludedNames, includedNames, sortMode],
   );
   const typeOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -208,14 +272,15 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     return { units: filtered.length, installmentCount, iqd, usd };
   }, [filtered]);
 
-  const addNote = async (unitKey: string, body: string) => {
+  const addNote = async (projectId: string, unitKey: string, body: string) => {
     const text = body.trim();
     if (!projectId || !text) return;
     try {
       const note = await addFollowupNote(projectId, unitKey, text, authorCenter || "قسم غير معروف");
+      const key = noteKey(projectId, unitKey);
       setNotesByUnit((current) => ({
         ...current,
-        [unitKey]: [note, ...(current[unitKey] || [])],
+        [key]: [note, ...(current[key] || [])],
       }));
     } catch (error) {
       if (isMissingFollowupTable(error)) {
@@ -227,23 +292,36 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     }
   };
 
+  const fieldOn = (id: ExportFieldId) => exportFields.includes(id);
+  const keepFields = (row: Record<string, string | number>, sheet: "lines" | "units") => {
+    const next: Record<string, string | number> = {};
+    EXPORT_FIELDS.forEach((field) => {
+      if (!fieldOn(field.id) || !(field.sheets === "both" || field.sheets === sheet)) return;
+      if (field.label in row) next[field.label] = row[field.label];
+    });
+    return next;
+  };
   const exportExcel = async () => {
+    if (exportFields.length === 0) return;
+    localStorage.setItem(EXPORT_FIELD_KEY, JSON.stringify(exportFields));
     const XLSX = await import("xlsx");
+    const base = (unit: FollowupUnit): Record<string, string | number> => ({
+      "المشروع": unit.projectName,
+      "رقم الوحدة": unit.unitLabel,
+      "اسم الزبون": unit.customerName,
+      "الهاتف": unit.phone,
+      "النوع": unit.typeLabel,
+      "المركز التسويقي": unit.centerName,
+      "العملة": unit.currency === "USD" ? "دولار" : "دينار",
+      "سعر الوحدة": unit.salePrice,
+      "تاريخ البيع": unit.saleDate,
+      "الواصل الكلي": unit.totalReceived,
+      "مجموع المتبقي": unit.remaining,
+      "الحالة": unit.paidInFull ? "سدد كامل المبلغ" : "متبقي",
+    });
     const installmentRows = filtered.flatMap((unit) => {
-      const head: Record<string, string | number> = {
-        "رقم الوحدة": unit.unitLabel,
-        "اسم الزبون": unit.customerName,
-        "الهاتف": unit.phone,
-        "النوع": unit.typeLabel,
-        "المركز التسويقي": unit.centerName,
-        "العملة": unit.currency === "USD" ? "دولار" : "دينار",
-        "سعر الوحدة": unit.salePrice,
-        "تاريخ البيع": unit.saleDate,
-        "الواصل الكلي": unit.totalReceived,
-        "مجموع المتبقي": unit.remaining,
-        "الحالة": unit.paidInFull ? "سدد كامل المبلغ" : "متبقي",
-      };
-      const line = (extra: Record<string, string | number>) => ({ ...head, ...extra });
+      const head = base(unit);
+      const line = (extra: Record<string, string | number>) => keepFields({ ...head, ...extra }, "lines");
       if (unit.paidInFull) {
         return [line({
           "تاريخ الدفعة": "",
@@ -263,25 +341,44 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
         "تنبيه": unit.warnings.join(" · "),
       }));
     });
-    const unitRows = filtered.map((unit) => ({
-      "رقم الوحدة": unit.unitLabel,
-      "اسم الزبون": unit.customerName,
-      "الهاتف": unit.phone,
-      "النوع": unit.typeLabel,
-      "المركز التسويقي": unit.centerName,
-      "العملة": unit.currency === "USD" ? "دولار" : "دينار",
-      "سعر الوحدة": unit.salePrice,
-      "تاريخ البيع": unit.saleDate,
-      "الواصل الكلي": unit.totalReceived,
-      "مجموع المتبقي": unit.remaining,
-      "الحالة": unit.paidInFull ? "سدد كامل المبلغ" : "متبقي",
+    const unitRows = filtered.map((unit) => keepFields({
+      ...base(unit),
       "عدد الدفعات الظاهرة": unit.installments.length,
-    }));
+    }, "units"));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(installmentRows), "الدفعات");
     XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(unitRows), "الوحدات");
     const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(book, `متابعة-الدفعات-${projectName || "مشروع"}-${stamp}.xlsx`);
+    const scope = projectIds.length === 1
+      ? (packs[0]?.projectName || "مشروع")
+      : visibleProjects.length > 0 && projectIds.length === visibleProjects.length
+        ? "كافة-المشاريع"
+        : "عدة-مشاريع";
+    XLSX.writeFile(book, `متابعة-الدفعات-${scope}-${stamp}.xlsx`);
+    setExportOpen(false);
+  };
+  const showAllCustomers = !exceptionOnly && excludedGroupIds.length === 0;
+  const pressExceptionAll = () => {
+    if (showAllCustomers) {
+      setExceptionOnly(true);
+      setOnlyGroupIds([]);
+      setExcludedGroupIds([]);
+      return;
+    }
+    setExceptionOnly(false);
+    setOnlyGroupIds([]);
+    setExcludedGroupIds([]);
+  };
+  const pressExceptionGroup = (id: string) => {
+    if (exceptionOnly) {
+      setOnlyGroupIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+      return;
+    }
+    setExcludedGroupIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  };
+  const allProjectsOn = visibleProjects.length > 0 && visibleProjects.every((project) => projectIds.includes(project.id));
+  const pressProjectsAll = () => {
+    setProjectIds(allProjectsOn ? [] : visibleProjects.map((project) => project.id));
   };
 
   if (allowed === null) {
@@ -314,7 +411,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
       }
       actions={
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={!projectId || filtered.length === 0} onClick={exportExcel} className="gap-1.5">
+          <Button variant="outline" size="sm" disabled={projectIds.length === 0 || filtered.length === 0} onClick={() => setExportOpen(true)} className="gap-1.5">
             <Download size={13} /> تصدير
           </Button>
         </div>
@@ -328,17 +425,39 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
         </p>
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-[240px_1fr]">
-        <div className="space-y-1.5">
+      <div className="mb-6 space-y-4">
+        <div className="space-y-2">
           <Label>المشروع</Label>
-          <Select value={projectId || undefined} onValueChange={setProjectId}>
-            <SelectTrigger><SelectValue placeholder="اختر المشروع" /></SelectTrigger>
-            <SelectContent>
-              {visibleProjects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={pressProjectsAll}
+              className={cn(
+                "border px-2.5 py-1 text-[12px]",
+                allProjectsOn ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+              )}
+            >
+              الكل
+            </button>
+            {visibleProjects.map((project) => {
+              const active = projectIds.includes(project.id);
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => setProjectIds((current) => (
+                    active ? current.filter((id) => id !== project.id) : [...current, project.id]
+                  ))}
+                  className={cn(
+                    "border px-2.5 py-1 text-[12px]",
+                    active ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+                  )}
+                >
+                  {project.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
           <SummaryCell label="الوحدات" value={formatNumber(summary.units)} />
@@ -475,21 +594,33 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Label>الاستثناءات</Label>
-              <span className="text-[11px] text-fg-muted">إلغاء التحديد يخرج أسماء المجموعة من القائمة ومن المجموع</span>
+              <span className="text-[11px] text-fg-muted">
+                {exceptionOnly
+                  ? "المجموعات المحددة هي الظاهرة فقط. الكل يعيد الجميع."
+                  : "الكل مفعّل: الضغط على مجموعة يُخفيها. اضغط الكل لإخفاء القائمة ثم اختر ما تريد إظهاره."}
+              </span>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={pressExceptionAll}
+                className={cn(
+                  "border px-2.5 py-1 text-[12px]",
+                  showAllCustomers ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+                )}
+              >
+                الكل
+              </button>
               {exceptionGroups.map((group) => {
-                const included = !excludedGroupIds.includes(group.id);
+                const active = exceptionOnly ? onlyGroupIds.includes(group.id) : !excludedGroupIds.includes(group.id);
                 return (
                   <button
                     key={group.id}
                     type="button"
-                    onClick={() => setExcludedGroupIds((current) => (
-                      included ? [...current, group.id] : current.filter((id) => id !== group.id)
-                    ))}
+                    onClick={() => pressExceptionGroup(group.id)}
                     className={cn(
                       "border px-2.5 py-1 text-[12px]",
-                      included ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+                      active ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
                     )}
                   >
                     {group.name}
@@ -504,23 +635,63 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
 
       {loading ? (
         <LoadingBlock label="جاري تحميل الدفعات" />
-      ) : !projectId ? (
-        <EmptyState title="اختر المشروع" description="ثم حدّث دفعاته من ملف الإكسل الخاص به." />
+      ) : projectIds.length === 0 ? (
+        <EmptyState title="اختر المشروع" description="يمكن تحديد أكثر من مشروع، أو الكل." />
       ) : filtered.length === 0 ? (
         <EmptyState title="لا توجد وحدات مطابقة" description="حدّث الملف من لوحة الإدارة، أو وسّع التصفية." />
       ) : (
         <div className="space-y-5">
           {filtered.map((unit) => (
             <UnitBox
-              key={unit.unitKey}
+              key={noteKey(unit.projectId, unit.unitKey)}
               unit={unit}
-              full={units.find((item) => item.unitKey === unit.unitKey) || unit}
-              notes={notesByUnit[unit.unitKey] || []}
-              onAdd={(body) => addNote(unit.unitKey, body)}
+              showProject={projectIds.length > 1}
+              full={units.find((item) => item.projectId === unit.projectId && item.unitKey === unit.unitKey) || unit}
+              notes={notesByUnit[noteKey(unit.projectId, unit.unitKey)] || []}
+              onAdd={(body) => addNote(unit.projectId, unit.unitKey, body)}
             />
           ))}
         </div>
       )}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>حقول التصدير</DialogTitle>
+          </DialogHeader>
+          <p className="text-[12px] leading-relaxed text-fg-muted">ألغِ تحديد أي حقل لا تريده في ملف الإكسل. الاختيار يُحفظ للمرة القادمة.</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setExportFields(EXPORT_FIELDS.map((field) => field.id))}
+              className="border border-line px-2.5 py-1 text-[12px] text-fg-secondary"
+            >
+              الكل
+            </button>
+            {EXPORT_FIELDS.map((field) => {
+              const active = exportFields.includes(field.id);
+              return (
+                <button
+                  key={field.id}
+                  type="button"
+                  onClick={() => setExportFields((current) => (
+                    active ? current.filter((id) => id !== field.id) : [...current, field.id]
+                  ))}
+                  className={cn(
+                    "border px-2.5 py-1 text-[12px]",
+                    active ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+                  )}
+                >
+                  {field.label}
+                </button>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportOpen(false)}>إلغاء</Button>
+            <Button onClick={exportExcel} disabled={exportFields.length === 0}>تنزيل</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 };
@@ -529,11 +700,13 @@ const UnitBox = ({
   unit,
   full,
   notes,
+  showProject,
   onAdd,
 }: {
   unit: FollowupUnit;
   full: FollowupUnit;
   notes: FollowupNote[];
+  showProject: boolean;
   onAdd: (body: string) => Promise<void>;
 }) => {
   const [draft, setDraft] = useState("");
@@ -576,6 +749,7 @@ const UnitBox = ({
           <Identity label="الهاتف" value={unit.phone || "بدون هاتف"} edge />
         </div>
         <div className="relative mt-4 flex flex-wrap items-center gap-2">
+          {showProject && <span className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-semibold">{unit.projectName}</span>}
           <span className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-semibold">{unit.typeLabel}</span>
           {unit.status === "investment" && (
             <span className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-semibold">استثمار</span>
