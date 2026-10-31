@@ -21,6 +21,12 @@ export function canAccessPaymentPrint(perms?: DeptPermissionMap | null): boolean
   return canAccessPaymentForm(perms) || canAccessPaymentArchive(perms);
 }
 
+/** الخريطة التفاعلية ثنائية الأبعاد: المخطط، البحث، واختيار المشروع */
+export function canAccessMap2d(perms?: DeptPermissionMap | null): boolean {
+  if (!perms) return true;
+  return perms.canAccessMap2d !== false;
+}
+
 /** الخريطة التفاعلية ثلاثية الأبعاد */
 export function canAccessExplore(perms?: DeptPermissionMap | null): boolean {
   if (!perms) return true;

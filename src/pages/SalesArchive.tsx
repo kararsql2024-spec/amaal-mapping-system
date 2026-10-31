@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
-  ArrowRight,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell, Eyebrow, LoadingBlock } from "@/components/layout/AppShell";
+import { SectionNav } from "@/components/layout/SectionNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -353,13 +353,7 @@ const SalesArchive = () => {
   return (
     <AppShell
       brandSubtitle="أرشيف الدفعات"
-      nav={
-        <Link to="/">
-          <Button variant="ghost" size="sm" className="gap-1.5">
-            <ArrowRight size={14} /> الخريطة
-          </Button>
-        </Link>
-      }
+      nav={<SectionNav />}
     >
       <div className="py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">

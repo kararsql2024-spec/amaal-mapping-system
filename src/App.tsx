@@ -79,7 +79,6 @@ const SalesApp = () => {
   return (
     <Routes>
       <Route
-        path="/"
         element={
           <Index
             projects={projects}
@@ -87,7 +86,10 @@ const SalesApp = () => {
             setHousesData={setHousesData}
           />
         }
-      />
+      >
+        <Route path="/" element={<></>} />
+        <Route path="/map" element={<></>} />
+      </Route>
       <Route
         path="/admin"
         element={

@@ -1258,14 +1258,8 @@ const InteractiveMap = ({
         }
       }
 
-      // رسم النص / الرقم التوضيحي
-      if (el.type === 'text') {
-        ctx.fillStyle = el.textColor || '#000000';
-        ctx.font = `${el.isBold ? 'bold' : 'normal'} ${el.fontSize || 24}px ${el.fontFamily || 'Arial'}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(el.label || '', centerX, centerY);
-      } else if (el.label) {
+      // نص المخطط يُرسم لاحقاً فوق اللوحة حتى لا يغطيه إعادة رسم الأشكال عند التقريب
+      if (el.type !== 'text' && el.label) {
         const textLabel = el.label.split('-').pop() || '';
         const maxTextW = elWidth * 0.82;
         const maxTextH = showIcon ? (elHeight * 0.45) : (elHeight * 0.8);
@@ -1377,11 +1371,11 @@ const InteractiveMap = ({
     ctx.scale(scale, scale);
     const city = cityCanvasRef.current;
     if (city && city.width > 0) ctx.drawImage(city, 0, 0);
+    const viewLeft = -position.x / scale;
+    const viewTop = -position.y / scale;
+    const viewRight = viewLeft + rect.width / scale;
+    const viewBottom = viewTop + rect.height / scale;
     if (scale * dpr > 1.05 && areReferenceImagesReady) {
-      const viewLeft = -position.x / scale;
-      const viewTop = -position.y / scale;
-      const viewRight = viewLeft + rect.width / scale;
-      const viewBottom = viewTop + rect.height / scale;
       sortedElements.forEach((el) => {
         if (el.type !== "house" && el.type !== "tower" && el.type !== "amenity") return;
         if (showHeatOverlay && (el.type === "house" || el.type === "tower")) return;
@@ -1479,6 +1473,41 @@ const InteractiveMap = ({
         ctx.restore();
       });
     }
+    sortedElements.forEach((el) => {
+      if (el.type !== "text" || !el.label) return;
+      const pts = getElementPoints(el);
+      if (pts.length === 0) return;
+      let minX = pts[0].x;
+      let maxX = pts[0].x;
+      let minY = pts[0].y;
+      let maxY = pts[0].y;
+      let sumX = 0;
+      let sumY = 0;
+      for (const point of pts) {
+        sumX += point.x;
+        sumY += point.y;
+        if (point.x < minX) minX = point.x;
+        if (point.x > maxX) maxX = point.x;
+        if (point.y < minY) minY = point.y;
+        if (point.y > maxY) maxY = point.y;
+      }
+      const fontSize = el.fontSize || 24;
+      const pad = fontSize * Math.max(el.label.length, 1);
+      if (maxX < viewLeft - pad || minX > viewRight + pad || maxY < viewTop - pad || minY > viewBottom + pad) return;
+      const centerX = sumX / pts.length;
+      const centerY = sumY / pts.length;
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      if (el.rotation) ctx.rotate((el.rotation * Math.PI) / 180);
+      ctx.scale(1 / scale, 1 / scale);
+      ctx.globalAlpha = el.opacity ?? 1;
+      ctx.fillStyle = el.textColor || "#000000";
+      ctx.font = `${el.isBold ? "bold" : "normal"} ${Math.max(1, fontSize * scale)}px ${el.fontFamily || "Arial"}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(el.label, 0, 0);
+      ctx.restore();
+    });
     ctx.restore();
   }, [
     position, scale, mapWidth, mapHeight, backgroundColor, showGrid, 

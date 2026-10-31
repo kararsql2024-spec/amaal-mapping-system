@@ -331,7 +331,7 @@ const SalesForm = () => {
       brandSubtitle="تنظيم آلية الدفعات"
       nav={
         <>
-          <Link to="/">
+          <Link to="/map">
             <Button variant="ghost" size="sm">الخريطة</Button>
           </Link>
           {canOpenArchive && (

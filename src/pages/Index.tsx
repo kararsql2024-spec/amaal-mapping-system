@@ -9,16 +9,17 @@ import DiagnosticTerminal from '@/components/DiagnosticTerminal';
 import { showSuccess, showError } from '@/utils/toast';
 import {
   Map as MapIcon, ChevronDown, ChevronUp, LogOut, Bell,
-  Clock, Info, Search, RefreshCcw, X, AlertTriangle, Trash2, Archive
+  Clock, Info, Search, RefreshCcw, X, AlertTriangle, Trash2
 } from 'lucide-react';
 import { AppShell, Eyebrow, StatGrid, QuickStatGrid, EmptyState, LoadingBlock } from '@/components/layout/AppShell';
+import { listSections, SectionMark, SectionNav } from '@/components/layout/SectionNav';
 import { BrandMark, BrandWordmark } from '@/components/layout/Brand';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Project, MapElement } from '@/types/project';
 import { supabase } from "@/integrations/supabase/client";
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { canAccessExplore, canAccessPaymentArchive, canAccessPaymentFollowup } from "@/lib/dept-permissions";
+import { canAccessMap2d } from "@/lib/dept-permissions";
 import { getHouseArea as getHouseAreaFor } from "@/lib/units";
 import {
   collectProjectBookingActivity,
@@ -67,6 +68,11 @@ import {
   type CenterSubscription,
 } from "@/lib/center-subscription";
 import {
+  fetchCenterLoginVisibility,
+  isCenterListedForLogin,
+  type CenterLoginVisibility,
+} from "@/lib/center-login-visibility";
+import {
   SubscriptionBlockedScreen,
   type SubscriptionBlockReason,
 } from "@/components/SubscriptionBlockedScreen";
@@ -88,6 +94,8 @@ interface IndexProps {
 }
 
 const Index = ({ projects, setHousesData }: IndexProps) => {
+  const navigate = useNavigate();
+  const onMapPage = useLocation().pathname === "/map";
   const fetchGenerationRef = useRef(0);
   const [unitsByProject, setUnitsByProject] = useState<Record<string, Record<string, any>>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -110,6 +118,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   const [loginData, setLoginData] = useState({ centerId: '', password: '' });
   const [currentCenter, setCurrentCenter] = useState<any>(null);
   const [centerSubscriptions, setCenterSubscriptions] = useState<CenterSubscriptions>({});
+  const [centerLoginVisibility, setCenterLoginVisibility] = useState<CenterLoginVisibility>({});
   const [subscriptionWarning, setSubscriptionWarning] = useState<{ daysRemaining: number; endDate: string } | null>(null);
   const [subscriptionBlock, setSubscriptionBlock] = useState<{
     reason: SubscriptionBlockReason;
@@ -169,6 +178,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     canAccessPaymentForm: true,
     showPaymentPlanButton: true,
     canAccessPaymentArchive: true,
+    canAccessMap2d: true,
     canAccessExplore: true,
     canAccessTour: true,
   });
@@ -287,13 +297,14 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     };
   }, [selectedProjectId, setHousesData]);
 
-  // التوجيه الافتراضي: المخطط العام للمدينة لجميع المستخدمين
+  // المخطط يُحمّل بعد فتح بطاقته، لا عند الدخول.
   useEffect(() => {
-    if (isAuthChecking) return;
+    if (isAuthChecking || !onMapPage) return;
+    if (!canAccessMap2d(permissions)) return;
     if (!selectedProjectId) {
       setSelectedProjectId('main_map');
     }
-  }, [selectedProjectId, isAuthChecking]);
+  }, [selectedProjectId, isAuthChecking, onMapPage, permissions]);
 
   const handleLogout = () => {
     void revokeCenterSession(supabase);
@@ -303,6 +314,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     setSubscriptionBlock(null);
     setLoginData({ centerId: '', password: '' });
     clearCenterSession();
+    if (onMapPage) navigate("/");
   };
 
   const blockSubscriptionAccess = (
@@ -398,6 +410,9 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           .from('marketing_centers')
           .select('id, name, type');
         if (centers) setMarketingCenters(centers);
+
+        const loginVisibility = await fetchCenterLoginVisibility(supabase);
+        setCenterLoginVisibility(loginVisibility);
 
         const subscriptions = await fetchCenterSubscriptions(supabase);
         setCenterSubscriptions(subscriptions);
@@ -1089,12 +1104,17 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
                 <label className="block text-xs font-medium text-fg-secondary">
                   القسم / مركز التسويق
                 </label>
+                {marketingCenters.filter((center) => isCenterListedForLogin(centerLoginVisibility, center.id)).length === 0 ? (
+                  <p className="border border-dashed border-line px-3 py-3 text-[12px] text-fg-muted">
+                    لا توجد أقسام ظاهرة في تسجيل الدخول.
+                  </p>
+                ) : (
                 <Select value={loginData.centerId} onValueChange={(val) => setLoginData({ ...loginData, centerId: val })}>
                   <SelectTrigger className="h-10">
                     <SelectValue placeholder="اختر القسم" />
                   </SelectTrigger>
                   <SelectContent>
-                    {marketingCenters.map(center => (
+                    {marketingCenters.filter((center) => isCenterListedForLogin(centerLoginVisibility, center.id)).map(center => (
                       <SelectItem key={center.id} value={center.id}>
                         <span className="flex items-center gap-2">
                           {center.name}
@@ -1104,6 +1124,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
                     ))}
                   </SelectContent>
                 </Select>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -1136,6 +1157,96 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
     );
   }
 
+  const logoutButton = (
+    <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 px-2">
+      <LogOut size={14} /> خروج
+    </Button>
+  );
+
+  if (!onMapPage) {
+    const sections = listSections(permissions);
+    return (
+      <AppShell
+        brandSubtitle={currentCenter ? currentCenter.name : undefined}
+        actions={logoutButton}
+      >
+        {subscriptionWarning && (
+          <div className="mb-6 flex items-start gap-3 border border-status-reserved/30 bg-status-reserved/10 px-4 py-3.5">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-reserved" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-fg">تنبيه: اشتراك القسم على وشك الانتهاء</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-fg-secondary">
+                متبقي{" "}
+                <span className="font-medium tabular-nums text-fg">
+                  {subscriptionWarning.daysRemaining}
+                </span>{" "}
+                {subscriptionWarning.daysRemaining === 1 ? "يوم" : "أيام"}{" "}
+                على انتهاء الاشتراك
+                {subscriptionWarning.endDate ? (
+                  <>
+                    {" "}
+                    (<span className="text-fg">{formatSubscriptionDate(subscriptionWarning.endDate)}</span>)
+                  </>
+                ) : null}
+                . للتجديد، تواصل مع مشرف النظام.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="py-10">
+          <Eyebrow>القسم</Eyebrow>
+          <h1 className="mt-3 text-[32px] font-light leading-[1.08] tracking-display text-fg lg:text-[40px]">
+            {currentCenter?.name || "الأقسام"}
+          </h1>
+          <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-fg-muted">
+            اختر القسم الذي تريد فتحه.
+          </p>
+        </div>
+
+        {sections.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {sections.map((section) => (
+              <Link
+                key={section.to}
+                to={section.to}
+                className="flex min-h-[158px] flex-col border border-line bg-surface px-5 py-5 transition-colors hover:bg-surface-sunken"
+              >
+                <SectionMark to={section.to} />
+                <div className="mt-5 text-[18px] font-medium text-fg">{section.label}</div>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{section.detail}</p>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="border border-dashed border-line px-5 py-16 text-center text-[13px] text-fg-muted">
+            لا توجد أقسام متاحة لهذا الحساب.
+          </p>
+        )}
+
+        <footer className="mt-16 flex items-center justify-between gap-4 border-t border-line pt-6">
+          <span className="text-[11px] text-fg-faint">برمجة وتطوير: كرار عبدالكريم</span>
+        </footer>
+      </AppShell>
+    );
+  }
+
+  if (!canAccessMap2d(permissions)) {
+    return (
+      <AppShell
+        brandSubtitle={currentCenter ? currentCenter.name : undefined}
+        nav={<SectionNav permissions={permissions} />}
+        actions={logoutButton}
+      >
+        <div className="py-16">
+          <Eyebrow>المخطط</Eyebrow>
+          <h1 className="mt-3 text-[28px] font-light text-fg">لا تملك صلاحية المخطط ثنائي الأبعاد</h1>
+          <p className="mt-2 text-[13px] text-fg-muted">الأقسام المتاحة لهذا الحساب في صفحة الأقسام.</p>
+        </div>
+      </AppShell>
+    );
+  }
+
   const primaryStatCells = [
     permissions.showSideTotal && { label: 'إجمالي الوحدات', value: stats.total, statusKey: 'total' as const },
     permissions.showSideSold && { label: 'المباعة', value: stats.sold, statusKey: 'sold' as const },
@@ -1152,7 +1263,8 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
   ].filter(Boolean) as { label: string; value: number }[];
 
   const isMainMap = selectedProjectId === 'main_map';
-  const showStatsBand = !isMainMap && permissions.showGeneralStats;
+  const showMap = canAccessMap2d(permissions);
+  const showStatsBand = showMap && !isMainMap && permissions.showGeneralStats;
   const bookingAlerts = projectBookingActivity.alerts;
   const recentBookings = isMainMap ? cityRecentBookings : projectBookingActivity.recent;
   const visibleActivityTab = isMainMap ? "recent" : activityTab;
@@ -1163,6 +1275,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
       brandSubtitle={currentCenter ? currentCenter.name : undefined}
       nav={
         <>
+          {showMap && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-1.5 px-2 text-fg">
@@ -1182,36 +1295,14 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {permissions.canAccessReports !== false && (
-            <Link to="/reports">
-              <Button variant="ghost" size="sm" className="px-2">التقارير</Button>
-            </Link>
-          )}
-          {canAccessExplore(permissions) && (
-            <Link to="/explore">
-              <Button variant="ghost" size="sm" className="px-2">استكشاف</Button>
-            </Link>
-          )}
-          {canAccessPaymentFollowup(permissions) && (
-            <Link to="/followup">
-              <Button variant="ghost" size="sm" className="px-2">متابعة الدفعات</Button>
-            </Link>
           )}
 
-          {canAccessPaymentArchive(permissions) && (
-            <Link to="/sales/archive">
-              <Button variant="ghost" size="sm" className="gap-1.5 px-2">
-                <Archive size={14} />
-                أرشيف الدفعات
-              </Button>
-            </Link>
-          )}
+          <SectionNav permissions={permissions} />
         </>
       }
       actions={
         <>
-          {lastUpdate && (
+          {lastUpdate && showMap && (
             <span className="hidden items-center gap-1.5 text-[11px] text-fg-faint md:flex">
               <RefreshCcw size={11} className="animate-spin-slow" />
               آخر مزامنة
@@ -1220,13 +1311,11 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
               </span>
             </span>
           )}
-          <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 px-2">
-            <LogOut size={14} /> خروج
-          </Button>
+          {logoutButton}
         </>
       }
     >
-      {isLoggedIn && permissions.showDiagnosticTerminal !== false && (
+      {isLoggedIn && showMap && permissions.showDiagnosticTerminal !== false && (
         <DiagnosticTerminal
           logs={diagLogs}
           onClearLogs={() => setDiagLogs([])}
@@ -1260,12 +1349,26 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
       {/* Page title */}
       <div className="flex flex-col gap-5 py-10 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <Eyebrow>{isMainMap ? "نظرة عامة" : "المخطط السكني"}</Eyebrow>
-          <h1 className="mt-3 text-[32px] font-light leading-[1.08] tracking-display text-fg lg:text-[40px]">
-            {isMainMap ? 'المخطط العام للمدينة' : (activeProject?.name || 'لا يوجد مخطط محدد')}
-          </h1>
+          {showMap ? (
+            <>
+              <Eyebrow>{isMainMap ? "نظرة عامة" : "المخطط السكني"}</Eyebrow>
+              <h1 className="mt-3 text-[32px] font-light leading-[1.08] tracking-display text-fg lg:text-[40px]">
+                {isMainMap ? 'المخطط العام للمدينة' : (activeProject?.name || 'لا يوجد مخطط محدد')}
+              </h1>
+            </>
+          ) : (
+            <>
+              <Eyebrow>القسم</Eyebrow>
+              <h1 className="mt-3 text-[32px] font-light leading-[1.08] tracking-display text-fg lg:text-[40px]">
+                {currentCenter?.name || "الواجهة"}
+              </h1>
+              <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-fg-muted">
+                الأقسام المتاحة لهذا الحساب تظهر في الشريط العلوي.
+              </p>
+            </>
+          )}
         </div>
-        {currentCenter && (
+        {showMap && currentCenter && (
           <div className="flex items-center gap-2.5 text-[13px]">
             <span className="font-medium text-fg-secondary">القسم</span>
             <span className="border border-line px-2.5 py-1 font-medium text-fg">
@@ -1276,7 +1379,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
       </div>
 
       {/* Search */}
-      {permissions.showSearchBox !== false && (
+      {showMap && permissions.showSearchBox !== false && (
         <div className="relative z-30 border-y border-line">
           <div className="flex flex-col gap-px bg-line sm:flex-row">
             <div className="w-full bg-background sm:w-56">
@@ -1358,6 +1461,7 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
       )}
 
       {/* Map */}
+      {showMap && (
       <section className="mt-10">
         {isProjectLoading ? (
           <LoadingBlock label="جاري تحميل تفاصيل المخطط" />
@@ -1408,8 +1512,9 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
           />
         )}
       </section>
+      )}
 
-      {permissions.showNotifications && (
+      {showMap && permissions.showNotifications && (
         <section className="mt-10 border border-line bg-surface">
           <button
             type="button"
@@ -1544,6 +1649,8 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         </section>
       )}
 
+      {showMap && (
+        <>
       <UnitDetailsModal
         isOpen={isUnitModalOpen}
         onClose={() => setIsUnitModalOpen(false)}
@@ -1568,13 +1675,17 @@ const Index = ({ projects, setHousesData }: IndexProps) => {
         initialSelectedApartmentKey={pendingApartmentKey}
         projectId={selectedProjectId && selectedProjectId !== "main_map" ? selectedProjectId : undefined}
       />
+        </>
+      )}
 
       <footer className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-line pt-6 sm:flex-row">
         <span className="text-[11px] text-fg-faint">برمجة وتطوير: كرار عبدالكريم</span>
-        <Button variant="ghost" size="sm" onClick={handleClearCache} className="gap-1.5 text-fg-muted">
-          <Trash2 size={13} />
-          تفريغ كاش المخططات وإعادة التحميل
-        </Button>
+        {showMap && (
+          <Button variant="ghost" size="sm" onClick={handleClearCache} className="gap-1.5 text-fg-muted">
+            <Trash2 size={13} />
+            تفريغ كاش المخططات وإعادة التحميل
+          </Button>
+        )}
       </footer>
     </AppShell>
   );
