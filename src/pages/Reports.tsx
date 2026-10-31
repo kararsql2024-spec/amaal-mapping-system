@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Project, MapElement } from '@/types/project';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { SectionNav } from '@/components/layout/SectionNav';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    ArrowRight, TrendingUp, Building2, ShieldCheck, PieChart as PieIcon,
+    TrendingUp, Building2, ShieldCheck, PieChart as PieIcon,
     Filter, Tags, AlertTriangle, RefreshCcw, Wallet, CalendarRange, Download,
 } from 'lucide-react';
 import {
@@ -939,7 +940,7 @@ const Reports = ({ projects }: ReportsProps) => {
             </p>
           </div>
           <Button onClick={() => navigate('/')} className="w-full">
-            العودة للرئيسية
+            العودة إلى الأقسام
           </Button>
         </div>
       </div>
@@ -949,14 +950,7 @@ const Reports = ({ projects }: ReportsProps) => {
   return (
     <AppShell
       brandSubtitle="التقارير والتحليلات"
-      nav={
-        <Link to="/">
-          <Button variant="ghost" size="sm" className="gap-1.5 text-fg-secondary">
-            <ArrowRight size={14} />
-            الرئيسية
-          </Button>
-        </Link>
-      }
+      nav={<SectionNav />}
       actions={
         <Select
           value={selectedProjectId || undefined}

@@ -112,6 +112,8 @@ export interface FollowupUnit {
   installments: FollowupInstallment[];
   remaining: number;
   totalReceived: number;
+  /** متبقي الدفعات التي فات استحقاقها. دفعة اليوم والقادمة لا تدخلان. */
+  overdue: number;
   paidInFull: boolean;
   status: string;
   duplicate: boolean;
@@ -462,6 +464,9 @@ export const groupFollowupUnits = (
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
     const remaining = installments.reduce((sum, item) => sum + item.remaining, 0);
+    const overdue = installments.reduce((sum, item) => (
+      item.whenKind === "overdue" && item.remaining > 0 ? sum + item.remaining : sum
+    ), 0);
     const salePrice = Number(first.sale_price) || 0;
     const totalReceived = salePrice - remaining;
     const signature = new Map<string, number>();
@@ -507,6 +512,7 @@ export const groupFollowupUnits = (
       installments,
       remaining,
       totalReceived,
+      overdue,
       paidInFull: false,
       status: entry?.status || "",
       duplicate: warnings.some((note) => note.startsWith("في الملف")),
@@ -545,6 +551,7 @@ export const groupFollowupUnits = (
       installments: [],
       remaining: 0,
       totalReceived: salePrice,
+      overdue: 0,
       paidInFull: true,
       status: entry.status,
       duplicate: false,
@@ -597,6 +604,8 @@ export const normalizeFollowupExceptions = (value: unknown): FollowupExceptionGr
 
 export interface FollowupFilters {
   search: string;
+  receivedFrom: string;
+  receivedTo: string;
   dueFrom: string;
   dueTo: string;
   saleFrom: string;
@@ -622,9 +631,24 @@ const inDateRange = (value: string, from: string, to: string): boolean => {
 
 const phoneHaystack = (phone: string): string => phone.replace(/[^\d]/g, "");
 
+/** يقرأ مبلغاً مكتوباً بأرقام عربية أو فواصل. الحقل الفارغ يعني بلا حد. */
+export const parseMoneyBound = (value: string): number | null => {
+  const digits = value
+    .trim()
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[,\s،٬]/g, "");
+  if (!digits) return null;
+  if (!/^\d+(\.\d+)?$/.test(digits)) return null;
+  const amount = Number(digits);
+  return Number.isFinite(amount) ? Math.round(amount) : null;
+};
+
 export const filterFollowupUnits = (units: FollowupUnit[], filters: FollowupFilters): FollowupUnit[] => {
   const needle = filters.search.trim().toLowerCase();
   const needleDigits = needle.replace(/[^\d]/g, "");
+  const receivedFrom = parseMoneyBound(filters.receivedFrom || "");
+  const receivedTo = parseMoneyBound(filters.receivedTo || "");
   const excluded = new Set((filters.excludedNames || []).map(normalizePersonName).filter(Boolean));
   const included = filters.includedNames
     ? new Set(filters.includedNames.map(normalizePersonName).filter(Boolean))
@@ -640,6 +664,9 @@ export const filterFollowupUnits = (units: FollowupUnit[], filters: FollowupFilt
     if (filters.center !== "all" && unit.centerName !== filters.center) return [];
     if (filters.types.length > 0 && !filters.types.includes(unit.typeKey)) return [];
     if (!inDateRange(unit.saleDate, filters.saleFrom, filters.saleTo)) return [];
+    const received = Math.round(unit.totalReceived);
+    if (receivedFrom != null && received < receivedFrom) return [];
+    if (receivedTo != null && received > receivedTo) return [];
     if (needle) {
       const phone = phoneHaystack(unit.phone);
       const hit =
@@ -663,8 +690,14 @@ export const filterFollowupUnits = (units: FollowupUnit[], filters: FollowupFilt
   });
 };
 
-export const sortFollowupUnits = (units: FollowupUnit[], mode: "overdue" | "unit" | "name"): FollowupUnit[] => {
+export type FollowupSort = "overdue" | "arrears" | "unit" | "name";
+
+export const sortFollowupUnits = (units: FollowupUnit[], mode: FollowupSort): FollowupUnit[] => {
   const next = [...units];
+  if (mode === "arrears") {
+    next.sort((a, b) => b.overdue - a.overdue || a.unitLabel.localeCompare(b.unitLabel, "ar", { numeric: true }));
+    return next;
+  }
   if (mode === "unit") {
     next.sort((a, b) => a.unitLabel.localeCompare(b.unitLabel, "ar", { numeric: true }));
     return next;

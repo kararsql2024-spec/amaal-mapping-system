@@ -11,6 +11,7 @@ import { formatMoney, formatNumber } from "@/lib/format";
 import { fetchRemoteSettings, loadSettings, resolveSettingsSources } from "@/incentives/storage";
 import type { IncentiveSettings } from "@/incentives/types";
 import { AppShell, EmptyState, Eyebrow, LoadingBlock, Panel } from "@/components/layout/AppShell";
+import { SectionNav } from "@/components/layout/SectionNav";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
   normalizeFollowupExceptions,
   normalizePersonName,
   sortFollowupUnits,
+  type FollowupSort,
   type CatalogEntry,
   type FollowupExceptionGroup,
   type FollowupFilters,
@@ -59,6 +61,7 @@ const EXPORT_FIELDS = [
   { id: "saleDate", label: "تاريخ البيع", sheets: "both" },
   { id: "received", label: "الواصل الكلي", sheets: "both" },
   { id: "remaining", label: "مجموع المتبقي", sheets: "both" },
+  { id: "overdue", label: "مجموع المتلكئ", sheets: "both" },
   { id: "status", label: "الحالة", sheets: "both" },
   { id: "due", label: "تاريخ الدفعة", sheets: "lines" },
   { id: "amount", label: "مبلغ الدفعة", sheets: "lines" },
@@ -78,7 +81,10 @@ const loadExportFields = (): ExportFieldId[] => {
     const raw = JSON.parse(localStorage.getItem(EXPORT_FIELD_KEY) || "null");
     if (!Array.isArray(raw)) return EXPORT_FIELDS.map((field) => field.id);
     const known = new Set(EXPORT_FIELDS.map((field) => field.id));
-    return raw.filter((id): id is ExportFieldId => known.has(id));
+    const picked = raw.filter((id): id is ExportFieldId => known.has(id));
+    const all = EXPORT_FIELDS.map((field) => field.id);
+    if (picked.length === all.length - 1 && !picked.includes("overdue")) return all;
+    return picked;
   } catch {
     return EXPORT_FIELDS.map((field) => field.id);
   }
@@ -100,6 +106,8 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
   const [notesByUnit, setNotesByUnit] = useState<Record<string, FollowupNote[]>>({});
   const [filters, setFilters] = useState<FollowupFilters>({
     search: "",
+    receivedFrom: "",
+    receivedTo: "",
     dueFrom: "",
     dueTo: "",
     saleFrom: "",
@@ -117,7 +125,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
   const [excludedGroupIds, setExcludedGroupIds] = useState<string[]>([]);
   const [exceptionOnly, setExceptionOnly] = useState(false);
   const [onlyGroupIds, setOnlyGroupIds] = useState<string[]>([]);
-  const [sortMode, setSortMode] = useState<"overdue" | "unit" | "name">("overdue");
+  const [sortMode, setSortMode] = useState<FollowupSort>("overdue");
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFields, setExportFields] = useState<ExportFieldId[]>(() => loadExportFields());
 
@@ -261,15 +269,19 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
   const summary = useMemo(() => {
     let iqd = 0;
     let usd = 0;
+    let overdueIqd = 0;
+    let overdueUsd = 0;
     let installmentCount = 0;
     filtered.forEach((unit) => {
+      if (unit.currency === "USD") overdueUsd += unit.overdue;
+      else overdueIqd += unit.overdue;
       unit.installments.forEach((item) => {
         installmentCount += 1;
         if (unit.currency === "USD") usd += item.remaining;
         else iqd += item.remaining;
       });
     });
-    return { units: filtered.length, installmentCount, iqd, usd };
+    return { units: filtered.length, installmentCount, iqd, usd, overdueIqd, overdueUsd };
   }, [filtered]);
 
   const addNote = async (projectId: string, unitKey: string, body: string) => {
@@ -317,6 +329,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
       "تاريخ البيع": unit.saleDate,
       "الواصل الكلي": unit.totalReceived,
       "مجموع المتبقي": unit.remaining,
+      "مجموع المتلكئ": unit.overdue,
       "الحالة": unit.paidInFull ? "سدد كامل المبلغ" : "متبقي",
     });
     const installmentRows = filtered.flatMap((unit) => {
@@ -388,7 +401,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
         <p className="text-[14px]">يلزم تسجيل الدخول لفتح متابعة الدفعات.</p>
-        <Link to="/"><Button variant="outline">العودة للرئيسية</Button></Link>
+        <Link to="/"><Button variant="outline">العودة إلى الأقسام</Button></Link>
       </div>
     );
   }
@@ -396,7 +409,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
         <p className="text-[14px]">لا تملك صلاحية متابعة الدفعات.</p>
-        <Link to="/"><Button variant="outline">العودة للرئيسية</Button></Link>
+        <Link to="/"><Button variant="outline">العودة إلى الأقسام</Button></Link>
       </div>
     );
   }
@@ -404,11 +417,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
   return (
     <AppShell
       brandSubtitle="متابعة الدفعات"
-      nav={
-        <Link to="/">
-          <Button variant="ghost" size="sm">المخطط</Button>
-        </Link>
-      }
+      nav={<SectionNav />}
       actions={
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" disabled={projectIds.length === 0 || filtered.length === 0} onClick={() => setExportOpen(true)} className="gap-1.5">
@@ -421,7 +430,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
         <Eyebrow>المتابعة</Eyebrow>
         <h1 className="mt-3 text-[32px] font-light leading-tight text-fg">المبالغ المتبقية</h1>
         <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-          الملف يغطي الدفعات المتبقية فقط. الواصل الكلي هو سعر الوحدة ناقص ما تبقى. الوحدة المباعة أو الاستثمار الغائبة عن الملف تظهر كمن سدّد المبلغ كاملاً.
+          الملف يغطي الدفعات المتبقية فقط. الواصل الكلي هو سعر الوحدة ناقص ما تبقى. مجموع المتلكئ هو متبقي الدفعات التي فات موعدها، ولا يشمل دفعة اليوم ولا الدفعات القادمة. الوحدة المباعة أو الاستثمار الغائبة عن الملف تظهر كمن سدّد المبلغ كاملاً.
         </p>
       </div>
 
@@ -459,11 +468,13 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
             })}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-3 xl:grid-cols-6">
           <SummaryCell label="الوحدات" value={formatNumber(summary.units)} />
           <SummaryCell label="الدفعات الظاهرة" value={formatNumber(summary.installmentCount)} />
           <SummaryCell label="متبقي دينار" value={formatMoney(summary.iqd, "IQD")} />
           <SummaryCell label="متبقي دولار" value={formatMoney(summary.usd, "USD")} />
+          <SummaryCell label="متلكئ دينار" value={formatMoney(summary.overdueIqd, "IQD")} />
+          <SummaryCell label="متلكئ دولار" value={formatMoney(summary.overdueUsd, "USD")} />
         </div>
       </div>
 
@@ -477,6 +488,22 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
 
       <Panel title="تصفية" className="mb-6" bodyClassName="space-y-4 p-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <FilterField label="الواصل الكلي من">
+            <Input
+              inputMode="numeric"
+              value={filters.receivedFrom}
+              onChange={(event) => setFilters({ ...filters, receivedFrom: event.target.value })}
+              placeholder="20,000,000"
+            />
+          </FilterField>
+          <FilterField label="الواصل الكلي إلى">
+            <Input
+              inputMode="numeric"
+              value={filters.receivedTo}
+              onChange={(event) => setFilters({ ...filters, receivedTo: event.target.value })}
+              placeholder="20,000,000"
+            />
+          </FilterField>
           <FilterField label="بحث">
             <div className="relative">
               <Search size={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-fg-faint" />
@@ -556,6 +583,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="overdue">الأكثر تأخراً</SelectItem>
+                <SelectItem value="arrears">أكبر متلكئ</SelectItem>
                 <SelectItem value="unit">رقم الوحدة</SelectItem>
                 <SelectItem value="name">اسم الزبون</SelectItem>
               </SelectContent>
@@ -762,12 +790,13 @@ const UnitBox = ({
           <span className="ms-auto text-[15px] font-semibold text-[#f0e2c8]">{unit.centerName}</span>
         </div>
       </header>
-      <dl className="grid grid-cols-2 lg:grid-cols-5">
+      <dl className="grid grid-cols-2 lg:grid-cols-6">
         <Fact label="العملة" value={unit.currency === "USD" ? "دولار" : "دينار"} />
         <Fact label="سعر الوحدة" value={formatMoney(full.salePrice, full.currency)} />
         <Fact label="تاريخ البيع" value={full.saleDate || "—"} />
         <Fact label="الواصل الكلي" value={formatMoney(full.totalReceived, full.currency)} tone="in" />
         <Fact label="مجموع المتبقي" value={formatMoney(full.remaining, full.currency)} tone="out" />
+        <Fact label="مجموع المتلكئ" value={formatMoney(full.overdue, full.currency)} tone="out" />
       </dl>
       {full.warnings.length > 0 && (
         <p
@@ -875,7 +904,7 @@ const Money = ({ tone, children }: { tone: "in" | "out"; children: string }) => 
 
 const Fact = ({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) => (
   <div
-    className="relative px-4 py-3 max-lg:[&:nth-child(odd)]:before:hidden lg:[&:nth-child(5n+1)]:before:hidden before:absolute before:inset-y-3 before:start-0 before:w-px before:bg-gradient-to-b before:from-transparent before:via-[#8a7358]/45 before:to-transparent"
+    className="relative px-4 py-3 max-lg:[&:nth-child(odd)]:before:hidden lg:[&:nth-child(6n+1)]:before:hidden before:absolute before:inset-y-3 before:start-0 before:w-px before:bg-gradient-to-b before:from-transparent before:via-[#8a7358]/45 before:to-transparent"
     style={tone === "in"
       ? { background: "linear-gradient(180deg, rgba(220,244,228,0.95), rgba(245,252,247,0.2))" }
       : tone === "out"

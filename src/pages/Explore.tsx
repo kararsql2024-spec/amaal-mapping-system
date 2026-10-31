@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { MapElement, Project } from "@/types/project";
+import { SectionNav } from "@/components/layout/SectionNav";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -261,9 +262,9 @@ const Explore = ({ projects }: { projects: Project[] }) => {
   if (!allowed) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-fg">
-        <p className="text-[14px]">يلزم تسجيل الدخول لفتح الاستكشاف الثلاثي.</p>
+        <p className="text-[14px]">يلزم تسجيل الدخول لفتح المخطط 3D.</p>
         <Link to="/">
-          <Button variant="outline">العودة للرئيسية</Button>
+          <Button variant="outline">العودة إلى الأقسام</Button>
         </Link>
       </div>
     );
@@ -272,9 +273,9 @@ const Explore = ({ projects }: { projects: Project[] }) => {
   if (!permitted) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background text-fg" dir="rtl">
-        <p className="text-[14px]">لا تملك صلاحية نظام الاستكشاف.</p>
+        <p className="text-[14px]">لا تملك صلاحية المخطط 3D.</p>
         <Link to="/">
-          <Button variant="outline">العودة للرئيسية</Button>
+          <Button variant="outline">العودة إلى الأقسام</Button>
         </Link>
       </div>
     );
@@ -283,9 +284,7 @@ const Explore = ({ projects }: { projects: Project[] }) => {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#dce8f0] text-fg" dir="rtl">
       <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-3 border-b border-black/10 bg-white/80 px-4 py-2 backdrop-blur-md">
-        <Link to="/" className="text-[13px] text-fg-secondary hover:text-fg">
-          الرئيسية
-        </Link>
+        <SectionNav permissions={permissions} className="max-w-[52vw]" />
         <Select value={projectId || undefined} onValueChange={setProjectId}>
           <SelectTrigger className="h-8 w-[240px] bg-white text-[12px]">
             <SelectValue placeholder="اختر المشروع" />

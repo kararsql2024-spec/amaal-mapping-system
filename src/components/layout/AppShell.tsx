@@ -31,7 +31,7 @@ export const AppShell = ({
         {nav ? (
           <>
             <span className="h-4 w-px bg-line" aria-hidden="true" />
-            <div className="flex min-w-0 items-center gap-1">{nav}</div>
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">{nav}</div>
           </>
         ) : null}
         {actions ? (

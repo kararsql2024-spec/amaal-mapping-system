@@ -88,6 +88,13 @@ import {
   formatSubscriptionDate,
   type CenterSubscriptions,
 } from '@/lib/center-subscription';
+import {
+  deleteCenterLoginVisibility,
+  fetchCenterLoginVisibility,
+  isCenterListedForLogin,
+  saveCenterLoginVisibility,
+  type CenterLoginVisibility,
+} from "@/lib/center-login-visibility";
 
 interface AdminProps {
   projects: Project[];
@@ -185,6 +192,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
   const [killingSessionId, setKillingSessionId] = useState<string | null>(null);
   const [centerBrochureProfiles, setCenterBrochureProfiles] = useState<CenterBrochureProfiles>({});
   const [centerSubscriptions, setCenterSubscriptions] = useState<CenterSubscriptions>({});
+  const [centerLoginVisibility, setCenterLoginVisibility] = useState<CenterLoginVisibility>({});
   const [previewBrochureCenterId, setPreviewBrochureCenterId] = useState<string>('');
   const [newCenter, setNewCenter] = useState({
     name: '',
@@ -371,6 +379,9 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
 
         const subscriptions = await fetchCenterSubscriptions(supabase);
         setCenterSubscriptions(subscriptions);
+
+        const loginVisibility = await fetchCenterLoginVisibility(supabase);
+        setCenterLoginVisibility(loginVisibility);
 
         const openSessions = await fetchOpenCenterSessions(supabase);
         setCenterOpenSessions(openSessions.sessions);
@@ -764,6 +775,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     }
   };
 
+  const toggleCenterLoginListing = async (centerId: string, listed: boolean) => {
+    const previous = centerLoginVisibility;
+    const optimistic = { ...previous, [centerId]: listed };
+    setCenterLoginVisibility(optimistic);
+    try {
+      const saved = await saveCenterLoginVisibility(supabase, centerId, listed, previous);
+      setCenterLoginVisibility(saved);
+    } catch (error) {
+      console.error("Error saving login visibility:", error);
+      setCenterLoginVisibility(previous);
+      showError("فشل حفظ ظهور القسم في تسجيل الدخول");
+    }
+  };
+
   const handleDeleteCenter = async (id: string) => {
     try {
       const { error } = await supabase
@@ -785,6 +810,14 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       delete nextSubscriptions[id];
       await deleteCenterSubscription(supabase, id, centerSubscriptions);
       setCenterSubscriptions(nextSubscriptions);
+
+      await deleteCenterLoginVisibility(supabase, id, centerLoginVisibility);
+      setCenterLoginVisibility((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
 
       setMarketingCenters(marketingCenters.filter(c => c.id !== id));
       if (previewBrochureCenterId === id) {
@@ -939,6 +972,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
       canAccessPaymentForm: true,
       canAccessPaymentArchive: true,
       showPaymentPlanButton: true,
+      canAccessMap2d: true,
       canAccessExplore: true,
       canAccessTour: true,
     };
@@ -1949,7 +1983,8 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
     {
       title: "أنظمة الخريطة",
       perms: [
-        { key: 'canAccessExplore', label: 'صلاحية نظام الاستكشاف (الخريطة التفاعلية ثلاثية الأبعاد)' },
+        { key: 'canAccessMap2d', label: 'صلاحية نظام الخريطة التفاعلية ثنائية الأبعاد' },
+        { key: 'canAccessExplore', label: 'صلاحية المخطط 3D' },
         { key: 'canAccessTour', label: 'صلاحية نظام الجولة' },
         { key: 'canAccessPaymentFollowup', label: 'صلاحية متابعة الدفعات والمبالغ المتبقية', optIn: true },
       ]
@@ -2861,6 +2896,20 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                                 </div>
                               </div>
                             </div>
+                            <div className="flex shrink-0 items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <Label
+                                  htmlFor={`login-list-${center.id}`}
+                                  className="cursor-pointer text-[11px] font-normal text-fg-secondary"
+                                >
+                                  يظهر عند الدخول
+                                </Label>
+                                <Switch
+                                  id={`login-list-${center.id}`}
+                                  checked={isCenterListedForLogin(centerLoginVisibility, center.id)}
+                                  onCheckedChange={(checked) => void toggleCenterLoginListing(center.id, checked)}
+                                />
+                              </div>
                             <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               <Button variant="ghost" size="icon" onClick={() => {
                                 const p = getCenterBrochureProfile(centerBrochureProfiles, center.id);
@@ -2885,6 +2934,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
                               <Button variant="ghost" size="icon" onClick={() => handleDeleteCenter(center.id)} className="size-8 text-fg-faint hover:text-status-sold">
                                 <Trash2 size={13} />
                               </Button>
+                            </div>
                             </div>
                           </div>
                           );
