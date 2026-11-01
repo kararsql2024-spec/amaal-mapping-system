@@ -6,7 +6,9 @@ import {
   PRINT_THEMES,
   type IncentivePrintStyle,
   type IncentivePrintTheme,
+  type IncentiveResult,
   type IncentiveSettings,
+  type MonthSnapshot,
   type UnitCenterOverride,
 } from "./types";
 
@@ -68,6 +70,20 @@ const asOverrides = (value: unknown): UnitCenterOverride[] => {
     .filter((item) => item.monthKey && (item.unitKey || item.unitNumber));
 };
 
+const asSnapshots = (value: unknown): MonthSnapshot[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).flatMap((item) => {
+    const monthKey = String(item.monthKey || "");
+    const results = Array.isArray(item.results) ? (item.results as IncentiveResult[]) : [];
+    if (!/^\d{4}-\d{2}$/.test(monthKey) || results.length === 0) return [];
+    return [{
+      monthKey,
+      savedAt: typeof item.savedAt === "string" ? item.savedAt : "",
+      results,
+    }];
+  });
+};
+
 export const normalizeSettings = (raw: unknown): IncentiveSettings => {
   const data = isRecord(raw) ? raw : {};
   const eligibility = isRecord(data.eligibility) ? data.eligibility : {};
@@ -84,6 +100,7 @@ export const normalizeSettings = (raw: unknown): IncentiveSettings => {
       EMPTY_SETTINGS.apartmentTypeRules,
     ),
     unitOverrides: asOverrides(data.unitOverrides),
+    monthSnapshots: asSnapshots(data.monthSnapshots),
     printStyle: asPrintStyle(data.printStyle),
     eligibility: {
       enabled:
@@ -124,6 +141,7 @@ export const settingsWeight = (settings: IncentiveSettings): number =>
   settings.houseTypeRules.length +
   settings.apartmentTypeRules.length +
   settings.unitOverrides.length +
+  settings.monthSnapshots.length +
   settings.eligibility.values.length;
 
 export const stampSettings = (settings: IncentiveSettings): IncentiveSettings => ({

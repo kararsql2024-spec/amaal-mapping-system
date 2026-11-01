@@ -159,6 +159,12 @@ export interface UnitCenterOverride {
   centerId: string;
 }
 
+export interface MonthSnapshot {
+  monthKey: string;
+  savedAt: string;
+  results: IncentiveResult[];
+}
+
 export interface IncentiveSettings {
   companies: Company[];
   centers: Center[];
@@ -168,6 +174,7 @@ export interface IncentiveSettings {
   houseTypeRules: HouseTypeRule[];
   apartmentTypeRules: ApartmentTypeRule[];
   unitOverrides: UnitCenterOverride[];
+  monthSnapshots: MonthSnapshot[];
   eligibility: EligibilityConfig;
   printStyle: IncentivePrintStyle;
   columns: ColumnMapping;
@@ -254,6 +261,7 @@ export const EMPTY_SETTINGS: IncentiveSettings = {
   houseTypeRules: [],
   apartmentTypeRules: [],
   unitOverrides: [],
+  monthSnapshots: [],
   eligibility: {
     enabled: true,
     matchMode: "equals",

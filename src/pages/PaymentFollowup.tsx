@@ -70,6 +70,7 @@ const EXPORT_FIELDS = [
   { id: "duration", label: "المدة", sheets: "lines" },
   { id: "warning", label: "تنبيه", sheets: "lines" },
   { id: "count", label: "عدد الدفعات الظاهرة", sheets: "units" },
+  { id: "notes", label: "ملاحظات", sheets: "both" },
 ] as const;
 
 type ExportFieldId = (typeof EXPORT_FIELDS)[number]["id"];
@@ -77,16 +78,17 @@ type ExportFieldId = (typeof EXPORT_FIELDS)[number]["id"];
 const EXPORT_FIELD_KEY = "amaal-followup-export-fields-v1";
 
 const loadExportFields = (): ExportFieldId[] => {
+  const all = EXPORT_FIELDS.map((field) => field.id);
+  const defaults = all.filter((id) => id !== "notes");
   try {
     const raw = JSON.parse(localStorage.getItem(EXPORT_FIELD_KEY) || "null");
-    if (!Array.isArray(raw)) return EXPORT_FIELDS.map((field) => field.id);
-    const known = new Set(EXPORT_FIELDS.map((field) => field.id));
+    if (!Array.isArray(raw)) return defaults;
+    const known = new Set(all);
     const picked = raw.filter((id): id is ExportFieldId => known.has(id));
-    const all = EXPORT_FIELDS.map((field) => field.id);
-    if (picked.length === all.length - 1 && !picked.includes("overdue")) return all;
+    if (picked.length === defaults.length - 1 && !picked.includes("overdue") && !picked.includes("notes")) return defaults;
     return picked;
   } catch {
-    return EXPORT_FIELDS.map((field) => field.id);
+    return defaults;
   }
 };
 
@@ -331,6 +333,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
       "مجموع المتبقي": unit.remaining,
       "مجموع المتلكئ": unit.overdue,
       "الحالة": unit.paidInFull ? "سدد كامل المبلغ" : "متبقي",
+      "ملاحظات": "",
     });
     const installmentRows = filtered.flatMap((unit) => {
       const head = base(unit);
@@ -529,6 +532,7 @@ const PaymentFollowup = ({ projects }: { projects: Project[] }) => {
                 <SelectItem value="overdue">متأخرة</SelectItem>
                 <SelectItem value="today">اليوم</SelectItem>
                 <SelectItem value="upcoming">قادمة</SelectItem>
+                <SelectItem value="upcomingClear">قادمة بلا متلكئ</SelectItem>
               </SelectContent>
             </Select>
           </FilterField>

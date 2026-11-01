@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Download, FileSpreadsheet, Printer } from "lucide-react";
 import {
   EmptyState,
@@ -8,6 +8,13 @@ import {
   StatGrid,
 } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -33,11 +40,18 @@ import { exportGroupedWorkbook } from "../excel-export";
 import { formatAmount } from "../format";
 import { kindLabel, statusLabel } from "../group-export";
 import { MONTHS, monthLabel } from "../months";
-import { savePrintPayload, toPrintRows } from "../print-payload";
+import {
+  loadSummaryColumns,
+  savePrintPayload,
+  saveSummaryColumns,
+  SUMMARY_COLUMNS,
+  toPrintRows,
+  type SummaryColumnChoice,
+} from "../print-payload";
 import { createId } from "../id";
 import { useIncentiveSettings } from "../settings-context";
 import { fetchSoldSaleRowsForMonth } from "../system-data";
-import { DEFAULT_PRINT_STYLE, type IncentiveResult } from "../types";
+import { DEFAULT_PRINT_STYLE, type IncentiveResult, type MonthSnapshot } from "../types";
 
 type ResultFilter = "all" | "complete" | "incomplete" | "excluded" | "conflict";
 type ViewBy = "userName" | "unit";
@@ -47,11 +61,16 @@ const NONE = "__none__";
 
 const userNameLabel = (value: string) => value.trim() || "بدون اسم مستخدم";
 
+const upsertSnapshot = (snapshots: MonthSnapshot[] | undefined, next: MonthSnapshot): MonthSnapshot[] => {
+  const rest = (snapshots || []).filter((item) => item.monthKey !== next.monthKey);
+  return [...rest, next];
+};
+
 const resultKey = (result: IncentiveResult) =>
   `${result.row.projectId || ""}-${result.row.unitKey || result.row.unitNumber}-${result.row.rowNumber}`;
 
 const CalculatePage = () => {
-  const { settings, setSettings } = useIncentiveSettings();
+  const { settings, setSettings, syncState } = useIncentiveSettings();
   const catalog = useIncentiveCatalog();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -67,9 +86,28 @@ const CalculatePage = () => {
   const [busy, setBusy] = useState(false);
   const [scanned, setScanned] = useState<number | null>(null);
   const [calculatedMonthKey, setCalculatedMonthKey] = useState("");
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [overwriteOpen, setOverwriteOpen] = useState(false);
+  const [summaryColumns, setSummaryColumns] = useState<SummaryColumnChoice>(() => loadSummaryColumns());
+  const preparing = syncState === "loading" || catalog.loading;
 
   const monthKey = monthKeyOf(year, month);
   const appliedMonthKey = calculatedMonthKey || monthKey;
+  const savedSnapshot = (settings.monthSnapshots || []).find((item) => item.monthKey === monthKey);
+
+  useEffect(() => {
+    if (preparing) return;
+    const snap = (settings.monthSnapshots || []).find((item) => item.monthKey === monthKey);
+    if (!snap) {
+      setBaseResults([]);
+      setCalculatedMonthKey("");
+      setScanned(null);
+      return;
+    }
+    setBaseResults(snap.results);
+    setCalculatedMonthKey(monthKey);
+    setScanned(snap.results.length);
+  }, [monthKey, preparing, savedSnapshot?.savedAt]);
   const hasRules =
     settings.companies.length > 0 ||
     settings.unitTypes.length > 0 ||
@@ -231,28 +269,60 @@ const CalculatePage = () => {
     });
   };
 
-  const onCalculate = async () => {
+  const storeSnapshot = (key: string, results: IncentiveResult[]) => {
+    const next: MonthSnapshot = {
+      monthKey: key,
+      savedAt: new Date().toISOString(),
+      results,
+    };
+    setSettings((prev) => ({
+      ...prev,
+      monthSnapshots: upsertSnapshot(prev.monthSnapshots, next),
+    }));
+  };
+
+  const runCalculate = async (replaceSaved: boolean) => {
     setBusy(true);
     try {
       const rows = await fetchSoldSaleRowsForMonth(year, month);
       setScanned(rows.length);
       if (rows.length === 0) {
-        setBaseResults([]);
+        if (!replaceSaved) setBaseResults([]);
         showError("لا توجد وحدات مباعة في هذا الشهر");
         return;
       }
       const next = computeAll(rows, settings, {
         centers: catalog.centers,
       });
-      setCalculatedMonthKey(monthKeyOf(year, month));
+      const key = monthKeyOf(year, month);
+      setCalculatedMonthKey(key);
       setBaseResults(next);
-      showSuccess(`تم احتساب ${rows.length} وحدة مباعة`);
+      if (replaceSaved) storeSnapshot(key, next);
+      showSuccess(
+        replaceSaved
+          ? `تم استبدال بيانات الشهر واحتساب ${rows.length} وحدة مباعة`
+          : `تم احتساب ${rows.length} وحدة مباعة`,
+      );
     } catch (error) {
       console.error(error);
       showError("تعذر جلب المبيعات من قاعدة البيانات");
     } finally {
       setBusy(false);
     }
+  };
+
+  const requestCalculate = () => {
+    if ((settings.monthSnapshots || []).some((item) => item.monthKey === monthKey)) {
+      setOverwriteOpen(true);
+      return;
+    }
+    void runCalculate(false);
+  };
+
+  const saveMonth = () => {
+    if (!calculatedMonthKey || baseResults.length === 0) return;
+    storeSnapshot(calculatedMonthKey, baseResults);
+    showSuccess("تم حفظ بيانات الشهر");
   };
 
   const exportResults = async () => {
@@ -262,7 +332,17 @@ const CalculatePage = () => {
   };
 
   const openPrintSummary = () => {
-    if (visible.length === 0) return;
+    if (!visible.some((result) => result.included)) {
+      showError("لا توجد وحدات مضمّنة في العرض الحالي");
+      return;
+    }
+    setSummaryOpen(true);
+  };
+
+  const confirmPrintSummary = () => {
+    const included = visible.filter((result) => result.included);
+    if (included.length === 0 || !SUMMARY_COLUMNS.some((column) => summaryColumns[column.id])) return;
+    saveSummaryColumns(summaryColumns);
     savePrintPayload({
       monthKey: appliedMonthKey,
       monthLabel: monthLabel(Number(appliedMonthKey.split("-")[1]) || month),
@@ -270,8 +350,10 @@ const CalculatePage = () => {
       month: Number(appliedMonthKey.split("-")[1]) || month,
       style: settings.printStyle || DEFAULT_PRINT_STYLE,
       unitTypeNames: settings.unitTypes.map((item) => item.name),
-      rows: toPrintRows(visible, statusLabel, kindLabel),
+      columns: summaryColumns,
+      rows: toPrintRows(included, statusLabel, kindLabel),
     });
+    setSummaryOpen(false);
     window.open("/incentives/print", "_blank");
   };
 
@@ -311,9 +393,13 @@ const CalculatePage = () => {
       <Panel
         title="شهر الاحتساب"
         description={
-          scanned == null
-            ? "تُقرأ الوحدات ذات الحالة «مباع» وتاريخ البيع داخل الشهر"
-            : `آخر احتساب: ${scanned} وحدة مباعة`
+            preparing
+            ? "جاري جلب التخصيصات من لوحة التحكم: المراكز والقواعد والأنواع"
+            : savedSnapshot
+              ? `بيانات محفوظة لهذا الشهر${savedSnapshot.savedAt ? ` · ${new Date(savedSnapshot.savedAt).toLocaleString("ar-IQ")}` : ""}`
+              : scanned == null
+                ? "تُقرأ الوحدات ذات الحالة «مباع» وتاريخ البيع داخل الشهر"
+                : `آخر احتساب: ${scanned} وحدة مباعة. احفظ الشهر بعد التصفية.`
         }
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -355,8 +441,16 @@ const CalculatePage = () => {
               </Select>
             </div>
           </div>
-          <Button type="button" onClick={() => void onCalculate()} disabled={busy}>
-            {busy ? "جاري الاحتساب..." : "احتساب الحافز"}
+          <Button type="button" onClick={requestCalculate} disabled={busy || preparing}>
+            {busy ? "جاري الاحتساب..." : preparing ? "جاري جلب التخصيصات" : "احتساب الحافز"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={saveMonth}
+            disabled={busy || preparing || baseResults.length === 0 || calculatedMonthKey !== monthKey}
+          >
+            حفظ بيانات الشهر
           </Button>
         </div>
       </Panel>
@@ -608,6 +702,64 @@ const CalculatePage = () => {
           description="اختر الشهر ثم احتساب الحافز. بعدها يمكنك تخصيص العرض لكل مركز أو مستخدم أو وحدة."
         />
       )}
+      <Dialog open={overwriteOpen} onOpenChange={setOverwriteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>استبدال بيانات الشهر</DialogTitle>
+          </DialogHeader>
+          <p className="text-[13px] leading-relaxed text-fg-muted">
+            هذا الشهر محفوظ. الاحتساب الجديد يستبدل البيانات السابقة. هل تريد الاستبدال؟
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverwriteOpen(false)}>إلغاء</Button>
+            <Button
+              onClick={() => {
+                setOverwriteOpen(false);
+                void runCalculate(true);
+              }}
+            >
+              استبدال
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>أعمدة الملخص</DialogTitle>
+          </DialogHeader>
+          <p className="text-[12px] leading-relaxed text-fg-muted">
+            الملخص يضم الوحدات المضمّنة فقط. ألغِ أي عمود لا تريده في الكشف.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {SUMMARY_COLUMNS.map((column) => {
+              const active = summaryColumns[column.id];
+              return (
+                <button
+                  key={column.id}
+                  type="button"
+                  onClick={() => setSummaryColumns((current) => ({ ...current, [column.id]: !current[column.id] }))}
+                  className={cn(
+                    "border px-2.5 py-1 text-[12px]",
+                    active ? "border-fg bg-fg text-background" : "border-line text-fg-secondary",
+                  )}
+                >
+                  {column.label}
+                </button>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSummaryOpen(false)}>إلغاء</Button>
+            <Button
+              onClick={confirmPrintSummary}
+              disabled={!SUMMARY_COLUMNS.some((column) => summaryColumns[column.id])}
+            >
+              فتح الملخص
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

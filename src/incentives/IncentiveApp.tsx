@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { IncentiveAuthGate, signOutIncentive } from "./AuthGate";
 import { IncentiveCatalogProvider } from "./catalog-context";
 import { IncentiveSettingsProvider, useIncentiveSettings } from "./settings-context";
+import ArchivePrintPage from "./pages/ArchivePrintPage";
+import ArchiveReportPage from "./pages/ArchiveReportPage";
 import CalculatePage from "./pages/CalculatePage";
 import PrintPage from "./pages/PrintPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -45,6 +47,7 @@ const IncentiveShell = ({ children }: { children: React.ReactNode }) => (
     nav={
       <>
         <NavItem to="/incentives">احتساب الحافز</NavItem>
+        <NavItem to="/incentives/archive">أرشيف الحوافز</NavItem>
         <NavItem to="/incentives/settings">لوحة التحكم</NavItem>
       </>
     }
@@ -74,11 +77,20 @@ const IncentiveApp = () => (
       <IncentiveCatalogProvider>
         <Routes>
           <Route path="/incentives/print" element={<PrintPage />} />
+          <Route path="/incentives/archive/print" element={<ArchivePrintPage />} />
           <Route
             path="/incentives"
             element={
               <IncentiveShell>
                 <CalculatePage />
+              </IncentiveShell>
+            }
+          />
+          <Route
+            path="/incentives/archive"
+            element={
+              <IncentiveShell>
+                <ArchiveReportPage />
               </IncentiveShell>
             }
           />
