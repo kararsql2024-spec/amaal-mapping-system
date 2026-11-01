@@ -611,7 +611,7 @@ export interface FollowupFilters {
   saleFrom: string;
   saleTo: string;
   currency: "all" | CurrencyType;
-  dueState: "all" | "overdue" | "today" | "upcoming";
+  dueState: "all" | "overdue" | "today" | "upcoming" | "upcomingClear";
   settlement: "all" | "remaining" | "paid";
   investors: "with" | "without";
   center: string;
@@ -680,9 +680,12 @@ export const filterFollowupUnits = (units: FollowupUnit[], filters: FollowupFilt
       if (dueFilterOn && filters.settlement !== "paid") return [];
       return [unit];
     }
+    const hasOverdue = unit.installments.some((item) => item.whenKind === "overdue" && item.remaining > 0);
+    if (filters.dueState === "upcomingClear" && hasOverdue) return [];
     const installments = unit.installments.filter((item) => {
       if (!inDateRange(item.dueDate, filters.dueFrom, filters.dueTo)) return false;
       if (filters.dueState === "all") return true;
+      if (filters.dueState === "upcomingClear") return item.whenKind === "upcoming";
       return item.whenKind === filters.dueState;
     });
     if (installments.length === 0) return [];

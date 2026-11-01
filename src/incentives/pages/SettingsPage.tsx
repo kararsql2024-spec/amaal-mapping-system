@@ -511,11 +511,12 @@ const SettingsPage = () => {
 
   const resetAll = () => {
     if (!window.confirm("سيتم حذف كل الشركات والقواعد. هل أنت متأكد؟")) return;
-    setSettings({
+    setSettings((prev) => ({
       ...EMPTY_SETTINGS,
       columns: { ...EMPTY_SETTINGS.columns },
       eligibility: { ...EMPTY_SETTINGS.eligibility, values: [] },
-    });
+      monthSnapshots: prev.monthSnapshots,
+    }));
     showSuccess("تم تفريغ الإعدادات");
   };
 

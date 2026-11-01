@@ -1,6 +1,12 @@
 import React, { useMemo } from "react";
 import { formatAmount } from "../format";
-import type { IncentivePrintPayload, IncentivePrintRow } from "../print-payload";
+import {
+  defaultSummaryColumns,
+  SUMMARY_COLUMNS,
+  type IncentivePrintPayload,
+  type IncentivePrintRow,
+  type SummaryColumnId,
+} from "../print-payload";
 import { PRINT_THEMES } from "../types";
 
 const byAr = (a: string, b: string) => a.localeCompare(b, "ar", { numeric: true });
@@ -59,13 +65,22 @@ const buildTypeLines = (
   return ordered;
 };
 
+const cellValue = (row: IncentivePrintRow, id: SummaryColumnId): string => {
+  if (id === "unitNumber") return row.unitNumber;
+  if (id === "unitType") return row.unitType || row.kind;
+  if (id === "userName") return row.userName || "—";
+  if (id === "purpose") return row.contractPurpose || "—";
+  return formatAmount(row.amount);
+};
+
 const groupRows = (
   rows: IncentivePrintRow[],
   logos: Record<string, string>,
   unitTypeNames: string[],
 ): CenterBlock[] => {
+  const includedRows = rows.filter((row) => row.included);
   const centers = new Map<string, { name: string; rows: IncentivePrintRow[] }>();
-  rows.forEach((row) => {
+  includedRows.forEach((row) => {
     const id = row.centerId || "__none__";
     const current = centers.get(id) || { name: row.center || "بدون مركز", rows: [] };
     current.rows.push(row);
@@ -190,6 +205,9 @@ export const IncentivePrintDocument = ({
   const grandCount = centers.reduce((sum, center) => sum + center.count, 0);
   const grandAmount = centers.reduce((sum, center) => sum + center.amount, 0);
   const style = payload.style;
+  const columns = SUMMARY_COLUMNS.filter(
+    (column) => (payload.columns || defaultSummaryColumns())[column.id] !== false,
+  );
   const pageBackground =
     PRINT_THEMES.find((item) => item.id === style.theme)?.pageBackground || "#ffffff";
 
@@ -273,21 +291,17 @@ export const IncentivePrintDocument = ({
                       <table className="inc-print-table">
                         <thead>
                           <tr>
-                            <th>رقم الدار</th>
-                            <th>النوع</th>
-                            <th>اسم المستخدم</th>
-                            <th>الغاية</th>
-                            <th>المبلغ</th>
+                            {columns.map((column) => (
+                              <th key={column.id}>{column.label}</th>
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
                           {city.rows.map((row) => (
                             <tr key={`${row.city}-${row.unitNumber}-${row.saleDate}`}>
-                              <td>{row.unitNumber}</td>
-                              <td>{row.unitType || row.kind}</td>
-                              <td>{row.userName || "—"}</td>
-                              <td>{row.contractPurpose || "—"}</td>
-                              <td>{row.included ? formatAmount(row.amount) : "0"}</td>
+                              {columns.map((column) => (
+                                <td key={column.id}>{cellValue(row, column.id)}</td>
+                              ))}
                             </tr>
                           ))}
                         </tbody>
