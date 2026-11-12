@@ -15,7 +15,7 @@ import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
-  Warehouse, Droplets, DoorOpen, SquareParking, Waves, ToyBrick, Shield
+  Warehouse, Droplets, DoorOpen, SquareParking, Waves, ToyBrick, Shield, Spline
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Slider } from "@/components/ui/slider";
@@ -30,6 +30,7 @@ import { buildCorridor, connectPaths, extendPath, networkShape, pathAxis, projec
 import { generateStreetNetwork, streetMostlyInside, type StreetPiece } from '@/lib/street-generate';
 import { Checkbox } from '@/components/ui/checkbox';
 import { STATUS_META } from '@/lib/unit-status';
+import { bendPath, buildHouseRow, measureHouseExit, nextLabel, polylineLength, rotatePoints, type HouseParcel } from '@/lib/house-row';
 import { towerPlanCells } from '@/lib/tower-plan';
 import {
   getReferenceImageSrc,
@@ -106,7 +107,7 @@ const AMENITY_TYPES = [
   { id: 'security', label: 'استعلامات', icon: Shield },
 ];
 
-type EditorTool = ElementType | 'map_boundary' | 'street_auto' | 'green_plot' | 'house_plot' | 'measure' | 'garage' | 'fountain' | 'gate' | 'parking' | 'pool' | 'playground' | 'security';
+type EditorTool = ElementType | 'map_boundary' | 'street_auto' | 'green_plot' | 'house_plot' | 'house_row' | 'measure' | 'garage' | 'fountain' | 'gate' | 'parking' | 'pool' | 'playground' | 'security';
 
 const TOOLS: { type: ElementType | 'map_boundary'; label: string; icon: any; swatch: string }[] = [
   { type: 'house', label: 'منزل', icon: Home, swatch: STATUS_META.available.fill },
@@ -125,6 +126,7 @@ const RAIL: { type: EditorTool; label: string; hint: string; icon: any; swatch: 
   { type: 'measure', label: 'قياس', hint: 'انقر نقطتين لقياس المسافة بينهما', icon: Ruler, swatch: palette.fgSecondary },
   { type: 'house', label: 'منزل', hint: 'نقرة تضع منزلاً مربعاً ثم تُعدَّل زواياه', icon: Home, swatch: STATUS_META.available.fill, gapBefore: true },
   { type: 'house_plot', label: 'قطعة', hint: 'ارسم مسار قطعة المنزل وأغلقه عند النقطة الأولى', icon: PenLine, swatch: STATUS_META.available.fill },
+  { type: 'house_row', label: 'صف', hint: 'ارسم خطاً بعدد منازل متلاصقة تتبع انحناءه، مع معاينة قبل التثبيت', icon: Spline, swatch: STATUS_META.available.fill },
   { type: 'tower', label: 'عمارة', hint: 'نقرة تضع عمارة ثم تُعدَّل زواياها', icon: Building2, swatch: palette.accent },
   { type: 'pitch', label: 'ملعب', hint: 'نقرة تضع ملعباً', icon: Trophy, swatch: mapPalette.pitch },
   { type: 'amenity', label: 'مرفق', hint: 'نقرة تضع مرفقاً، ونوعه يُختار من الخصائص', icon: MapPin, swatch: mapPalette.amenity },
@@ -191,13 +193,25 @@ const MapEditor = ({
   const [linkAnchor, setLinkAnchor] = useState<PathAnchor | null>(null);
   const [extendId, setExtendId] = useState<string | null>(null);
   const [extendAnchor, setExtendAnchor] = useState<PathAnchor | null>(null);
+  const [rowCount, setRowCount] = useState(4);
+  const [rowAlong, setRowAlong] = useState(80);
+  const [rowAcross, setRowAcross] = useState(48);
+  const [rowLabel, setRowLabel] = useState('D1');
+  const [rowArc, setRowArc] = useState(0);
+  const [rowStride, setRowStride] = useState<1 | 2>(1);
+  const [rowCentered, setRowCentered] = useState(true);
+  const [rowSide, setRowSide] = useState<1 | -1>(1);
+  const [rowAnchorId, setRowAnchorId] = useState<string | null>(null);
   const extendBoot = useRef(false);
-  const plotRef = useRef({ active: false, count: 0, closed: false });
+  const suppressPlotClick = useRef(false);
+  const houseRowCommitRef = useRef<() => void>(() => {});
+  const plotRef = useRef({ active: false, count: 0, closed: false, houseRow: false });
   const linkingRef = useRef<string | null>(null);
   plotRef.current = {
-    active: activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot',
+    active: activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot' || activeTool === 'house_row',
     count: plotPoints.length,
     closed: plotClosed,
+    houseRow: activeTool === 'house_row',
   };
 
   useEffect(() => {
@@ -316,6 +330,7 @@ const MapEditor = ({
         return;
       }
       if (plotRef.current.active && plotRef.current.count > 0 && (e.key === 'Backspace' || e.key === 'Enter' || e.key === 'Escape')) return;
+      if (plotRef.current.houseRow && (e.key === 'Backspace' || e.key === 'Enter' || e.key === 'Escape' || e.key === 'Delete')) return;
       if (!selectedId || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
       
       const step = gridLock ? GRID_SIZE : 1;
@@ -338,10 +353,11 @@ const MapEditor = ({
 
       e.preventDefault();
       setElements(prev => {
-        const el = prev.find(item => item.id === selectedId);
-        if (!el || el.locked) return prev;
+        const primary = prev.find(item => item.id === selectedId);
+        if (!primary || primary.locked) return prev;
+        const ids = new Set(selectedIdsRef.current.length ? selectedIdsRef.current : [selectedId]);
 
-        const angleRad = (el.rotation || 0) * (Math.PI / 180);
+        const angleRad = (primary.rotation || 0) * (Math.PI / 180);
         let dx = 0; let dy = 0;
         
         if (e.key === 'ArrowUp') {
@@ -358,15 +374,22 @@ const MapEditor = ({
           dy = step * Math.sin(angleRad);
         }
 
-        const pts = getElementPoints(el);
-        const newPoints = pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-        checkAndExpandMap(newPoints);
-        
-        return prev.map(item => 
-          item.id === selectedId 
-            ? { ...item, points: newPoints, x: newPoints[0].x, y: newPoints[0].y } 
-            : item
-        );
+        const shift = (point: Point) => ({ x: point.x + dx, y: point.y + dy });
+        return prev.map(item => {
+          if (!ids.has(item.id) || item.locked) return item;
+          const newPoints = getElementPoints(item).map(shift);
+          checkAndExpandMap(newPoints);
+          return {
+            ...item,
+            points: newPoints,
+            x: newPoints[0].x,
+            y: newPoints[0].y,
+            centerline: item.centerline?.map(shift),
+            centerlineBranches: item.centerlineBranches?.map((branch) => branch.map(shift)),
+            pathHoles: item.pathHoles?.map((hole) => hole.map(shift)),
+            pathLoops: item.pathLoops?.map((loop) => loop.map(shift)),
+          };
+        });
       });
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -456,6 +479,10 @@ const MapEditor = ({
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
+    if (suppressPlotClick.current) {
+      suppressPlotClick.current = false;
+      return;
+    }
     const pos = getMousePos(e);
     if (linkingId) {
       const current = elements.find((el) => el.id === linkingId);
@@ -479,6 +506,13 @@ const MapEditor = ({
     if (activeTool === 'measure') {
       const point = { x: snap(pos.x), y: snap(pos.y) };
       setMeasurePoints((prev) => (prev.length >= 2 ? [point] : [...prev, point]));
+      return;
+    }
+    if (activeTool === 'house_row') {
+      const point = { x: snap(pos.x), y: snap(pos.y) };
+      const previous = plotPoints[plotPoints.length - 1];
+      if (previous && Math.hypot(previous.x - point.x, previous.y - point.y) < 2) return;
+      setPlotPoints((prev) => [...prev, point]);
       return;
     }
     if (activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot') {
@@ -579,6 +613,10 @@ const MapEditor = ({
   }, [activeTool, isBrushMode]);
 
   useEffect(() => {
+    if (activeTool !== 'house_row') setRowAnchorId(null);
+  }, [activeTool]);
+
+  useEffect(() => {
     if (activeTool !== 'road' && activeTool !== 'sidewalk' && activeTool !== 'street_auto' && activeTool !== 'green_plot' && activeTool !== 'house_plot') return;
     const handlePlotKeys = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
@@ -619,6 +657,29 @@ const MapEditor = ({
     window.addEventListener('keydown', handlePlotKeys);
     return () => window.removeEventListener('keydown', handlePlotKeys);
   }, [activeTool, plotPoints, plotWidth, plotClosed, directionLock, directionMode, extendId, roadGenWidth, walkGenWidth, elements]);
+
+  useEffect(() => {
+    if (activeTool !== 'house_row') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+      if (event.key === 'Escape') {
+        setPlotPoints([]);
+        setRowAnchorId(null);
+        return;
+      }
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        setPlotPoints((prev) => prev.slice(0, -1));
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        houseRowCommitRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTool]);
 
   const generateFromPlot = () => {
     if ((activeTool !== 'road' && activeTool !== 'sidewalk') || plotWidth < 4) return;
@@ -902,14 +963,41 @@ const MapEditor = ({
 
   const grabElement = (event: React.MouseEvent, el: MapElement) => {
     if (linkingId || extendId) return;
+    if (activeTool === 'house_row') {
+      suppressPlotClick.current = true;
+      event.stopPropagation();
+      const pos = getMousePos(event);
+      if (el.type === 'house' && plotPoints.length === 0) {
+        const world = rotatePoints(getElementPoints(el), el.rotation || 0);
+        const exit = measureHouseExit(world, pos);
+        setRowAnchorId(el.id);
+        setRowLabel(nextLabel(el.label, 1, rowStride));
+        if (exit) {
+          setRowAlong(Math.round(exit.along));
+          setRowAcross(Math.round(exit.across));
+        }
+        setSelectedId(el.id);
+        setSelectedIds([el.id]);
+      }
+      const point = { x: snap(pos.x), y: snap(pos.y) };
+      setPlotPoints((prev) => {
+        const previous = prev[prev.length - 1];
+        if (previous && Math.hypot(previous.x - point.x, previous.y - point.y) < 2) return prev;
+        return [...prev, point];
+      });
+      return;
+    }
     const current = selectedIdsRef.current;
-    const next = event.shiftKey ? (current.includes(el.id) ? current : [...current, el.id]) : [el.id];
-    selectedIdsRef.current = next;
-    setSelectedIds(next);
-    setSelectedId(el.id);
+    const next = event.shiftKey
+      ? (current.includes(el.id) ? current.filter((id) => id !== el.id) : [...current, el.id])
+      : (current.includes(el.id) && current.length > 1 ? current : [el.id]);
+    const selection = next.length ? next : [el.id];
+    selectedIdsRef.current = selection;
+    setSelectedIds(selection);
+    setSelectedId(selection.includes(el.id) ? el.id : selection[0]);
     if (el.locked) return;
     event.stopPropagation();
-    setDragMode({ type: 'move', ids: next, targetId: el.id });
+    setDragMode({ type: 'move', ids: selection, targetId: el.id });
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -936,7 +1024,7 @@ const MapEditor = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if ((activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot' || linkingId) && !isBrushMode) {
+    if ((activeTool === 'road' || activeTool === 'sidewalk' || activeTool === 'street_auto' || activeTool === 'green_plot' || activeTool === 'house_plot' || activeTool === 'house_row' || linkingId) && !isBrushMode) {
       const next = getMousePos(e);
       setPlotCursor((prev) => (prev && Math.abs(prev.x - next.x) < 0.4 && Math.abs(prev.y - next.y) < 0.4 ? prev : next));
     }
@@ -1342,38 +1430,50 @@ const MapEditor = ({
   const sortedElements = [...elements].sort((a, b) => (layerOrder[a.type] || 0) - (layerOrder[b.type] || 0));
 
   const updateSelectedElement = (updates: Partial<MapElement>) => {
-    if (!selectedId) return;
-    setElements(prev => prev.map(el => el.id === selectedId ? { ...el, ...updates } : el));
+    const ids = selectedIdsRef.current.length ? selectedIdsRef.current : (selectedId ? [selectedId] : []);
+    if (!ids.length) return;
+    const keys = Object.keys(updates);
+    const geometry = keys.some((key) => ['points', 'x', 'y', 'centerline', 'centerlineBranches', 'pathHoles', 'pathLoops'].includes(key));
+    const labelOnly = keys.length > 0 && keys.every((key) => key === 'label');
+    const lockToggle = keys.length === 1 && keys[0] === 'locked';
+    const targets = geometry || labelOnly ? new Set(selectedId ? [selectedId] : []) : new Set(ids);
+    setElements(prev => prev.map(el => {
+      if (!targets.has(el.id)) return el;
+      if (el.locked && !lockToggle) return el;
+      return { ...el, ...updates };
+    }));
   };
 
-  const handleSizeChange = (dim: 'w' | 'h', value: number) => {
-    if (!selectedElement) return;
-    const pts = getElementPoints(selectedElement);
-    
+  const resizeElementTo = (el: MapElement, dim: 'w' | 'h', value: number): MapElement => {
+    if (!Number.isFinite(value) || value < 4) return el;
+    const pts = getElementPoints(el);
     const minX = Math.min(...pts.map(p => p.x));
     const minY = Math.min(...pts.map(p => p.y));
     const maxX = Math.max(...pts.map(p => p.x));
     const maxY = Math.max(...pts.map(p => p.y));
-    
     const currentW = maxX - minX;
     const currentH = maxY - minY;
-    
+    if ((dim === 'w' && currentW < 1) || (dim === 'h' && currentH < 1)) return el;
     const scaleX = dim === 'w' ? value / currentW : 1;
     const scaleY = dim === 'h' ? value / currentH : 1;
-    
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    
-    const newPoints = pts.map(p => ({ 
-      x: centerX + (p.x - centerX) * scaleX, 
-      y: centerY + (p.y - centerY) * scaleY 
+    const newPoints = pts.map(p => ({
+      x: centerX + (p.x - centerX) * scaleX,
+      y: centerY + (p.y - centerY) * scaleY,
     }));
-    
-    updateSelectedElement({ 
-      points: newPoints, 
-      width: dim === 'w' ? value : selectedElement.width, 
-      height: dim === 'h' ? value : selectedElement.height 
-    });
+    return {
+      ...el,
+      points: newPoints,
+      width: dim === 'w' ? value : el.width,
+      height: dim === 'h' ? value : el.height,
+    };
+  };
+
+  const handleSizeChange = (dim: 'w' | 'h', value: number) => {
+    const ids = selectedIdsRef.current.length ? selectedIdsRef.current : (selectedId ? [selectedId] : []);
+    if (!ids.length) return;
+    setElements(prev => prev.map(el => ids.includes(el.id) && !el.locked ? resizeElementTo(el, dim, value) : el));
   };
 
   const handleAddReferenceImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1545,6 +1645,93 @@ const MapEditor = ({
     setHouseTypeAreas(updated);
     showSuccess(`تم حذف الصنف القياسي ${type}`);
   };
+
+  const houseRowGuide = (withCursor: boolean) => {
+    const pending = withCursor && plotCursor ? { x: snap(plotCursor.x), y: snap(plotCursor.y) } : null;
+    const last = plotPoints[plotPoints.length - 1];
+    const showPending = !!pending && (!last || Math.hypot(last.x - pending.x, last.y - pending.y) >= 2);
+    let controls = showPending && pending ? [...plotPoints, pending] : [...plotPoints];
+    let startEdge: [Point, Point] | undefined;
+    const anchor = elements.find((el) => el.id === rowAnchorId && el.type === 'house');
+    if (anchor && controls.length >= 1) {
+      const world = rotatePoints(getElementPoints(anchor), anchor.rotation || 0);
+      const exit = measureHouseExit(world, controls[0]);
+      if (exit) {
+        const cx = world.reduce((sum, point) => sum + point.x, 0) / world.length;
+        const cy = world.reduce((sum, point) => sum + point.y, 0) / world.length;
+        const span = Math.hypot(exit.mid.x - cx, exit.mid.y - cy) || 1;
+        const nx = (exit.mid.x - cx) / span;
+        const ny = (exit.mid.y - cy) / span;
+        const outward = (controls[0].x - exit.mid.x) * nx + (controls[0].y - exit.mid.y) * ny;
+        const aim = outward > 4
+          ? controls[0]
+          : { x: exit.mid.x + nx * rowAlong, y: exit.mid.y + ny * rowAlong };
+        startEdge = exit.edge;
+        controls = [exit.mid, aim, ...controls.slice(1).filter((point) => Math.hypot(point.x - exit.mid.x, point.y - exit.mid.y) > 2)];
+      }
+    }
+    return { path: bendPath(controls, rowArc), controls, pending, startEdge };
+  };
+
+  const previewHouseRow = (withCursor: boolean): HouseParcel[] => {
+    const { path, startEdge } = houseRowGuide(withCursor);
+    if (path.length < 2) return [];
+    return buildHouseRow({
+      path,
+      count: rowCount,
+      along: rowAlong,
+      across: rowAcross,
+      firstLabel: rowLabel.trim() || 'D1',
+      side: rowSide,
+      centered: rowAnchorId ? true : rowCentered,
+      startEdge,
+      stride: rowStride,
+    });
+  };
+
+  const commitHouseRow = () => {
+    const houses = previewHouseRow(false);
+    if (houses.length === 0) {
+      showError('ارسم خط المسار أولاً. نقطتان تكفيان، أو نقطة واحدة إذا بدأت من منزل.');
+      return;
+    }
+    const anchor = elements.find((el) => el.id === rowAnchorId && el.type === 'house');
+    const created: MapElement[] = houses.map((house) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'house',
+      label: house.label,
+      points: house.points,
+      rotation: 0,
+      orientation: 'horizontal',
+      color: anchor?.color,
+      textColor: anchor?.textColor || palette.fg,
+      fontSize: anchor?.fontSize || 10,
+      opacity: 1,
+      hideIcon: anchor?.hideIcon || false,
+      x: house.points[0].x,
+      y: house.points[0].y,
+      width: 0,
+      height: 0,
+      locked: false,
+      showInMain: false,
+      hasBorder: anchor?.hasBorder || false,
+      borderColor: anchor?.borderColor,
+      hasTexture: anchor?.hasTexture || false,
+      textureType: anchor?.textureType || 'glass',
+      textureColor: anchor?.textureColor || 'white',
+      textureSize: anchor?.textureSize || 1,
+      customArea: anchor?.customArea,
+    }));
+    checkAndExpandMap(created.flatMap((house) => house.points));
+    setElements((prev) => [...prev, ...created]);
+    setSelectedIds(created.map((house) => house.id));
+    setSelectedId(created[0].id);
+    setPlotPoints([]);
+    setRowAnchorId(null);
+    setActiveTool(null);
+    showSuccess(`تم رسم ${created.length} منازل متلاصقة`);
+  };
+  houseRowCommitRef.current = commitHouseRow;
 
   const zoom = Math.max(scale, 0.15);
   const editUnit = (screenPx: number, floor = screenPx * 0.4) => Math.max(screenPx / Math.pow(zoom, 0.42), floor) / zoom;
@@ -1895,6 +2082,51 @@ const MapEditor = ({
                 );
               })}
 
+              {activeTool === 'house_row' && (() => {
+                const houses = previewHouseRow(true);
+                const guide = houseRowGuide(true);
+                const origin = plotPoints[plotPoints.length - 1];
+                const pending = guide.pending;
+                const distance = origin && pending ? Math.hypot(pending.x - origin.x, pending.y - origin.y) : 0;
+                const bearing = origin && pending ? ((Math.atan2(pending.y - origin.y, pending.x - origin.x) * 180) / Math.PI + 360) % 360 : 0;
+                const arm = 16 / zoom;
+                const bowed = Math.abs(rowArc) >= 0.2 && guide.controls.length >= 2;
+                return (
+                  <g pointerEvents="none">
+                    {bowed && (
+                      <path d={pointsToPath(guide.controls, false)} fill="none" stroke={palette.fg} strokeWidth={edgeStroke * 0.7} strokeDasharray="2,4" opacity={0.55} />
+                    )}
+                    {guide.path.length >= 2 && (
+                      <path d={pointsToPath(guide.path, false)} fill="none" stroke={mapPalette.highlight} strokeWidth={edgeStroke} strokeDasharray="6,4" />
+                    )}
+                    {houses.map((house, index) => {
+                      const cx = house.points.reduce((sum, point) => sum + point.x, 0) / house.points.length;
+                      const cy = house.points.reduce((sum, point) => sum + point.y, 0) / house.points.length;
+                      return (
+                        <g key={`${house.label}-${index}`}>
+                          <path d={pointsToPath(house.points)} fill={STATUS_META.available.fill} fillOpacity={0.42} stroke={STATUS_META.available.stroke} strokeWidth={edgeStroke} />
+                          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fill={palette.fg} style={{ fontSize: `${11 / zoom}px`, fontFamily: canvasFont }}>{house.label}</text>
+                        </g>
+                      );
+                    })}
+                    {plotPoints.map((point, index) => (
+                      <circle key={`row-${index}`} cx={point.x} cy={point.y} r={index === 0 ? vertexR * 1.35 : vertexR} fill={mapPalette.highlight} />
+                    ))}
+                    {pending && (
+                      <g>
+                        <line x1={pending.x - arm} y1={pending.y} x2={pending.x + arm} y2={pending.y} stroke={mapPalette.highlight} strokeWidth={edgeStroke} />
+                        <line x1={pending.x} y1={pending.y - arm} x2={pending.x} y2={pending.y + arm} stroke={mapPalette.highlight} strokeWidth={edgeStroke} />
+                        <circle cx={pending.x} cy={pending.y} r={vertexR * 1.5} fill="none" stroke={mapPalette.highlight} strokeWidth={edgeStroke} />
+                        <text x={pending.x} y={pending.y - arm * 2.4} textAnchor="middle" fill={palette.fg} style={{ fontSize: `${12 / zoom}px`, fontFamily: canvasFont, direction: 'ltr' }}>
+                          {Math.round(pending.x)} , {Math.round(pending.y)}
+                          {origin ? ` · ${Math.round(distance)} · ${bearing.toFixed(0)}°` : ''}
+                        </text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })()}
+
               {activeTool === 'street_auto' && (plotPoints.length > 0 || plotCursor) && (() => {
                 const target = !plotClosed && plotCursor ? plotTarget(plotCursor) : null;
                 const pending = target?.point ?? null;
@@ -2082,6 +2314,92 @@ const MapEditor = ({
               )}
             </g>
           </svg>
+          {activeTool === 'house_row' && (
+            <div className="absolute bottom-3 start-3 z-10 flex w-[380px] max-w-[calc(100%-1.5rem)] flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
+              <span>النقطة تثبت حيث الشعيرة. الزاوية تحني الخط من منتصفه قوساً والطرفان يبقيان مكانهما، والمنازل تتبع القوس قبل التثبيت. Backspace يتراجع، Enter يرسم، Escape يلغي.</span>
+              {plotCursor && (
+                <span className="font-mono text-[11px] text-fg">
+                  النقطة التالية {snap(plotCursor.x)} , {snap(plotCursor.y)}
+                  {plotPoints.length > 0 && (() => {
+                    const origin = plotPoints[plotPoints.length - 1];
+                    const point = { x: snap(plotCursor.x), y: snap(plotCursor.y) };
+                    const distance = Math.hypot(point.x - origin.x, point.y - origin.y);
+                    const bearing = ((Math.atan2(point.y - origin.y, point.x - origin.x) * 180) / Math.PI + 360) % 360;
+                    return ` · المسافة ${Math.round(distance)} · الاتجاه ${bearing.toFixed(0)}°`;
+                  })()}
+                </span>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1">
+                  <span className="text-fg-muted">عدد المنازل</span>
+                  <Input type="number" min={1} value={rowCount} onChange={(e) => setRowCount(Math.max(1, Number(e.target.value) || 1))} className="h-8 font-mono text-[12px]" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-fg-muted">أول تسمية</span>
+                  <Input value={rowLabel} onChange={(e) => setRowLabel(e.target.value)} className="h-8 font-mono text-[12px]" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-fg-muted">الطول على الخط</span>
+                  <Input type="number" min={4} value={rowAlong} onChange={(e) => setRowAlong(Math.max(4, Number(e.target.value) || 4))} className="h-8 font-mono text-[12px]" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-fg-muted">العرض</span>
+                  <Input type="number" min={4} value={rowAcross} onChange={(e) => setRowAcross(Math.max(4, Number(e.target.value) || 4))} className="h-8 font-mono text-[12px]" />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-fg">التسلسل</span>
+                <div className="flex border border-line">
+                  <button type="button" onClick={() => setRowStride(1)} className={cn("px-2 py-1", rowStride === 1 ? "bg-fg text-background" : "text-fg-muted")}>عادي</button>
+                  <button type="button" onClick={() => setRowStride(2)} className={cn("border-s border-line px-2 py-1", rowStride === 2 ? "bg-fg text-background" : "text-fg-muted")}>فردي</button>
+                </div>
+                <span className="text-fg">قوس</span>
+                <button type="button" onClick={() => setRowArc((value) => Math.max(-170, value - 5))} className="border border-line px-2 py-1 text-fg">−</button>
+                <Input type="number" value={rowArc} onChange={(e) => setRowArc(Math.max(-170, Math.min(170, Number(e.target.value) || 0)))} className="h-8 w-16 font-mono text-[12px]" />
+                <button type="button" onClick={() => setRowArc((value) => Math.min(170, value + 5))} className="border border-line px-2 py-1 text-fg">+</button>
+                <button type="button" onClick={() => setRowSide((side) => (side === 1 ? -1 : 1))} className="border border-line px-2 py-1 text-fg">{rowSide === 1 ? 'الجهة أ' : 'الجهة ب'}</button>
+                {!rowAnchorId && (
+                  <button type="button" onClick={() => setRowCentered((value) => !value)} className="border border-line px-2 py-1 text-fg">{rowCentered ? 'وسط الخط' : 'جانب الخط'}</button>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={selectedElement?.type !== 'house'}
+                  onClick={() => {
+                    if (!selectedElement || selectedElement.type !== 'house') return;
+                    const pts = getElementPoints(selectedElement);
+                    const width = Math.max(...pts.map((point) => point.x)) - Math.min(...pts.map((point) => point.x));
+                    const height = Math.max(...pts.map((point) => point.y)) - Math.min(...pts.map((point) => point.y));
+                    setRowAnchorId(selectedElement.id);
+                    setRowAlong(Math.max(4, Math.round(width)));
+                    setRowAcross(Math.max(4, Math.round(height)));
+                    setRowLabel(nextLabel(selectedElement.label, 1, rowStride));
+                    setPlotPoints([]);
+                  }}
+                >
+                  من المنزل المحدد
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={plotPoints.length < 2}
+                  onClick={() => {
+                    const length = polylineLength(houseRowGuide(false).path);
+                    if (length < 4) return;
+                    setRowAlong(Math.max(4, Math.round(length / Math.max(1, rowCount))));
+                  }}
+                >
+                  طول يملأ الخط
+                </Button>
+                <Button type="button" size="sm" onClick={commitHouseRow}>رسم الصف</Button>
+              </div>
+              {rowAnchorId && <span>التكملة تلتصق بحافة المنزل المحدد وتكمل التسمية {rowStride === 1 ? 'بخطوة 1' : 'بخطوة 2'}.</span>}
+            </div>
+          )}
           {activeTool === 'street_auto' && (
             <div className="absolute bottom-3 start-3 z-10 flex max-w-md flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
               <span>ضع نقاطاً حول البلوكات والحدائق ثم أغلق الشكل. يُرسم شارع حول شكل كل بلوك، وشارع واحد بين البلوكات المتقابلة، ثم رصيف. الحديقة يجب أن تكون مرسومة قبل التوليد.</span>
@@ -2279,7 +2597,7 @@ const MapEditor = ({
 
           {selectedElement && (
             <div className="flex flex-col overflow-hidden border border-line bg-surface">
-              <div className="flex items-center justify-between border-b border-line px-5 py-4">
+                <div className="flex items-center justify-between border-b border-line px-5 py-4">
                 <div className="flex items-center gap-2"><Settings2 size={14} className="text-fg-muted" /><h3 className="text-[13px] font-medium text-fg">خصائص العنصر</h3>{selectedIds.length > 1 && <span className="text-[11px] text-fg-muted">{selectedIds.length} محدد</span>}</div>
                 <Button variant="ghost" size="icon" onClick={() => { setSelectedId(null); setSelectedIds([]); }} className="text-fg-faint hover:text-fg"><X size={18} /></Button>
               </div>
@@ -2314,7 +2632,11 @@ const MapEditor = ({
                     <Switch checked={selectedElement.locked} onCheckedChange={(val) => updateSelectedElement({ locked: val })} />
                   </div>
 
-                  <div className="space-y-2"><Label className="text-[11px] text-fg-muted">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label><Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="" /></div>
+                  <div className="space-y-2">
+                    <Label className="text-[11px] text-fg-muted">{selectedElement.type === 'text' ? 'محتوى النص' : 'تسمية العنصر'}</Label>
+                    <Input value={selectedElement.label} onChange={(e) => updateSelectedElement({ label: e.target.value })} className="" />
+                    {selectedIds.length > 1 && <p className="text-[10px] leading-relaxed text-fg-faint">التسمية لهذا العنصر فقط. الطول والعرض والألوان وبقية الإعدادات تُطبَّق على كل المحدد، والسحب يحرّكهم معاً.</p>}
+                  </div>
                   {selectedElement.type === 'amenity' && (
                     <div className="space-y-2">
                       <Label className="text-[11px] text-fg-muted">نوع المرفق</Label>
@@ -2675,8 +2997,28 @@ const MapEditor = ({
                     <Button variant="outline" onClick={() => handleDuplicate('up')} className="gap-1.5"><ArrowUp size={16} /> تكرار أعلى</Button>
                     <Button variant="outline" onClick={() => handleDuplicate('down')} className="gap-1.5"><ArrowDown size={16} /> تكرار أسفل</Button>
                   </div>
+                  {selectedElement.type === 'house' && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        const pts = getElementPoints(selectedElement);
+                        const width = Math.max(...pts.map((point) => point.x)) - Math.min(...pts.map((point) => point.x));
+                        const height = Math.max(...pts.map((point) => point.y)) - Math.min(...pts.map((point) => point.y));
+                        setRowAnchorId(selectedElement.id);
+                        setRowAlong(Math.max(4, Math.round(width)));
+                        setRowAcross(Math.max(4, Math.round(height)));
+                        setRowLabel(nextLabel(selectedElement.label, 1, rowStride));
+                        setPlotPoints([]);
+                        setActiveTool('house_row');
+                        setIsBrushMode(false);
+                      }}
+                    >
+                      رسم صف من هذا المنزل
+                    </Button>
+                  )}
                 </div>
-                <div className="border-t border-line pt-6"><Button variant="destructive" className="w-full gap-1.5" onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}><Trash2 size={18} /> حذف العنصر</Button></div>
+                <div className="border-t border-line pt-6"><Button variant="destructive" className="w-full gap-1.5" onClick={() => { const ids = new Set(selectedIds.length ? selectedIds : [selectedId]); setElements(prev => prev.filter(el => !ids.has(el.id))); setSelectedId(null); setSelectedIds([]); }}><Trash2 size={18} /> حذف العنصر</Button></div>
               </div>
             </div>
           )}
