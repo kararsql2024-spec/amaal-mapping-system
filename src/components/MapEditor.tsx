@@ -140,7 +140,7 @@ const RAIL: { type: EditorTool; label: string; hint: string; icon: any; swatch: 
   { type: 'road', label: 'طريق', hint: 'ارسم مسار الطريق نقطة نقطة ثم ولّد عرضه', icon: Waypoints, swatch: mapPalette.roadStroke, gapBefore: true },
   { type: 'sidewalk', label: 'رصيف', hint: 'ارسم مسار الرصيف نقطة نقطة ثم ولّد عرضه', icon: Footprints, swatch: mapPalette.sidewalkStroke },
   { type: 'green_plot', label: 'حديقة', hint: 'ارسم مسار الحديقة وأغلقه. المساحة داخله تصبح خضراء', icon: Pentagon, swatch: mapPalette.green },
-  { type: 'street_auto', label: 'بلوك', hint: 'حدد منطقة حول البلوكات لتوليد الشوارع والأرصفة', icon: Route, swatch: mapPalette.roadStroke },
+  { type: 'street_auto', label: 'بلوك', hint: 'ارسم إطار المنطقة. الرصيف يلف الشكل، والباقي شارع واحد يقف عند الشارع المرسوم', icon: Route, swatch: mapPalette.roadStroke },
   { type: 'text', label: 'نص', hint: 'نقرة تضع نصاً', icon: Type, swatch: palette.fgSecondary, gapBefore: true },
   { type: 'label_area', label: 'تسمية', hint: 'نقرة تضع منطقة تسمية شفافة', icon: Tag, swatch: mapPalette.labelAreaStroke },
   { type: 'map_boundary', label: 'حدود', hint: 'اسحب مستطيلاً لتحديد حدود لوحة المخطط', icon: Frame, swatch: mapPalette.highlight },
@@ -479,6 +479,7 @@ const MapEditor = ({
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
     if (suppressPlotClick.current) {
       suppressPlotClick.current = false;
       return;
@@ -766,7 +767,7 @@ const MapEditor = ({
     }
     const region = plotPoints;
     const network = generateStreetNetwork(region, elements, roadGenWidth, walkGenWidth);
-    if (!network) {
+    if (!network || (network.roads.length === 0 && network.sidewalks.length === 0)) {
       showError('لا توجد منازل أو مرافق أو حدائق داخل التحديد');
       return;
     }
@@ -787,11 +788,11 @@ const MapEditor = ({
         height: 0,
         locked: false,
         showInMain: false,
-        centerline: piece.centerline,
+        centerline: piece.centerline.length >= 2 ? piece.centerline : undefined,
         centerlineBranches: piece.branches.length > 0 ? piece.branches : undefined,
         pathLoops: piece.loops.length > 0 ? piece.loops : undefined,
-        pathWidth: piece.width,
-        pathClosed: piece.closed || undefined,
+        pathWidth: piece.centerline.length >= 2 ? piece.width : undefined,
+        pathClosed: piece.centerline.length >= 2 ? piece.closed || undefined : undefined,
         pathHoles: piece.shape.holes.length > 0 ? piece.shape.holes : undefined,
         pathGenerated: true,
       };
@@ -801,7 +802,7 @@ const MapEditor = ({
       ...network.roads.map((piece) => makePiece('road', piece)),
     ];
     checkAndExpandMap(created.flatMap((el) => el.points));
-    setElements((prev) => [...prev.filter((el) => !streetMostlyInside(el, region)), ...created]);
+    setElements((prev) => [...prev.filter((el) => !(el.pathGenerated && streetMostlyInside(el, region))), ...created]);
     setSelectedId(created[created.length - 1]?.id || null);
     setPlotPoints([]);
     setPlotClosed(false);
@@ -962,6 +963,7 @@ const MapEditor = ({
   };
 
   const grabElement = (event: React.MouseEvent, el: MapElement) => {
+    if (event.button === 2) return;
     if (linkingId || extendId) return;
     if (activeTool === 'house_row') {
       suppressPlotClick.current = true;
@@ -1001,6 +1003,11 @@ const MapEditor = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) {
+      e.preventDefault();
+      setDragMode({ type: 'pan', startPos: { x: e.clientX, y: e.clientY } });
+      return;
+    }
     if (linkingId || extendId) return;
     const pos = getMousePos(e);
     if (activeTool === 'map_boundary') {
@@ -1817,7 +1824,7 @@ const MapEditor = ({
         </div>
 
         <div className="relative flex-1 touch-none overflow-hidden border border-line" style={{ backgroundColor: backgroundColor }}>
-          <svg ref={svgRef} className={cn("w-full h-full", (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={() => setPlotCursor(null)} onWheel={handleWheel} style={{ backgroundColor: backgroundColor }}>
+          <svg ref={svgRef} className={cn("w-full h-full", dragMode?.type === 'pan' ? "cursor-grabbing" : (isBrushMode || activeTool === 'map_boundary') ? "cursor-crosshair" : !activeTool ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair")} onClick={handleCanvasClick} onContextMenu={(e) => e.preventDefault()} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={() => setPlotCursor(null)} onWheel={handleWheel} style={{ backgroundColor: backgroundColor }}>
             <g ref={contentRef} style={{ transform: `translate(${viewPos.x}px, ${viewPos.y}px) scale(${scale})`, transformOrigin: '0 0' }}>
               <defs>
                 <pattern id="grid-editor" width={GRID_SIZE * 5} height={GRID_SIZE * 5} patternUnits="userSpaceOnUse"><path d={`M ${GRID_SIZE * 5} 0 L 0 0 0 ${GRID_SIZE * 5}`} fill="none" stroke={mapPalette.gridStrong} strokeWidth="1" opacity="0.6"/></pattern>
@@ -1877,7 +1884,7 @@ const MapEditor = ({
                         <>
                           {pts.map((p, i) => (
                             <g key={`vertex-${i}`}>
-                              <circle cx={p.x} cy={p.y} r={vertexHit} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />
+                              <circle cx={p.x} cy={p.y} r={vertexHit} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { if (e.button === 2) return; e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} />
                               <circle cx={p.x} cy={p.y} r={vertexR} className="fill-surface stroke-fg" strokeWidth={vertexStroke} pointerEvents="none" />
                             </g>
                           ))}
@@ -1988,7 +1995,7 @@ const MapEditor = ({
                       </g>
                     )}
                     
-                    {el.type === 'road' && !el.isStroke && (
+                    {el.type === 'road' && !el.isStroke && (!el.pathGenerated || (el.centerline && el.centerline.length >= 2 && el.pathWidth)) && (
                       <g pointerEvents="none">
                         {el.centerline && el.centerline.length >= 2 && el.pathWidth
                           ? [el.centerline, ...(el.centerlineBranches || [])].map((line, index) => {
@@ -2042,6 +2049,7 @@ const MapEditor = ({
                                 fill="transparent"
                                 className="cursor-pointer"
                                 onMouseDown={(e) => {
+                                  if (e.button === 2) return;
                                   e.stopPropagation();
                                   const inserted = { x: snap(midX), y: snap(midY) };
                                   if (pathEdit && el.centerline && el.pathWidth) {
@@ -2064,14 +2072,14 @@ const MapEditor = ({
 
                         {handlePoints.map((p, i) => (
                           <g key={`vertex-${i}`}>
-                            <circle cx={p.x} cy={p.y} r={vertexHit} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pathEdit && el.centerline && el.pathWidth) { if (el.centerline.length <= 2) { showError("لا يمكن حذف هذه النقطة"); return; } const line = el.centerline.filter((_, idx) => idx !== i); const shape = networkShape(line, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []); if (shape.outline.length >= 3) updateSelectedElement({ centerline: line, points: shape.outline, pathHoles: shape.holes.length ? shape.holes : undefined, rotation: 0 }); return; } if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />
+                            <circle cx={p.x} cy={p.y} r={vertexHit} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { if (e.button === 2) return; e.stopPropagation(); setDragMode({ type: 'vertex', index: i }); }} onDoubleClick={(e) => { e.stopPropagation(); if (pathEdit && el.centerline && el.pathWidth) { if (el.centerline.length <= 2) { showError("لا يمكن حذف هذه النقطة"); return; } const line = el.centerline.filter((_, idx) => idx !== i); const shape = networkShape(line, el.centerlineBranches || [], el.pathWidth, !!el.pathClosed, el.pathLoops || []); if (shape.outline.length >= 3) updateSelectedElement({ centerline: line, points: shape.outline, pathHoles: shape.holes.length ? shape.holes : undefined, rotation: 0 }); return; } if (pts.length > 3) { const newPoints = pts.filter((_, idx) => idx !== i); updateSelectedElement({ points: newPoints }); showSuccess("تم حذف الزاوية المحددة"); } else { showError("لا يمكن حذف الزاوية، يجب بقاء 3 زوايا على الأقل للشكل"); } }} />
                             <circle cx={p.x} cy={p.y} r={vertexR} className="fill-surface stroke-fg" strokeWidth={vertexStroke} pointerEvents="none" />
                           </g>
                         ))}
                         
                         {!pathEdit && (
                           <>
-                            <circle cx={centerX} cy={pts[0].y - 28 / zoom} r={Math.max(editUnit(6.5), 12 / zoom)} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
+                            <circle cx={centerX} cy={pts[0].y - 28 / zoom} r={Math.max(editUnit(6.5), 12 / zoom)} fill="transparent" className="cursor-pointer" onMouseDown={(e) => { if (e.button === 2) return; e.stopPropagation(); setDragMode({ type: 'rotate' }); }} />
                             <circle cx={centerX} cy={pts[0].y - 28 / zoom} r={editUnit(6.5)} className="fill-fg" pointerEvents="none" />
                           </>
                         )}
@@ -2402,7 +2410,7 @@ const MapEditor = ({
           )}
           {activeTool === 'street_auto' && (
             <div className="absolute bottom-3 start-3 z-10 flex max-w-md flex-col gap-2 border border-line bg-surface px-3 py-2 text-[11px] text-fg-secondary">
-              <span>ضع نقاطاً حول البلوكات والحدائق ثم أغلق الشكل. يُرسم شارع حول شكل كل بلوك، وشارع واحد بين البلوكات المتقابلة، ثم رصيف. الحديقة يجب أن تكون مرسومة قبل التوليد.</span>
+              <span>ارسم إطار المنطقة ثم ولّد. الرصيف يلف كل بلوك ومرفق وحديقة من كل الجهات، والشارع هو المساحة الباقية ويستمر حتى لو ضاق الممر. الشارع المرسوم باليد يبقى ويقف التوليد على حافته.</span>
               <div className="flex items-center gap-2">
                 <Checkbox id="street-direction-lock" checked={directionLock} onCheckedChange={(value) => setDirectionLock(value === true)} />
                 <Label htmlFor="street-direction-lock" className="text-[11px] text-fg">أضلاع مستقيمة</Label>

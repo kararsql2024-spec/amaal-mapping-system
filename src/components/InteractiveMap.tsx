@@ -1202,7 +1202,7 @@ const InteractiveMap = ({
         ctx.stroke();
       }
 
-      if (el.type === 'road' && !el.isStroke) {
+      if (el.type === 'road' && !el.isStroke && (prepared?.guides || !el.pathGenerated)) {
         const trace = (line: Point[]) => {
           if (line.length < 2) return;
           ctx.beginPath();
