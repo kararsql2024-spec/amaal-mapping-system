@@ -2165,6 +2165,7 @@ const Admin = ({ projects, setProjects, setHousesData, housesData = {} }: AdminP
         initialHouseTypeAreas={isEditingMainMap ? {} : (projectConfigs[editingMapProject?.id || '']?.houseTypeAreas || {})}
         storageScope={isEditingMainMap ? 'main-map' : 'project'}
         storageScopeId={isEditingMainMap ? 'main-map' : (editingMapProject?.id || '')}
+        apartmentStatuses={housesData}
       />
     );
   }

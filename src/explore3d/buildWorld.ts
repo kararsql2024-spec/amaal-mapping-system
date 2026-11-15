@@ -1,7 +1,7 @@
 import type { MapElement, Point } from "@/types/project";
 import { getStatusMeta } from "@/lib/unit-status";
 import { getApartmentLabel } from "@/lib/units";
-import { floorPlan, orientPlanBox } from "@/lib/tower-plan";
+import { floorPlan, groundFrozenApartments, orientPlanBox, towerEntrance } from "@/lib/tower-plan";
 import {
   AMENITY_COLORS,
   AMENITY_HEIGHTS,
@@ -170,6 +170,7 @@ export const buildWorld = (
   const towers: PlacedInstance[] = [];
   const apartments: PlacedInstance[] = [];
   const joints: PlacedInstance[] = [];
+  const entrances: PlacedInstance[] = [];
   const trees: PlacedInstance[] = [];
   const shrubs: PlacedInstance[] = [];
   const amenities: PlacedInstance[] = [];
@@ -281,6 +282,7 @@ export const buildWorld = (
       const span = alongX ? width : depth;
       const cross = alongX ? depth : width;
       const plan = floorPlan(el, apartmentsPerFloor, span, cross);
+      const entrance = towerEntrance(el, apartmentsPerFloor, span, cross, groundFrozenApartments(el, units));
       const cellH = Math.max(FLOOR_HEIGHT_M - FLOOR_BAND_M, FLOOR_HEIGHT_M * 0.72);
       const turnBox = (along: number, across: number, boxSpan: number, boxCross: number) =>
         orientPlanBox(along, across, boxSpan, boxCross, el.planQuarter || 0, !!el.planFlip);
@@ -319,6 +321,7 @@ export const buildWorld = (
           const unitKey = `${el.id}_F${floor}_A${cell.apt}`;
           const status = units[unitKey]?.status || "available";
           if (status === "frozen_hidden") continue;
+          if (floor === 1 && entrance?.apt === cell.apt) continue;
           const turned = turnBox(cell.along, cell.across, cell.span, cell.cross);
           placeBox(
             apartments,
@@ -352,6 +355,35 @@ export const buildWorld = (
       }
 
       const bodyH = floors * FLOOR_HEIGHT_M;
+      if (entrance) {
+        const pointOf = (across: number) => {
+          const turned = turnBox(entrance.along, across, 0, 0);
+          const local = alongX ? { x: turned.along, z: turned.across } : { x: turned.across, z: turned.along };
+          return yawOffset(local.x, local.z, rotY);
+        };
+        const tail = pointOf(entrance.edge - entrance.reach * 0.15);
+        const head = pointOf(entrance.edge + entrance.reach * 0.85);
+        const dx = head.x - tail.x;
+        const dz = head.z - tail.z;
+        const length = Math.hypot(dx, dz);
+        if (length > 0.4) {
+          entrances.push({
+            id: el.id,
+            kind: "tower",
+            label: el.label || "عمارة",
+            x: center.x + (tail.x + head.x) / 2,
+            y: 0.05,
+            z: center.z + (tail.z + head.z) / 2,
+            rotY: Math.atan2(dx, dz),
+            sx: Math.min(4.8, Math.max(2.4, length * 0.55)),
+            sy: 0.42,
+            sz: length,
+            color: 0x141414,
+            floors,
+            apartmentsPerFloor,
+          });
+        }
+      }
       plan.joints.forEach((joint) => {
         const turned = turnBox(joint.along, joint.across, joint.span, joint.cross);
         placeBox(joints, turned.along, turned.across, turned.span, turned.cross, 0, bodyH, {});
@@ -376,6 +408,7 @@ export const buildWorld = (
         sy: AMENITY_HEIGHTS[amenityType] || AMENITY_HEIGHT_M,
         sz: Math.max(footprintBox.depth, 0.8),
         points: footprint.length >= 3 ? footprint : undefined,
+        frontQuarter: ((el.amenityFront || 0) % 4 + 4) % 4,
         color: AMENITY_COLORS[amenityType] || COLORS.amenity,
       });
     }
@@ -391,6 +424,7 @@ export const buildWorld = (
     towers,
     apartments,
     joints,
+    entrances,
     trees,
     shrubs,
     amenities,

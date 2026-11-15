@@ -55,6 +55,16 @@ export const validatePaymentTotals = (
   return { ok: true, expected, actual, difference: 0 };
 };
 
+/** مبلغ التوقيع يغطي سعر البيع، فلا تبقى دفعات لاحقة. */
+export const isPaidInFullAtSigning = (
+  totalPrice: number | string,
+  signingAmount: number | string,
+): boolean => {
+  const price = Number(totalPrice) || 0;
+  const signing = Number(signingAmount) || 0;
+  return price > 0 && signing === price;
+};
+
 const distributeRemainderAmount = (
   baseMillion: number,
   diff: number,
@@ -136,6 +146,7 @@ export const generateInstallments = (
   const price = Number(totalPrice) || 0;
   const signing = Number(signingAmount) || 0;
   const totalToDistribute = price - signing;
+  if (totalToDistribute <= 0 || count <= 0) return [];
 
   const baseMillion =
     Math.floor(totalToDistribute / count / MILLION_STEP) * MILLION_STEP;

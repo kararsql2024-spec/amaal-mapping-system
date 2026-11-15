@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { canvasFont, mapPalette, palette } from "@/lib/theme";
 import { buildCorridor, networkShape, roadMarkings } from "@/lib/road-geometry";
+import { towerPlanDoor } from "@/lib/tower-plan";
 import { getReferenceImageSrc } from "@/lib/map-image-storage";
 import { PRIMARY_STATUSES, STATUS_META } from "@/lib/unit-status";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -438,6 +439,64 @@ const drawBoundedText = (
   lines.forEach((line, index) => {
     ctx.fillText(line, centerX, topY + (index * lineHeight));
   });
+};
+
+const paintTowerArrow = (
+  ctx: CanvasRenderingContext2D,
+  el: MapElement,
+  points: Point[],
+  houses: Record<string, { status?: string } | undefined>,
+) => {
+  if (el.type !== "tower" || points.length < 3) return;
+  const door = towerPlanDoor(el, points, houses);
+  if (!door) return;
+  const dx = door.x2 - door.x1;
+  const dy = door.y2 - door.y1;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const head = Math.max(7, length * 0.42);
+  const wing = head * 0.7;
+  const tipX = door.x2;
+  const tipY = door.y2;
+  const baseX = tipX - ux * head;
+  const baseY = tipY - uy * head;
+  const halo = Math.max(3.2, head * 0.34);
+  const mark = Math.max(1.8, head * 0.2);
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(door.x1, door.y1);
+  ctx.lineTo(baseX, baseY);
+  ctx.strokeStyle = palette.surface;
+  ctx.lineWidth = halo;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(baseX - uy * wing, baseY + ux * wing);
+  ctx.lineTo(baseX + uy * wing, baseY - ux * wing);
+  ctx.closePath();
+  ctx.fillStyle = palette.surface;
+  ctx.fill();
+  ctx.lineWidth = halo * 0.55;
+  ctx.strokeStyle = palette.surface;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(door.x1, door.y1);
+  ctx.lineTo(baseX, baseY);
+  ctx.strokeStyle = palette.fg;
+  ctx.lineWidth = mark;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(baseX - uy * wing, baseY + ux * wing);
+  ctx.lineTo(baseX + uy * wing, baseY - ux * wing);
+  ctx.closePath();
+  ctx.fillStyle = palette.fg;
+  ctx.fill();
+  ctx.restore();
 };
 
 const InteractiveMap = ({ 
@@ -1282,6 +1341,8 @@ const InteractiveMap = ({
         );
       }
 
+      if (el.type === "tower") paintTowerArrow(ctx, el, pts, housesData);
+
       ctx.restore();
     });
 
@@ -1470,6 +1531,7 @@ const InteractiveMap = ({
             minDim * 0.28,
           );
         }
+        if (el.type === "tower") paintTowerArrow(ctx, el, pts, housesData);
         ctx.restore();
       });
     }

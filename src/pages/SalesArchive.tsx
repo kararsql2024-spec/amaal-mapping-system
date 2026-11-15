@@ -195,6 +195,12 @@ const SalesArchive = () => {
     const signing = Number(editingBooking.signing_amount) || 0;
     const count = Number(editingBooking.installments_count) || 6;
     if (price <= 0) return showError("يرجى إدخال السعر الإجمالي أولاً");
+    if (signing > price) return showError("مبلغ التوقيع يتجاوز السعر الإجمالي");
+    if (signing === price) {
+      setEditingBooking({ ...editingBooking, installments: [] });
+      showSuccess("السعر مغطى بدفعة التوقيع، ولا توجد دفعات لاحقة");
+      return;
+    }
 
     const totalToDistribute = price - signing;
     const baseMillion = Math.floor(totalToDistribute / count / 1_000_000) * 1_000_000;
