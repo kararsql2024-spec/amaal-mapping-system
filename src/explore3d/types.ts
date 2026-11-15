@@ -31,6 +31,8 @@ export interface PlacedInstance {
   sx: number;
   sy: number;
   sz: number;
+  /** تدوير واجهة المرفق عن جهة الشارع، بخطوات 90 درجة. */
+  frontQuarter?: number;
   /** بصمة المنزل بعد الدوران. تُرسم كما هي، لا كمستطيل الطول والعرض. */
   points?: WorldPoint[];
   color: number;
@@ -73,6 +75,8 @@ export interface ExploreWorld {
   apartments: PlacedInstance[];
   /** فواصل بين الشقق وبين الطوابق، وكتلة السطح. */
   joints: PlacedInstance[];
+  /** سهم اتجاه باب كل عمارة. */
+  entrances: PlacedInstance[];
   trees: PlacedInstance[];
   shrubs: PlacedInstance[];
   amenities: PlacedInstance[];

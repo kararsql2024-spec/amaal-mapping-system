@@ -31,7 +31,7 @@ import { generateStreetNetwork, streetMostlyInside, type StreetPiece } from '@/l
 import { Checkbox } from '@/components/ui/checkbox';
 import { STATUS_META } from '@/lib/unit-status';
 import { bendPath, buildHouseRow, measureHouseExit, nextLabel, polylineLength, rotatePoints, type HouseParcel } from '@/lib/house-row';
-import { towerPlanCells } from '@/lib/tower-plan';
+import { towerPlanCells, towerPlanDoor } from '@/lib/tower-plan';
 import {
   getReferenceImageSrc,
   uploadMapImageFile,
@@ -52,6 +52,8 @@ interface MapEditorProps {
   /** سياق رفع الصور إلى Storage */
   storageScope?: MapImageScope;
   storageScopeId?: string;
+  /** حالة شقق الطابق الأرضي، لرسم الباب مكان الشقة المجمّدة. */
+  apartmentStatuses?: Record<string, { status?: string } | undefined>;
 }
 
 const GRID_SIZE = 10;
@@ -159,6 +161,7 @@ const MapEditor = ({
   initialHouseTypeAreas = {},
   storageScope,
   storageScopeId,
+  apartmentStatuses = {},
 }: MapEditorProps) => {
   const [elements, setElements] = useState<MapElement[]>(() => repairGeneratedPaths(initialElements));
   const [undoCount, setUndoCount] = useState(0);
@@ -1953,9 +1956,12 @@ const MapEditor = ({
                     
                     {el.type === 'pitch' && renderPitchLines(pts)}
                     {IconComponent && !el.hideIcon && <foreignObject x={centerX - 12} y={centerY - 18} width="24" height="24" pointerEvents="none"><div className="flex items-center justify-center w-full h-full"><IconComponent size={20} color={el.textColor || (el.type === 'tower' ? palette.accentFg : palette.fg)} strokeWidth={2.5}/></div></foreignObject>}
-                    {el.type === 'tower' && (
+                    {el.type === 'tower' && (() => {
+                      const door = towerPlanDoor(el, pts, apartmentStatuses);
+                      return (
                       <g pointerEvents="none" clipPath={`url(#clip-editor-${el.id})`}>
                         {towerPlanCells(el, pts).map((cell) => {
+                          const lobby = door?.apt === cell.apt;
                           const pad = Math.min(2.2, cell.w * 0.07, cell.h * 0.07);
                           const x = cell.x + pad;
                           const y = cell.y + pad;
@@ -1968,12 +1974,14 @@ const MapEditor = ({
                                 y={y}
                                 width={w}
                                 height={h}
-                                fill={palette.surface}
-                                fillOpacity={isSelectedEl ? 0.78 : 0.4}
+                                fill={lobby ? "none" : palette.surface}
+                                fillOpacity={lobby ? 1 : (isSelectedEl ? 0.78 : 0.4)}
                                 stroke={palette.fg}
                                 strokeOpacity={isSelectedEl ? 0.95 : 0.5}
                                 strokeWidth={isSelectedEl ? 1.6 : 1}
+                                strokeDasharray={lobby ? "3 2" : undefined}
                               />
+                              {!lobby && (
                               <text
                                 x={x + w / 2}
                                 y={y + h / 2}
@@ -1989,11 +1997,40 @@ const MapEditor = ({
                               >
                                 {cell.apt}
                               </text>
+                              )}
                             </g>
                           );
                         })}
                       </g>
-                    )}
+                      );
+                    })()}
+                    {el.type === 'tower' && (() => {
+                      const door = towerPlanDoor(el, pts, apartmentStatuses);
+                      if (!door) return null;
+                      const dx = door.x2 - door.x1;
+                      const dy = door.y2 - door.y1;
+                      const length = Math.hypot(dx, dy);
+                      if (length < 1) return null;
+                      const ux = dx / length;
+                      const uy = dy / length;
+                      const head = Math.max(7, length * 0.42);
+                      const wing = head * 0.7;
+                      const tipX = door.x2;
+                      const tipY = door.y2;
+                      const baseX = tipX - ux * head;
+                      const baseY = tipY - uy * head;
+                      const halo = Math.max(3.2, head * 0.34);
+                      const mark = Math.max(1.8, head * 0.2);
+                      const tip = `${tipX},${tipY} ${baseX - uy * wing},${baseY + ux * wing} ${baseX + uy * wing},${baseY - ux * wing}`;
+                      return (
+                        <g pointerEvents="none">
+                          <line x1={door.x1} y1={door.y1} x2={baseX} y2={baseY} stroke={palette.surface} strokeWidth={halo} strokeLinecap="round" />
+                          <polygon points={tip} fill={palette.surface} stroke={palette.surface} strokeWidth={halo * 0.55} strokeLinejoin="round" />
+                          <line x1={door.x1} y1={door.y1} x2={baseX} y2={baseY} stroke={palette.fg} strokeWidth={mark} strokeLinecap="round" />
+                          <polygon points={tip} fill={palette.fg} />
+                        </g>
+                      );
+                    })()}
                     
                     {el.type === 'road' && !el.isStroke && (!el.pathGenerated || (el.centerline && el.centerline.length >= 2 && el.pathWidth)) && (
                       <g pointerEvents="none">
@@ -2658,6 +2695,27 @@ const MapEditor = ({
                           {AMENITY_TYPES.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      <div className="space-y-2 border border-line bg-surface-sunken p-4">
+                        <Label className="text-[12px] font-medium">اتجاه الواجهة في المجسّم</Label>
+                        <p className="text-[11px] text-fg-secondary">زاوية الدوران تلف قطعة المرفق في المخطط. واجهة المجسّم تبقى نحو الشارع إلى أن تختار اتجاهاً هنا.</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { turn: 0, label: "نحو الشارع" },
+                            { turn: 1, label: "90°" },
+                            { turn: 2, label: "180°" },
+                            { turn: 3, label: "270°" },
+                          ].map((choice) => (
+                            <Button
+                              key={choice.turn}
+                              type="button"
+                              variant={(selectedElement.amenityFront || 0) === choice.turn ? "default" : "outline"}
+                              onClick={() => updateSelectedElement({ amenityFront: choice.turn })}
+                            >
+                              {choice.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
                   
@@ -2918,7 +2976,7 @@ const MapEditor = ({
                     <div className="space-y-6">
                       <div className="space-y-2 border border-line bg-surface-sunken p-4">
                         <Label className="text-[12px] font-medium">اتجاه الشقق داخل البصمة</Label>
-                        <p className="text-[11px] text-fg-secondary">صف 1 و3 هو الواجهة. حرّك الخطة حتى تطل على الشارع.</p>
+                        <p className="text-[11px] text-fg-secondary">صف 1 و3 هو الواجهة. السهم يدل على مكان الباب: بين 1 و3، أو في الشقة الأمامية المجمّدة إذا اتسع الصف. حرّك الخطة حتى تطل على الشارع.</p>
                         <div className="grid grid-cols-2 gap-2">
                           <Button
                             type="button"

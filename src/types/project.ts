@@ -32,6 +32,8 @@ export interface MapElement {
   width: number;
   height: number;
   amenityType?: string;
+  /** اتجاه واجهة المجسّم: 0 نحو الشارع، ثم 90 و180 و270. لا يغيّر رسم المخطط. */
+  amenityFront?: number;
   strokeWidth?: number;
   isStroke?: boolean;
   fontSize?: number;

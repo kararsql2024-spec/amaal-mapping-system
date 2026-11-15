@@ -1690,8 +1690,8 @@ type Frame = { matrix: THREE.Matrix4; local: P[] };
 const insideRoad = (x: number, z: number, roads: GroundPoly[]) =>
   roads.some((road) => pointInPoly(x, z, road.points) && !(road.holes || []).some((hole) => pointInPoly(x, z, hole)));
 
-/** محور القطعة على أطول ضلع، والواجهة نحو أقرب شارع. */
-const frameOf = (ring: P[], roads: GroundPoly[], longFront: boolean): Frame => {
+/** محور القطعة على أطول ضلع. الواجهة نحو أقرب شارع، ما لم يُطلب تدويرها. */
+const frameOf = (ring: P[], roads: GroundPoly[], longFront: boolean, frontQuarter = 0): Frame => {
   let ux = 1;
   let uz = 0;
   let best = 0;
@@ -1750,6 +1750,22 @@ const frameOf = (ring: P[], roads: GroundPoly[], longFront: boolean): Frame => {
       chosen = option;
     }
   });
+  const quarter = ((frontQuarter % 4) + 4) % 4;
+  if (quarter !== 0) {
+    const angle = quarter * Math.PI / 2;
+    const turnX = chosen.fx * Math.cos(angle) - chosen.fz * Math.sin(angle);
+    const turnZ = chosen.fx * Math.sin(angle) + chosen.fz * Math.cos(angle);
+    let turned = chosen;
+    let bestDot = chosen.fx * turnX + chosen.fz * turnZ;
+    for (const option of options) {
+      const dot = option.fx * turnX + option.fz * turnZ;
+      if (dot > bestDot + 1e-6) {
+        bestDot = dot;
+        turned = option;
+      }
+    }
+    chosen = turned;
+  }
   const zAxis = { x: chosen.fx, z: chosen.fz };
   const xAxis = { x: chosen.fz, z: -chosen.fx };
   const matrix = new THREE.Matrix4().makeBasis(
@@ -1787,7 +1803,7 @@ const contextOf = (kit: Kit, local: P[], seed: number): Ctx => {
 export const amenityModel = (item: PlacedInstance, ring: P[], roads: GroundPoly[]): AmenityModel => {
   const type = item.amenityType || "shop";
   const builder = BUILDERS[type] || medical;
-  const frame = frameOf(ring, roads, type === "gate");
+  const frame = frameOf(ring, roads, type === "gate", item.frontQuarter || 0);
   const kit = new Kit(frame.matrix);
   if (frame.local.length >= 3 && Math.abs(signedArea(frame.local)) > 1) {
     builder(contextOf(kit, frame.local, hashString(item.id)));

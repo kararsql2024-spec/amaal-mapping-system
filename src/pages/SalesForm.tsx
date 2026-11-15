@@ -23,6 +23,7 @@ import {
   createInstallmentId,
   formatDateOnly,
   generateInstallments,
+  isPaidInFullAtSigning,
   recalculateUnlockedInstallments,
   validatePaymentTotals,
 } from "@/lib/payment-installments";
@@ -228,6 +229,11 @@ const SalesForm = () => {
     const signing = Number(signingAmount) || 0;
     if (price <= 0) return showError("يرجى إدخال السعر الإجمالي أولاً");
     if (signing > price) return showError("مبلغ التوقيع يتجاوز السعر الإجمالي");
+    if (signing === price) {
+      setInstallments([]);
+      showSuccess("السعر مغطى بدفعة التوقيع، ولا توجد دفعات لاحقة");
+      return;
+    }
 
     setInstallments(generateInstallments(price, signing, installmentsCount));
     showSuccess("تم توليد الدفعات");
@@ -251,8 +257,12 @@ const SalesForm = () => {
     if (!formData.deliveryPeriod) return "يرجى إدخال مدة التسليم";
     if (!formData.totalPrice) return "يرجى إدخال السعر الإجمالي";
     if (!signingAmount) return "يرجى إدخال مبلغ دفعة التوقيع";
-    if (installments.length === 0) return "يرجى توليد خطة الدفعات";
-    if (!totalValidation.ok) return totalValidation.message || "مجموع الدفعات لا يطابق سعر البيع";
+    const price = Number(formData.totalPrice) || 0;
+    const signing = Number(signingAmount) || 0;
+    if (signing > price) return "مبلغ التوقيع يتجاوز السعر الإجمالي";
+    const paidInFull = isPaidInFullAtSigning(price, signing);
+    if (!paidInFull && installments.length === 0) return "يرجى توليد خطة الدفعات";
+    if (!paidInFull && !totalValidation.ok) return totalValidation.message || "مجموع الدفعات لا يطابق سعر البيع";
     return null;
   };
 
@@ -296,7 +306,7 @@ const SalesForm = () => {
               ? Number(housingConditionAmount)
               : null,
             show_commission_note: showCommissionNote,
-            installments,
+            installments: isPaidInFullAtSigning(formData.totalPrice, signingAmount) ? [] : installments,
             notes: formData.notes,
           },
         ])
@@ -485,6 +495,9 @@ const SalesForm = () => {
 
             {!totalValidation.ok && installments.length > 0 && (
               <p className="mt-3 text-[12px] text-status-sold">{totalValidation.message}</p>
+            )}
+            {isPaidInFullAtSigning(formData.totalPrice, signingAmount) && (
+              <p className="mt-3 text-[12px] text-fg-muted">مبلغ التوقيع يساوي السعر. الوحدة مسددة عند التوقيع، ويمكن حفظ الاستمارة من غير توليد دفعات.</p>
             )}
 
             <div className="mt-4 grid gap-4 md:grid-cols-4">

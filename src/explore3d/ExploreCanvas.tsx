@@ -101,6 +101,24 @@ const unitBox = () => {
   return geometry;
 };
 
+/** سهم مسطح قائم، رأسه نحو +Z، وقاعدته على الأرض. */
+const towerArrow = () => {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.11, -0.5);
+  shape.lineTo(0.11, -0.5);
+  shape.lineTo(0.11, 0.04);
+  shape.lineTo(0.4, 0.04);
+  shape.lineTo(0, 0.5);
+  shape.lineTo(-0.4, 0.04);
+  shape.lineTo(-0.11, 0.04);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false });
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, 1, 0);
+  geometry.computeVertexNormals();
+  return geometry;
+};
+
 /** أسفل الصندوق أغمق حتى تجلس الكتلة على الأرض. يُستخدم مع لون النسخة. */
 const contactBox = () => {
   const geometry = unitBox();
@@ -682,8 +700,10 @@ gl_FragColor.a *= 1.0 - edgeFog;`
     const shrubs = world.shrubs.filter((item) => !onPath(item));
 
     const box = unitBox();
+    const arrow = towerArrow();
     const shaded = contactBox();
     remember(box);
+    remember(arrow);
     remember(shaded);
     const shadedMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
     veil(shadedMaterial);
@@ -907,6 +927,10 @@ gl_FragColor.a *= 1.0 - edgeFog;`
         pickables,
         false,
       );
+    }
+
+    if (world.entrances.length > 0) {
+      addMesh(scene, arrow, solid(0xffffff), world.entrances, (item) => item.y || 0, true, pickables, false);
     }
 
     addMesh(scene, box, solid(COLORS.towerRoof), roofs, (item) => item.y || 0, false, pickables, true);
